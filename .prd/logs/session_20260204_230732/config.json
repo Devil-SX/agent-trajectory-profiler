@@ -1,0 +1,18 @@
+{
+  "max_calls_per_hour": 100,
+  "max_iterations": 50,
+  "timeout_minutes": 15,
+  "output_format": "stream",
+  "allowed_tools": [
+    "Write",
+    "Read",
+    "Edit",
+    "Bash(git *)",
+    "Bash(npm *)",
+    "Bash(pytest)"
+  ],
+  "session_expiry_hours": 24,
+  "max_consecutive_failures": 3,
+  "no_progress_threshold": 3,
+  "dangerously_skip_permissions": true
+}

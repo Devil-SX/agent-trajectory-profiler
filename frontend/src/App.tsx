@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import './App.css';
 import { SessionSelector } from './components/SessionSelector';
-import { MessageTimeline } from './components/MessageTimeline';
-import { SessionMetadataSidebar } from './components/SessionMetadataSidebar';
-import { StatisticsDashboard } from './components/StatisticsDashboard';
-import { AdvancedAnalytics } from './components/AdvancedAnalytics';
+
+// Lazy load heavy components for code splitting
+const MessageTimeline = lazy(() => import('./components/MessageTimeline').then(m => ({ default: m.MessageTimeline })));
+const SessionMetadataSidebar = lazy(() => import('./components/SessionMetadataSidebar').then(m => ({ default: m.SessionMetadataSidebar })));
+const StatisticsDashboard = lazy(() => import('./components/StatisticsDashboard').then(m => ({ default: m.StatisticsDashboard })));
+const AdvancedAnalytics = lazy(() => import('./components/AdvancedAnalytics').then(m => ({ default: m.AdvancedAnalytics })));
 
 type ViewTab = 'timeline' | 'statistics' | 'analytics';
 
@@ -106,7 +108,7 @@ function App() {
 
         <div className="main-content">
           {selectedSessionId ? (
-            <>
+            <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
               {activeView === 'timeline' && (
                 <div className="session-content">
                   <MessageTimeline sessionId={selectedSessionId} autoScrollToBottom={true} />
@@ -137,7 +139,7 @@ function App() {
                   <SessionMetadataSidebar sessionId={selectedSessionId} />
                 </div>
               )}
-            </>
+            </Suspense>
           ) : (
             <div className="no-session">
               <p>No session selected. Please select a session above.</p>

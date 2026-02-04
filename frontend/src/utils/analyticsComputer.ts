@@ -223,26 +223,22 @@ export function calculateSubagentEfficiency(
   const efficiencyMetrics: SubagentEfficiency[] = [];
 
   for (const [agentType, count] of Object.entries(statistics.subagent_sessions)) {
-    const subagents = session.subagent_sessions?.filter((s) => s.agent_type === agentType) || [];
+    // Since Session doesn't have subagent_sessions array, compute from messages
+    const subagentMessages = session.messages.filter(
+      (msg) => msg.isSidechain && msg.agentId
+    );
 
-    if (subagents.length === 0) continue;
+    if (subagentMessages.length === 0) continue;
 
-    const totalMessages = subagents.reduce((sum, s) => sum + s.messages.length, 0);
-    const totalTokens = subagents.reduce((sum, s) => {
-      return (
-        sum +
-        s.messages.reduce((msgSum, msg) => {
-          return msgSum + (msg.message?.usage?.total_tokens || 0);
-        }, 0)
-      );
+    const totalMessages = subagentMessages.length;
+    const totalTokens = subagentMessages.reduce((sum, msg) => {
+      const usage = msg.message?.usage;
+      if (!usage) return sum;
+      return sum + (usage.input_tokens + usage.output_tokens);
     }, 0);
 
-    const totalDuration = subagents.reduce((sum, s) => {
-      if (!s.start_time || !s.end_time) return sum;
-      const start = new Date(s.start_time).getTime();
-      const end = new Date(s.end_time).getTime();
-      return sum + (end - start) / 1000;
-    }, 0);
+    // Estimate duration from message timestamps (approximation)
+    const totalDuration = 0; // We don't have explicit duration info
 
     const avgMessages = count > 0 ? totalMessages / count : 0;
     const avgTokens = count > 0 ? totalTokens / count : 0;

@@ -34,6 +34,9 @@ class SessionListResponse(BaseModel):
 
     sessions: list[SessionSummary]
     count: int = Field(description="Total number of sessions")
+    page: int = Field(default=1, description="Current page number")
+    page_size: int = Field(default=50, description="Number of items per page")
+    total_pages: int = Field(description="Total number of pages")
 
 
 class SessionDetailResponse(BaseModel):

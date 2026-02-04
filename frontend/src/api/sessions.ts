@@ -20,13 +20,18 @@ const RETRY_DELAY_MS = 1000;
  * Custom error class for API errors with status code
  */
 export class APIError extends Error {
+  statusCode: number;
+  isNetworkError: boolean;
+
   constructor(
     message: string,
-    public statusCode: number,
-    public isNetworkError: boolean = false
+    statusCode: number,
+    isNetworkError: boolean = false
   ) {
     super(message);
     this.name = 'APIError';
+    this.statusCode = statusCode;
+    this.isNetworkError = isNetworkError;
   }
 }
 
@@ -122,14 +127,23 @@ async function fetchWithRetry(
 }
 
 /**
- * Fetch all available sessions from the API.
+ * Fetch all available sessions from the API with pagination support.
  *
+ * @param page - Page number (1-indexed, default: 1)
+ * @param pageSize - Number of items per page (default: 50)
  * @returns Promise resolving to session list response
  * @throws APIError if the API request fails
  */
-export async function fetchSessions(): Promise<SessionListResponse> {
+export async function fetchSessions(
+  page: number = 1,
+  pageSize: number = 50
+): Promise<SessionListResponse> {
   try {
-    const response = await fetchWithRetry(`${API_BASE_URL}/api/sessions`);
+    const params = new URLSearchParams({
+      page: page.toString(),
+      page_size: pageSize.toString(),
+    });
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/sessions?${params}`);
     return response.json();
   } catch (error) {
     if (import.meta.env.DEV) {

@@ -1,0 +1,12 @@
+{
+  "prd": "/home/sdu/pure_auto/claude-code-sessin-vis/.prd/prds/prd_20260204_224944.json",
+  "max_iterations": 50,
+  "timeout": 15,
+  "model": "sonnet",
+  "no_progress_threshold": 3,
+  "resume": false,
+  "status": false,
+  "reset": false,
+  "verbose": false,
+  "no_observe": false
+}

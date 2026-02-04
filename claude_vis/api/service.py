@@ -77,12 +77,18 @@ class SessionService:
         """Reload sessions from disk (useful for development/testing)."""
         await self._load_sessions()
 
-    async def list_sessions(self) -> list[SessionSummary]:
+    async def list_sessions(
+        self, page: int = 1, page_size: int = 50
+    ) -> tuple[list[SessionSummary], int]:
         """
-        Get list of all available sessions.
+        Get list of all available sessions with pagination.
+
+        Args:
+            page: Page number (1-indexed)
+            page_size: Number of items per page
 
         Returns:
-            List of SessionSummary objects
+            Tuple of (list of SessionSummary objects, total count)
         """
         summaries = []
         for session in self._sessions.values():
@@ -100,7 +106,14 @@ class SessionService:
 
         # Sort by created_at descending (newest first)
         summaries.sort(key=lambda x: x.created_at, reverse=True)
-        return summaries
+
+        # Apply pagination
+        total_count = len(summaries)
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated_summaries = summaries[start_idx:end_idx]
+
+        return paginated_summaries, total_count
 
     async def get_session(self, session_id: str) -> Session | None:
         """

@@ -32,7 +32,7 @@ function convertToCSV(data: Record<string, unknown>[]): string {
  * Export session statistics to CSV.
  */
 export function exportStatisticsToCSV(
-  sessionId: string,
+  _sessionId: string,
   statistics: SessionStatistics
 ): string {
   const rows: Record<string, unknown>[] = [

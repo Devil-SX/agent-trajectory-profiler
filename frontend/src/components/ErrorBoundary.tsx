@@ -8,7 +8,7 @@
  * - Logs errors to console in dev mode
  */
 
-import { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import './ErrorBoundary.css';
 

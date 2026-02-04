@@ -8,9 +8,9 @@
  * - Handles loading and error states
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { fetchSessions, APIError } from '../api/sessions';
+import { useSessionsQuery } from '../hooks/useSessionsQuery';
 import type { SessionSummary } from '../types/session';
 import './SessionSelector.css';
 
@@ -25,52 +25,57 @@ export function SessionSelector({
   onSessionChange,
   onComparisonSessionChange,
 }: SessionSelectorProps) {
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [page] = useState(1);
+  const [pageSize] = useState(200); // Fetch more sessions for dropdown
+  const { data, isLoading, error: queryError } = useSessionsQuery(page, pageSize);
+
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [comparisonSessionId, setComparisonSessionId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const sessions: SessionSummary[] = data?.sessions || [];
+  const loading = isLoading;
+  const error = queryError?.message || null;
+
+  // Initialize selection on first load - using a ref to track if we've done this
+  const initRef = useRef(false);
 
   useEffect(() => {
-    // Check for single-session mode via URL parameter
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionIdParam = urlParams.get('session');
+    // Only notify parent of selection changes after initialization
+    if (sessions.length > 0 && !initRef.current) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const sessionIdParam = urlParams.get('session');
 
-    async function loadSessions() {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await fetchSessions();
-        setSessions(data.sessions);
+      let initialSessionId: string | null = null;
 
-        // If single-session mode is enabled via URL parameter
-        if (sessionIdParam) {
-          const sessionExists = data.sessions.some((s) => s.session_id === sessionIdParam);
-          if (sessionExists) {
-            setSelectedSessionId(sessionIdParam);
-            onSessionChange?.(sessionIdParam);
-          } else {
-            const errorMsg = `Session not found: ${sessionIdParam}`;
-            setError(errorMsg);
-            toast.error(errorMsg);
-          }
-        } else if (data.sessions.length > 0) {
-          // Default to first session in default mode
-          setSelectedSessionId(data.sessions[0].session_id);
-          onSessionChange?.(data.sessions[0].session_id);
+      if (sessionIdParam) {
+        const sessionExists = sessions.some((s) => s.session_id === sessionIdParam);
+        if (sessionExists) {
+          initialSessionId = sessionIdParam;
+        } else {
+          toast.error(`Session not found: ${sessionIdParam}`);
         }
-      } catch (err) {
-        const errorMessage = err instanceof APIError ? err.message : 'Failed to load sessions';
-        setError(errorMessage);
-        toast.error(errorMessage);
-        console.error('Failed to load sessions:', err);
-      } finally {
-        setLoading(false);
+      } else {
+        initialSessionId = sessions[0].session_id;
       }
-    }
 
-    loadSessions();
-  }, [onSessionChange]);
+      if (initialSessionId) {
+        // Use setTimeout to defer state update to next tick
+        setTimeout(() => {
+          setSelectedSessionId(initialSessionId);
+          onSessionChange?.(initialSessionId);
+        }, 0);
+      }
+
+      initRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions.length, onSessionChange]);
+
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+    }
+  }, [error]);
 
   const handleSessionChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const sessionId = event.target.value;

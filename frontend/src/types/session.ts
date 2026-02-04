@@ -17,6 +17,9 @@ export interface SessionSummary {
 export interface SessionListResponse {
   sessions: SessionSummary[];
   count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 export interface ErrorResponse {

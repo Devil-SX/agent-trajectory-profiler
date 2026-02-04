@@ -11,11 +11,11 @@
  * - Responsive design
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { fetchSessionDetail, APIError } from '../api/sessions';
+import { useSessionDetailQuery } from '../hooks/useSessionsQuery';
 import type {
   MessageRecord,
   Session,
@@ -34,46 +34,77 @@ interface MessageTimelineProps {
 }
 
 export function MessageTimeline({ sessionId, autoScrollToBottom = true }: MessageTimelineProps) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error: queryError } = useSessionDetailQuery(sessionId);
   const timelineEndRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    async function loadSession() {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await fetchSessionDetail(sessionId);
-        setSession(data.session);
-      } catch (err) {
-        const errorMessage = err instanceof APIError ? err.message : 'Failed to load session';
-        setError(errorMessage);
-        toast.error(errorMessage);
-        console.error('Failed to load session:', err);
-      } finally {
-        setLoading(false);
-      }
+  const session: Session | null = data?.session || null;
+  const loading = isLoading;
+  const error = queryError?.message || null;
+
+  // Memoize expensive computations (must be before any early returns)
+  const { mainMessages, subagentsByParent, subagentGroups } = useMemo(() => {
+    if (!session || session.messages.length === 0) {
+      return {
+        mainMessages: [],
+        subagentsByParent: new Map(),
+        subagentGroups: new Map(),
+      };
     }
 
-    loadSession();
-  }, [sessionId]);
+    // Separate main messages from subagent messages
+    const mainMessages = session.messages.filter(
+      (msg) => (msg.type === 'user' || msg.type === 'assistant') && !msg.isSidechain
+    );
+
+    // Group subagent messages by agentId and parent message
+    const subagentGroups = new Map<string, { agentId: string; messages: MessageRecord[] }>();
+    session.messages
+      .filter((msg) => msg.isSidechain && msg.agentId)
+      .forEach((msg) => {
+        const key = `${msg.parentUuid || 'root'}_${msg.agentId}`;
+        if (!subagentGroups.has(key)) {
+          subagentGroups.set(key, { agentId: msg.agentId!, messages: [] });
+        }
+        subagentGroups.get(key)!.messages.push(msg);
+      });
+
+    // Build a map of parent UUID to subagent groups
+    const subagentsByParent = new Map<string, typeof subagentGroups>();
+    subagentGroups.forEach((group, key) => {
+      const parentUuid = key.split('_')[0];
+      if (!subagentsByParent.has(parentUuid)) {
+        subagentsByParent.set(parentUuid, new Map());
+      }
+      subagentsByParent.get(parentUuid)!.set(key, group);
+    });
+
+    return { mainMessages, subagentsByParent, subagentGroups };
+  }, [session]);
+
+  const formatTimestamp = useMemo(
+    () => (timestamp: string) => {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+    }
+  }, [error]);
 
   useEffect(() => {
     if (autoScrollToBottom && timelineEndRef.current && !loading) {
       timelineEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [session, autoScrollToBottom, loading]);
-
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  };
 
   const getMessageSource = (message: MessageRecord): 'user' | 'assistant' | 'subagent' => {
     if (message.isSidechain) {
@@ -240,33 +271,6 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     );
   }
 
-  // Separate main messages from subagent messages
-  const mainMessages = session.messages.filter(
-    (msg) => (msg.type === 'user' || msg.type === 'assistant') && !msg.isSidechain
-  );
-
-  // Group subagent messages by agentId and parent message
-  const subagentGroups = new Map<string, { agentId: string; messages: MessageRecord[] }>();
-  session.messages
-    .filter((msg) => msg.isSidechain && msg.agentId)
-    .forEach((msg) => {
-      const key = `${msg.parentUuid || 'root'}_${msg.agentId}`;
-      if (!subagentGroups.has(key)) {
-        subagentGroups.set(key, { agentId: msg.agentId!, messages: [] });
-      }
-      subagentGroups.get(key)!.messages.push(msg);
-    });
-
-  // Build a map of parent UUID to subagent groups
-  const subagentsByParent = new Map<string, typeof subagentGroups>();
-  subagentGroups.forEach((group, key) => {
-    const parentUuid = key.split('_')[0];
-    if (!subagentsByParent.has(parentUuid)) {
-      subagentsByParent.set(parentUuid, new Map());
-    }
-    subagentsByParent.get(parentUuid)!.set(key, group);
-  });
-
   // Infer subagent type from messages or default to 'other'
   const inferSubagentType = (messages: MessageRecord[]): SubagentType => {
     // Try to infer from tool use or message content
@@ -325,16 +329,19 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
               {/* Render subagent sessions that are children of this message */}
               {subagentsByParent.has(message.uuid) && (
                 <div className="subagent-sessions-container">
-                  {Array.from(subagentsByParent.get(message.uuid)!.values()).map((group) => (
-                    <SubagentSession
-                      key={group.agentId}
-                      agentId={group.agentId}
-                      agentType={inferSubagentType(group.messages)}
-                      messages={group.messages}
-                      renderMessageContent={renderMessageContent}
-                      formatTimestamp={formatTimestamp}
-                    />
-                  ))}
+                  {Array.from(subagentsByParent.get(message.uuid)!.values()).map((group) => {
+                    const typedGroup = group as { agentId: string; messages: MessageRecord[] };
+                    return (
+                      <SubagentSession
+                        key={typedGroup.agentId}
+                        agentId={typedGroup.agentId}
+                        agentType={inferSubagentType(typedGroup.messages)}
+                        messages={typedGroup.messages}
+                        renderMessageContent={renderMessageContent}
+                        formatTimestamp={formatTimestamp}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>

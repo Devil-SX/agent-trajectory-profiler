@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -92,19 +92,40 @@ async def health_check() -> dict[str, Any]:
     summary="List all sessions",
     description="Get a list of all available Claude Code sessions with basic metadata",
 )
-async def list_sessions() -> SessionListResponse:
+async def list_sessions(response: Response, page: int = 1, page_size: int = 50) -> SessionListResponse:
     """
-    List all available sessions.
+    List all available sessions with pagination.
+
+    Args:
+        page: Page number (1-indexed, default: 1)
+        page_size: Number of items per page (default: 50, max: 200)
 
     Returns:
-        SessionListResponse: List of sessions with metadata
+        SessionListResponse: List of sessions with metadata and pagination info
     """
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
+    # Validate pagination parameters
+    if page < 1:
+        raise HTTPException(status_code=400, detail="Page must be >= 1")
+    if page_size < 1 or page_size > 200:
+        raise HTTPException(status_code=400, detail="Page size must be between 1 and 200")
+
     try:
-        sessions = await session_service.list_sessions()
-        return SessionListResponse(sessions=sessions, count=len(sessions))
+        sessions, total_count = await session_service.list_sessions(page, page_size)
+        total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
+
+        # Add caching headers - cache for 5 minutes
+        response.headers["Cache-Control"] = "public, max-age=300"
+
+        return SessionListResponse(
+            sessions=sessions,
+            count=total_count,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to list sessions: {str(e)}"
@@ -121,7 +142,7 @@ async def list_sessions() -> SessionListResponse:
         "messages and subagents"
     ),
 )
-async def get_session(session_id: str) -> SessionDetailResponse:
+async def get_session(session_id: str, response: Response) -> SessionDetailResponse:
     """
     Get detailed session data.
 
@@ -142,6 +163,9 @@ async def get_session(session_id: str) -> SessionDetailResponse:
         if session is None:
             raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
+        # Add caching headers - cache for 10 minutes (session data is immutable)
+        response.headers["Cache-Control"] = "public, max-age=600"
+
         return SessionDetailResponse(session=session)
     except HTTPException:
         raise
@@ -158,7 +182,7 @@ async def get_session(session_id: str) -> SessionDetailResponse:
     summary="Get session statistics",
     description="Get computed analytics and statistics for a specific session",
 )
-async def get_session_statistics(session_id: str) -> SessionStatisticsResponse:
+async def get_session_statistics(session_id: str, response: Response) -> SessionStatisticsResponse:
     """
     Get session statistics.
 
@@ -178,6 +202,9 @@ async def get_session_statistics(session_id: str) -> SessionStatisticsResponse:
         statistics = await session_service.get_session_statistics(session_id)
         if statistics is None:
             raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+        # Add caching headers - cache for 10 minutes
+        response.headers["Cache-Control"] = "public, max-age=600"
 
         return SessionStatisticsResponse(session_id=session_id, statistics=statistics)
     except HTTPException:

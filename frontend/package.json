@@ -17,20 +17,25 @@
     "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.20",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "lodash.debounce": "^4.0.8",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hot-toast": "^2.6.0",
     "react-syntax-highlighter": "^16.1.0",
+    "react-window": "^2.2.6",
     "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.58.1",
     "@tailwindcss/postcss": "^4.1.18",
+    "@types/lodash.debounce": "^4.0.9",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
+    "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.24",
     "eslint": "^9.39.1",

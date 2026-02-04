@@ -12,7 +12,7 @@
  * - Usage-based recommendations
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import {
   BarChart,
@@ -26,8 +26,7 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
-import { fetchSessionDetail, fetchSessionStatistics, APIError } from '../api/sessions';
-import type { AdvancedAnalytics as AdvancedAnalyticsType, SessionComparison } from '../types/analytics';
+import { useSessionDetailQuery, useSessionStatisticsQuery } from '../hooks/useSessionsQuery';
 import {
   computeAdvancedAnalytics,
   compareSessions,
@@ -45,73 +44,43 @@ interface AdvancedAnalyticsProps {
 }
 
 export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAnalyticsProps) {
-  const [analytics, setAnalytics] = useState<AdvancedAnalyticsType | null>(null);
-  const [comparison, setComparison] = useState<SessionComparison | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
 
-  const loadAnalytics = useCallback(async (id: string) => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Fetch data with React Query
+  const { data: sessionData, isLoading: sessionLoading, error: sessionError } = useSessionDetailQuery(sessionId);
+  const { data: statsData, isLoading: statsLoading, error: statsError } = useSessionStatisticsQuery(sessionId);
+  const { data: comparisonStatsData } = useSessionStatisticsQuery(comparisonSessionId || null);
 
-      const [sessionData, statsData] = await Promise.all([
-        fetchSessionDetail(id),
-        fetchSessionStatistics(id),
-      ]);
+  const loading = sessionLoading || statsLoading;
+  const error = sessionError?.message || statsError?.message || null;
 
-      const computed = computeAdvancedAnalytics(sessionData.session, statsData.statistics);
-      setAnalytics(computed);
-    } catch (err) {
-      const errorMessage = err instanceof APIError ? err.message : 'Failed to load analytics';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      console.error('Failed to load analytics:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Compute analytics with memoization
+  const analytics = useMemo(() => {
+    if (!sessionData || !statsData) return null;
+    return computeAdvancedAnalytics(sessionData.session, statsData.statistics);
+  }, [sessionData, statsData]);
 
-  const loadComparison = useCallback(async (id1: string, id2: string) => {
-    try {
-      const [stats1, stats2] = await Promise.all([
-        fetchSessionStatistics(id1),
-        fetchSessionStatistics(id2),
-      ]);
-
-      const comp = compareSessions(stats1.statistics, id1, stats2.statistics, id2);
-      setComparison(comp);
-    } catch (err) {
-      const errorMessage = err instanceof APIError ? err.message : 'Failed to load session comparison';
-      toast.error(errorMessage);
-      console.error('Failed to load comparison:', err);
-      setComparison(null);
-    }
-  }, []);
+  // Compute comparison with memoization
+  const comparison = useMemo(() => {
+    if (!comparisonSessionId || !statsData || !comparisonStatsData) return null;
+    return compareSessions(
+      statsData.statistics,
+      sessionId || '',
+      comparisonStatsData.statistics,
+      comparisonSessionId
+    );
+  }, [sessionId, comparisonSessionId, statsData, comparisonStatsData]);
 
   useEffect(() => {
-    if (!sessionId) {
-      setAnalytics(null);
-      setComparison(null);
-      return;
+    if (error) {
+      toast.error(error);
     }
+  }, [error]);
 
-    loadAnalytics(sessionId);
-
-    if (comparisonSessionId && comparisonSessionId !== sessionId) {
-      loadComparison(sessionId, comparisonSessionId);
-    } else {
-      setComparison(null);
-    }
-  }, [sessionId, comparisonSessionId, loadAnalytics, loadComparison]);
-
-  const handleExport = async () => {
-    if (!analytics || !sessionId) return;
+  const handleExport = () => {
+    if (!analytics || !sessionId || !statsData) return;
 
     try {
-      const statsResponse = await fetchSessionStatistics(sessionId);
-
       const config: ExportConfig = {
         format: exportFormat,
         includeRawData: true,
@@ -125,7 +94,7 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
         },
       };
 
-      const files = exportData(config, sessionId, statsResponse.statistics, analytics);
+      const files = exportData(config, sessionId, statsData.statistics, analytics);
       downloadFiles(files, exportFormat);
     } catch (err) {
       console.error('Export failed:', err);

@@ -1,0 +1,399 @@
+{
+  "project": "Claude Code Session Visualizer",
+  "branchName": "ralph/claude-session-visualizer",
+  "description": "A web application to visualize and analyze Claude Code sessions with CLI tools for parsing session data and a frontend for interactive visualization with detailed statistics and analytics",
+  "source_spec": "/home/sdu/pure_auto/claude-code-sessin-vis/.original_spec/ClaudeCodeVis.md",
+  "created_at": "2026-02-04T22:51:34.882216",
+  "updated_at": "2026-02-04T22:51:34.882219",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project Setup with UV Environment",
+      "description": "As a developer, I want the Python environment managed by UV so that dependencies are consistent and isolated",
+      "acceptanceCriteria": [
+        "pyproject.toml file created with project metadata",
+        "uv.lock file generated for dependency locking",
+        "Python dependencies specified (Flask/FastAPI, pydantic, click for CLI)",
+        "Development dependencies added (pytest, playwright, black, mypy)",
+        "UV environment can be initialized with 'uv sync'",
+        "README includes UV setup instructions"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Initialize new Python project structure. Create pyproject.toml with UV. Set up src/ directory structure for package.",
+      "completed_at": null
+    },
+    {
+      "id": "US-002",
+      "title": "Session Data Parser Schema",
+      "description": "As a developer, I want type-safe data models for Claude session data so that parsing is reliable and maintainable",
+      "acceptanceCriteria": [
+        "Pydantic models created for Session, Message, ToolCall, Subagent structures",
+        "Type hints used throughout all models",
+        "JSON schema validation implemented",
+        "Models handle nested subagent sessions",
+        "Message source types differentiated (main/subagent)",
+        "Mypy type checking passes",
+        "Unit tests for model validation"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Create src/claudecodesessionvis/models.py. Define SessionMetadata, MessageRecord, ToolCallRecord, SubagentSession, SessionStatistics classes.",
+      "completed_at": null
+    },
+    {
+      "id": "US-003",
+      "title": "Session File Parser CLI",
+      "description": "As a user, I want a CLI tool to parse Claude session files so that I can extract structured data from session directories",
+      "acceptanceCriteria": [
+        "Click-based CLI accepts --path argument for custom session directory",
+        "Default path resolves to ~/.claude/projects/",
+        "Parser reads all session JSON files in directory",
+        "Handles session file format correctly",
+        "Outputs parsed data to stdout or JSON file",
+        "Error handling for missing/corrupted files",
+        "CLI --help shows usage instructions",
+        "Pytest tests for parser functions"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Create src/claudecodesessionvis/cli.py and src/claudecodesessionvis/parser.py. Implement session file discovery and parsing logic.",
+      "completed_at": null
+    },
+    {
+      "id": "US-004",
+      "title": "Session Statistics Calculator",
+      "description": "As a user, I want detailed statistics about sessions so that I can understand usage patterns and performance",
+      "acceptanceCriteria": [
+        "Calculate total message count per session",
+        "Count tool calls by type (Read, Write, Edit, Bash, etc.)",
+        "Track subagent invocations and their types",
+        "Calculate token consumption (input/output/total)",
+        "Compute tool-specific token usage breakdown",
+        "Calculate session duration and timestamps",
+        "Identify most used tools and patterns",
+        "Statistics returned as structured data",
+        "Unit tests for all calculations"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Create src/claudecodesessionvis/analytics.py. Implement SessionAnalyzer class with methods for each metric type.",
+      "completed_at": null
+    },
+    {
+      "id": "US-005",
+      "title": "Web Backend API Setup",
+      "description": "As a frontend developer, I want a REST API backend so that the web UI can fetch and display session data",
+      "acceptanceCriteria": [
+        "FastAPI or Flask application created",
+        "GET /api/sessions endpoint lists all available sessions",
+        "GET /api/sessions/{id} returns detailed session data",
+        "GET /api/sessions/{id}/statistics returns computed analytics",
+        "CORS enabled for local development",
+        "API returns proper JSON responses with error handling",
+        "Integration with parser and analytics modules",
+        "API can accept --path CLI argument on startup",
+        "Type checking passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Create src/claudecodesessionvis/api.py. Set up FastAPI with routes. Create server.py entry point that accepts CLI args.",
+      "completed_at": null
+    },
+    {
+      "id": "US-006",
+      "title": "Frontend Project Setup",
+      "description": "As a developer, I want a modern frontend framework setup so that I can build an interactive UI",
+      "acceptanceCriteria": [
+        "React/Vue/Svelte project initialized in frontend/ directory",
+        "TypeScript configured with strict mode",
+        "Tailwind CSS or CSS framework installed",
+        "Package.json with dev and build scripts",
+        "ESLint and Prettier configured",
+        "Development server runs on localhost:5173 or similar",
+        "Build output configured to static/ or dist/",
+        "Type checking passes with tsc --noEmit"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Create frontend/ directory. Initialize with Vite + React + TypeScript. Configure for API integration with backend.",
+      "completed_at": null
+    },
+    {
+      "id": "US-007",
+      "title": "Session Selector Component",
+      "description": "As a user, I want a dropdown to select sessions so that I can switch between different Claude Code sessions",
+      "acceptanceCriteria": [
+        "Dropdown component fetches sessions from API",
+        "Shows session name/ID and timestamp",
+        "Supports single-session mode via URL parameter",
+        "Default mode loads all sessions",
+        "Selection triggers data refresh",
+        "Loading states displayed properly",
+        "Error states handled gracefully",
+        "TypeScript types defined for session data"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Create frontend/src/components/SessionSelector.tsx. Implement state management for selected session.",
+      "completed_at": null
+    },
+    {
+      "id": "US-008",
+      "title": "Message Timeline UI Component",
+      "description": "As a user, I want a social-media-style message timeline so that I can read conversations in a familiar format",
+      "acceptanceCriteria": [
+        "Narrow, tall scrollable container with messages",
+        "Message bubbles styled by source (user/assistant/system)",
+        "Subagent messages distinguished by color scheme",
+        "Timestamps shown for each message",
+        "Smooth scrolling with keyboard/mouse support",
+        "Auto-scroll to bottom on load option",
+        "Responsive design for different screen widths",
+        "Code blocks rendered with syntax highlighting",
+        "TypeScript component with proper props typing"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Create frontend/src/components/MessageTimeline.tsx. Use react-markdown or similar for rendering. Implement color coding for message sources.",
+      "completed_at": null
+    },
+    {
+      "id": "US-009",
+      "title": "Subagent Session Visualization",
+      "description": "As a user, I want to see subagent conversations nested within main sessions so that I understand the agent hierarchy",
+      "acceptanceCriteria": [
+        "Subagent messages clearly nested or indented",
+        "Visual indicator (border, background) for subagent context",
+        "Subagent type label displayed (Explore, Bash, general-purpose, etc.)",
+        "Expandable/collapsible subagent sections",
+        "Distinct color palette for subagent levels",
+        "Smooth transitions for expand/collapse",
+        "Deep nesting handled properly (recursive component)",
+        "TypeScript types for nested subagent structure"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Extend MessageTimeline component. Create SubagentSection.tsx for recursive nesting. Update message rendering logic.",
+      "completed_at": null
+    },
+    {
+      "id": "US-010",
+      "title": "Session Metadata Sidebar",
+      "description": "As a user, I want a right sidebar showing session metadata so that I can see session details at a glance",
+      "acceptanceCriteria": [
+        "Fixed sidebar on right side of screen",
+        "Displays session ID, creation time, duration",
+        "Shows total message count",
+        "Lists all models used in session",
+        "Displays session status/state",
+        "Clean typography and layout",
+        "Responsive behavior on smaller screens",
+        "TypeScript interface for metadata structure"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Create frontend/src/components/SessionSidebar.tsx. Design info card layout with Tailwind CSS.",
+      "completed_at": null
+    },
+    {
+      "id": "US-011",
+      "title": "Statistics Dashboard Panel",
+      "description": "As a user, I want detailed statistics visualizations so that I can analyze session performance and usage",
+      "acceptanceCriteria": [
+        "Card-based layout for different stat categories",
+        "Total token usage displayed (input/output/total)",
+        "Tool call breakdown chart (bar/pie chart)",
+        "Subagent invocation count by type",
+        "Token usage by tool type (profiling view)",
+        "Message count timeline/distribution",
+        "Average response time if available",
+        "Charts library integrated (Chart.js/Recharts)",
+        "All data fetched from statistics API endpoint",
+        "TypeScript types for statistics data"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Create frontend/src/components/StatisticsPanel.tsx. Integrate charting library. Create StatCard.tsx for individual metrics.",
+      "completed_at": null
+    },
+    {
+      "id": "US-012",
+      "title": "Tool Call Visualization",
+      "description": "As a user, I want to see tool calls highlighted in the timeline so that I understand what actions were taken",
+      "acceptanceCriteria": [
+        "Tool calls displayed as special message types",
+        "Tool icon/badge shows tool type (Read, Write, Bash, etc.)",
+        "Parameters shown in expandable section",
+        "Results/output displayed when available",
+        "Color coding by tool category",
+        "Error states for failed tool calls",
+        "Token cost shown per tool call if available",
+        "TypeScript types for tool call data structure"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "Create frontend/src/components/ToolCallMessage.tsx. Update MessageTimeline to handle tool call rendering.",
+      "completed_at": null
+    },
+    {
+      "id": "US-013",
+      "title": "Advanced Analytics Features",
+      "description": "As a power user, I want advanced profiling and analytics so that I can optimize my Claude usage",
+      "acceptanceCriteria": [
+        "Token usage heatmap by time",
+        "Most expensive operations highlighted",
+        "Tool usage patterns analysis",
+        "Subagent efficiency metrics",
+        "Session comparison feature (if multiple loaded)",
+        "Export statistics to CSV/JSON",
+        "Performance bottleneck identification",
+        "Recommendations based on usage patterns",
+        "All features have TypeScript types"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Create frontend/src/components/AdvancedAnalytics.tsx. Implement data export functionality. Add comparison views.",
+      "completed_at": null
+    },
+    {
+      "id": "US-014",
+      "title": "Responsive Layout Implementation",
+      "description": "As a user on any device, I want a responsive layout so that I can view sessions on desktop, tablet, or mobile",
+      "acceptanceCriteria": [
+        "Three-column layout on desktop (selector, timeline, sidebar)",
+        "Two-column layout on tablet",
+        "Single-column stacked layout on mobile",
+        "Sidebar converts to collapsible drawer on mobile",
+        "Touch-friendly controls for mobile",
+        "Readable font sizes on all devices",
+        "CSS media queries implemented properly",
+        "No horizontal scrolling on any viewport"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Update frontend/src/App.tsx and all components. Implement responsive CSS with Tailwind breakpoints.",
+      "completed_at": null
+    },
+    {
+      "id": "US-015",
+      "title": "Playwright Visual Testing",
+      "description": "As a developer, I want automated screenshot tests so that I can verify UI functionality and aesthetics",
+      "acceptanceCriteria": [
+        "Playwright installed and configured",
+        "Test script for home page screenshot",
+        "Tests for session selection interaction",
+        "Screenshots of timeline with messages",
+        "Sidebar statistics visualization tests",
+        "Mobile viewport screenshots",
+        "Test fixtures with sample session data",
+        "All tests pass successfully",
+        "Screenshots saved to tests/screenshots/",
+        "CI-ready test configuration"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Create tests/e2e/ directory. Write tests/e2e/session_visualization.spec.py with Playwright. Configure pytest-playwright.",
+      "completed_at": null
+    },
+    {
+      "id": "US-016",
+      "title": "CLI Integration Mode",
+      "description": "As a CLI user, I want the backend to integrate with the CLI parser so that I can run the full stack from one command",
+      "acceptanceCriteria": [
+        "Single entry point script (e.g., 'claudecodesessionvis serve')",
+        "CLI accepts --path for custom session directory",
+        "CLI accepts --host and --port for server config",
+        "CLI accepts --single-session for specific session",
+        "Backend serves frontend static files in production mode",
+        "Hot reload in development mode",
+        "Graceful shutdown handling",
+        "Help text documents all options",
+        "Type checking passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Update src/claudecodesessionvis/cli.py with 'serve' command. Integrate API startup with CLI arguments.",
+      "completed_at": null
+    },
+    {
+      "id": "US-017",
+      "title": "Error Handling and User Feedback",
+      "description": "As a user, I want clear error messages so that I understand what went wrong and how to fix it",
+      "acceptanceCriteria": [
+        "API returns proper HTTP status codes",
+        "Frontend shows toast/notification for errors",
+        "Loading spinners during data fetches",
+        "Empty states for no sessions found",
+        "Validation errors shown inline",
+        "Network error retry mechanism",
+        "User-friendly error messages (not raw exceptions)",
+        "Console errors for debugging in dev mode"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Add error boundary in frontend/src/App.tsx. Create frontend/src/components/ErrorToast.tsx. Improve backend error responses.",
+      "completed_at": null
+    },
+    {
+      "id": "US-018",
+      "title": "Documentation and README",
+      "description": "As a new user, I want comprehensive documentation so that I can set up and use the tool easily",
+      "acceptanceCriteria": [
+        "README.md with project overview",
+        "Installation instructions for UV environment",
+        "CLI usage examples with screenshots",
+        "Web UI usage guide",
+        "Architecture diagram included",
+        "API documentation (endpoints and responses)",
+        "Development setup guide",
+        "Troubleshooting section",
+        "License and contribution guidelines"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "Create comprehensive README.md at project root. Add docs/ directory with detailed guides.",
+      "completed_at": null
+    },
+    {
+      "id": "US-019",
+      "title": "End-to-End Integration Testing",
+      "description": "As a developer, I want integration tests so that I can ensure all components work together correctly",
+      "acceptanceCriteria": [
+        "Pytest fixtures for test session data",
+        "Backend API tests with test client",
+        "Parser integration tests with sample files",
+        "Statistics calculation validation tests",
+        "Frontend component integration tests",
+        "Full stack test with backend + frontend",
+        "All tests pass with 'pytest'",
+        "Test coverage above 80%",
+        "Type checking passes with mypy"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "Create tests/ directory with test_api.py, test_parser.py, test_analytics.py. Set up pytest configuration in pyproject.toml.",
+      "completed_at": null
+    },
+    {
+      "id": "US-020",
+      "title": "Performance Optimization",
+      "description": "As a user with large sessions, I want fast loading times so that I can work efficiently with big datasets",
+      "acceptanceCriteria": [
+        "Lazy loading for large message lists",
+        "Virtual scrolling implemented for timeline",
+        "API pagination for sessions list",
+        "Caching strategy for parsed sessions",
+        "Debounced search/filter inputs",
+        "Optimized bundle size (code splitting)",
+        "Backend response time under 200ms for typical queries",
+        "Frontend initial load under 2 seconds",
+        "Lighthouse performance score above 90"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "Implement react-window or react-virtual in MessageTimeline. Add caching layer in backend API. Optimize frontend bundle with Vite.",
+      "completed_at": null
+    }
+  ]
+}

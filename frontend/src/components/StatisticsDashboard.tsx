@@ -11,7 +11,7 @@
  * - Interactive charts with Recharts
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect } from 'react';
 import toast from 'react-hot-toast';
 import {
   BarChart,
@@ -26,7 +26,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { fetchSessionStatistics, APIError } from '../api/sessions';
+import { useSessionStatisticsQuery } from '../hooks/useSessionsQuery';
 import type { SessionStatistics } from '../types/session';
 import './StatisticsDashboard.css';
 
@@ -48,34 +48,17 @@ const COLORS = [
 ];
 
 export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
-  const [statistics, setStatistics] = useState<SessionStatistics | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error: queryError } = useSessionStatisticsQuery(sessionId);
 
-  const loadStatistics = useCallback(async (id: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await fetchSessionStatistics(id);
-      setStatistics(data.statistics);
-    } catch (err) {
-      const errorMessage = err instanceof APIError ? err.message : 'Failed to load statistics';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      console.error('Failed to load statistics:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const statistics: SessionStatistics | null = data?.statistics || null;
+  const loading = isLoading;
+  const error = queryError?.message || null;
 
   useEffect(() => {
-    if (!sessionId) {
-      setStatistics(null);
-      return;
+    if (error) {
+      toast.error(error);
     }
-
-    loadStatistics(sessionId);
-  }, [sessionId, loadStatistics]);
+  }, [error]);
 
   if (!sessionId) {
     return (
