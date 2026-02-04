@@ -1,0 +1,123 @@
+/**
+ * SessionSelector component for selecting Claude Code sessions.
+ *
+ * Features:
+ * - Fetches sessions from API
+ * - Displays session name/ID and timestamp
+ * - Supports single-session mode via URL parameter
+ * - Handles loading and error states
+ */
+
+import { useEffect, useState } from 'react';
+import { fetchSessions } from '../api/sessions';
+import type { SessionSummary } from '../types/session';
+import './SessionSelector.css';
+
+interface SessionSelectorProps {
+  onSessionChange?: (sessionId: string | null) => void;
+}
+
+export function SessionSelector({ onSessionChange }: SessionSelectorProps) {
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check for single-session mode via URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionIdParam = urlParams.get('session');
+
+    async function loadSessions() {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await fetchSessions();
+        setSessions(data.sessions);
+
+        // If single-session mode is enabled via URL parameter
+        if (sessionIdParam) {
+          const sessionExists = data.sessions.some((s) => s.session_id === sessionIdParam);
+          if (sessionExists) {
+            setSelectedSessionId(sessionIdParam);
+            onSessionChange?.(sessionIdParam);
+          } else {
+            setError(`Session not found: ${sessionIdParam}`);
+          }
+        } else if (data.sessions.length > 0) {
+          // Default to first session in default mode
+          setSelectedSessionId(data.sessions[0].session_id);
+          onSessionChange?.(data.sessions[0].session_id);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load sessions');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadSessions();
+  }, [onSessionChange]);
+
+  const handleSessionChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const sessionId = event.target.value;
+    setSelectedSessionId(sessionId);
+    onSessionChange?.(sessionId);
+  };
+
+  if (loading) {
+    return (
+      <div className="session-selector loading">
+        <label htmlFor="session-select">Session:</label>
+        <select id="session-select" disabled>
+          <option>Loading sessions...</option>
+        </select>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="session-selector error">
+        <label htmlFor="session-select">Session:</label>
+        <select id="session-select" disabled>
+          <option>Error: {error}</option>
+        </select>
+        <p className="error-message">{error}</p>
+      </div>
+    );
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <div className="session-selector empty">
+        <label htmlFor="session-select">Session:</label>
+        <select id="session-select" disabled>
+          <option>No sessions available</option>
+        </select>
+      </div>
+    );
+  }
+
+  return (
+    <div className="session-selector">
+      <label htmlFor="session-select">Session:</label>
+      <select id="session-select" value={selectedSessionId || ''} onChange={handleSessionChange}>
+        {sessions.map((session) => (
+          <option key={session.session_id} value={session.session_id}>
+            {session.session_id} - {new Date(session.created_at).toLocaleString()}
+          </option>
+        ))}
+      </select>
+      <div className="session-info">
+        {selectedSessionId && (
+          <>
+            <span className="session-count">
+              {sessions.length} session{sessions.length !== 1 ? 's' : ''} available
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

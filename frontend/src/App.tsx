@@ -1,35 +1,34 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import './App.css';
+import { SessionSelector } from './components/SessionSelector';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+
+  const handleSessionChange = (sessionId: string | null) => {
+    setSelectedSessionId(sessionId);
+  };
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <div className="app">
+      <header>
+        <h1>Claude Code Session Visualizer</h1>
+      </header>
+      <main>
+        <SessionSelector onSessionChange={handleSessionChange} />
+        {selectedSessionId ? (
+          <div className="session-content">
+            <p>Selected Session: {selectedSessionId}</p>
+            <p className="placeholder-text">Session visualization components will be added here.</p>
+          </div>
+        ) : (
+          <div className="no-session">
+            <p>No session selected. Please select a session above.</p>
+          </div>
+        )}
+      </main>
+    </div>
+  );
 }
 
-export default App
+export default App;
