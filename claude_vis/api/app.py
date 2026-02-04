@@ -7,10 +7,13 @@ and computed statistics for Claude Code sessions.
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from claude_vis.api.config import get_settings
 from claude_vis.api.models import (
@@ -30,7 +33,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Lifespan context manager for FastAPI application."""
     global session_service
     settings = get_settings()
-    session_service = SessionService(session_path=settings.session_path)
+    session_service = SessionService(
+        session_path=settings.session_path, single_session=settings.single_session
+    )
     await session_service.initialize()
     yield
 
@@ -188,3 +193,37 @@ async def get_session_statistics(session_id: str) -> SessionStatisticsResponse:
 async def global_exception_handler(request: Any, exc: Exception) -> ErrorResponse:
     """Global exception handler for unhandled errors."""
     return ErrorResponse(error="Internal server error", detail=str(exc), status_code=500)
+
+
+# Serve frontend static files in production mode
+# This assumes the frontend has been built and the dist folder exists
+# The frontend should be accessible at the root URL
+frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    # Mount static assets with caching
+    app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str) -> FileResponse:
+        """
+        Serve frontend static files.
+
+        For any path that doesn't match an API route, serve the frontend.
+        This enables client-side routing in the React app.
+        """
+        # If the path starts with /api/, it should have been handled by API routes
+        # Let it fall through to 404
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        # Try to serve the requested file
+        file_path = frontend_dist / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+
+        # For all other routes, serve index.html (for client-side routing)
+        index_path = frontend_dist / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+
+        raise HTTPException(status_code=404, detail="Frontend not found")

@@ -35,6 +35,12 @@ def main() -> None:
     help="Path to Claude session directory (default: ~/.claude/projects/)",
 )
 @click.option(
+    "--single-session",
+    type=str,
+    default=None,
+    help="Load only a specific session by ID",
+)
+@click.option(
     "--reload",
     is_flag=True,
     default=False,
@@ -50,6 +56,7 @@ def serve(
     host: str | None,
     port: int | None,
     path: Path | None,
+    single_session: str | None,
     reload: bool,
     log_level: str | None,
 ) -> None:
@@ -57,7 +64,8 @@ def serve(
     Start the Claude Code Session Visualizer API server.
 
     This command starts a FastAPI server that provides REST endpoints
-    for accessing and analyzing Claude Code session data.
+    for accessing and analyzing Claude Code session data. The server
+    also serves the frontend static files in production mode.
 
     Examples:
 
@@ -70,13 +78,19 @@ def serve(
         # Use custom session directory
         claude-vis serve --path /path/to/sessions
 
-        # Enable auto-reload for development
+        # Load only a specific session
+        claude-vis serve --single-session abc123
+
+        # Enable auto-reload for development (hot reload)
         claude-vis serve --reload
 
         # Set custom log level
         claude-vis serve --log-level debug
     """
     # Import here to avoid loading uvicorn when not needed
+    import os
+    import signal
+
     import uvicorn
 
     from claude_vis.api.config import get_settings
@@ -89,6 +103,10 @@ def serve(
         # Update settings with custom path
         settings.session_path = path.expanduser().resolve()
 
+    # Handle single session mode via environment variable
+    if single_session is not None:
+        os.environ["CLAUDE_VIS_SINGLE_SESSION"] = single_session
+
     # Set host, port, and other configs
     server_host = host or settings.api_host
     server_port = port or settings.api_port
@@ -97,9 +115,11 @@ def serve(
 
     # Print startup information
     click.echo("=" * 60)
-    click.echo("Claude Code Session Visualizer API")
+    click.echo("Claude Code Session Visualizer")
     click.echo("=" * 60)
     click.echo(f"Session Path: {settings.session_path}")
+    if single_session:
+        click.echo(f"Single Session: {single_session}")
     click.echo(f"Server URL:   http://{server_host}:{server_port}")
     click.echo(f"API Docs:     http://{server_host}:{server_port}/docs")
     click.echo(f"Reload Mode:  {'Enabled' if server_reload else 'Disabled'}")
@@ -115,8 +135,18 @@ def serve(
         click.echo("The API will start but no sessions will be available.", err=True)
         click.echo()
 
+    # Setup signal handlers for graceful shutdown
+    def handle_shutdown_signal(signum: int, frame: object) -> None:
+        """Handle shutdown signals gracefully."""
+        click.echo("\n\nReceived shutdown signal, stopping server...")
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+
     try:
         # Start uvicorn server
+        click.echo("Starting server... (Press Ctrl+C to stop)\n")
         uvicorn.run(
             "claude_vis.api.app:app",
             host=server_host,
@@ -126,10 +156,10 @@ def serve(
             access_log=True,
         )
     except KeyboardInterrupt:
-        click.echo("\nShutting down server...")
+        click.echo("\n\nGracefully shutting down server...")
         sys.exit(0)
     except Exception as e:
-        click.echo(f"Error starting server: {e}", err=True)
+        click.echo(f"\nError starting server: {e}", err=True)
         sys.exit(1)
 
 

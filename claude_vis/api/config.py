@@ -8,16 +8,22 @@ from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict  # type: ignore[import-not-found]
 
 
-class Settings(BaseSettings):
+class Settings(BaseSettings):  # type: ignore[misc]
     """Application settings."""
 
     # Session path configuration
     session_path: Path = Field(
         default_factory=lambda: Path.home() / ".claude" / "projects",
         description="Path to Claude session directory",
+    )
+
+    # Single session mode (optional)
+    single_session: str | None = Field(
+        default=None,
+        description="Load only a specific session by ID",
     )
 
     # API configuration

@@ -21,14 +21,16 @@ class SessionService:
     and providing access methods for the API endpoints.
     """
 
-    def __init__(self, session_path: Path) -> None:
+    def __init__(self, session_path: Path, single_session: str | None = None) -> None:
         """
         Initialize session service.
 
         Args:
             session_path: Path to the directory containing session files
+            single_session: Optional session ID to load only a specific session
         """
         self.session_path = session_path
+        self.single_session = single_session
         self._sessions: dict[str, Session] = {}
         self._initialized = False
 
@@ -51,9 +53,20 @@ class SessionService:
             )
 
             # Cache sessions by session_id
-            self._sessions = {
+            all_sessions = {
                 session.metadata.session_id: session for session in parsed_data.sessions
             }
+
+            # Filter for single session if specified
+            if self.single_session:
+                if self.single_session in all_sessions:
+                    self._sessions = {self.single_session: all_sessions[self.single_session]}
+                    print(f"Loaded single session: {self.single_session}")
+                else:
+                    print(f"Warning: Session {self.single_session} not found")
+                    self._sessions = {}
+            else:
+                self._sessions = all_sessions
 
         except SessionParseError as e:
             # Log error but don't fail startup - allow API to run with empty sessions
