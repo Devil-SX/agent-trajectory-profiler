@@ -12,9 +12,10 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import toast from 'react-hot-toast';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { fetchSessionDetail } from '../api/sessions';
+import { fetchSessionDetail, APIError } from '../api/sessions';
 import type {
   MessageRecord,
   Session,
@@ -47,7 +48,10 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
         const data = await fetchSessionDetail(sessionId);
         setSession(data.session);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load session');
+        const errorMessage = err instanceof APIError ? err.message : 'Failed to load session';
+        setError(errorMessage);
+        toast.error(errorMessage);
+        console.error('Failed to load session:', err);
       } finally {
         setLoading(false);
       }

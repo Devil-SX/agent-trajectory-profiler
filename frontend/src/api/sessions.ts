@@ -11,20 +11,132 @@ import type {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 /**
+ * Retry configuration
+ */
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+
+/**
+ * Custom error class for API errors with status code
+ */
+export class APIError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number,
+    public isNetworkError: boolean = false
+  ) {
+    super(message);
+    this.name = 'APIError';
+  }
+}
+
+/**
+ * Sleep utility for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Get user-friendly error message based on status code
+ */
+function getUserFriendlyMessage(statusCode: number, defaultMessage: string): string {
+  switch (statusCode) {
+    case 404:
+      return 'The requested resource was not found';
+    case 500:
+      return 'Server error occurred. Please try again later';
+    case 503:
+      return 'Service is temporarily unavailable. Please try again';
+    default:
+      return defaultMessage;
+  }
+}
+
+/**
+ * Fetch with automatic retry logic for network errors and 5xx status codes
+ */
+async function fetchWithRetry(
+  url: string,
+  options?: RequestInit,
+  retries: number = MAX_RETRIES
+): Promise<Response> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+
+      // Don't retry on 4xx client errors (except auth issues)
+      if (!response.ok && response.status >= 400 && response.status < 500) {
+        const errorText = await response.text();
+        const message = getUserFriendlyMessage(
+          response.status,
+          `Request failed: ${response.status} ${errorText}`
+        );
+        throw new APIError(message, response.status);
+      }
+
+      // Retry on 5xx server errors
+      if (!response.ok && response.status >= 500) {
+        const errorText = await response.text();
+        const message = getUserFriendlyMessage(
+          response.status,
+          `Server error: ${response.status} ${errorText}`
+        );
+        lastError = new APIError(message, response.status);
+
+        if (attempt < retries) {
+          console.warn(`Attempt ${attempt + 1}/${retries + 1} failed, retrying...`);
+          await sleep(RETRY_DELAY_MS * (attempt + 1)); // Exponential backoff
+          continue;
+        }
+        throw lastError;
+      }
+
+      return response;
+    } catch (error) {
+      // Network errors (no response)
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        lastError = new APIError(
+          'Network error: Unable to connect to server. Please check your connection.',
+          0,
+          true
+        );
+
+        if (attempt < retries) {
+          console.warn(`Network error on attempt ${attempt + 1}/${retries + 1}, retrying...`);
+          await sleep(RETRY_DELAY_MS * (attempt + 1));
+          continue;
+        }
+        throw lastError;
+      }
+
+      // Re-throw APIError or other errors
+      throw error;
+    }
+  }
+
+  // Should not reach here, but TypeScript needs this
+  throw lastError || new Error('Unknown error occurred');
+}
+
+/**
  * Fetch all available sessions from the API.
  *
  * @returns Promise resolving to session list response
- * @throws Error if the API request fails
+ * @throws APIError if the API request fails
  */
 export async function fetchSessions(): Promise<SessionListResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/sessions`);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to fetch sessions: ${response.status} ${errorText}`);
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/sessions`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to fetch sessions:', error);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 /**
@@ -32,17 +144,18 @@ export async function fetchSessions(): Promise<SessionListResponse> {
  *
  * @param sessionId - The session ID to fetch
  * @returns Promise resolving to session detail response
- * @throws Error if the API request fails
+ * @throws APIError if the API request fails
  */
 export async function fetchSessionDetail(sessionId: string): Promise<SessionDetailResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to fetch session details: ${response.status} ${errorText}`);
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/sessions/${sessionId}`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error(`Failed to fetch session ${sessionId}:`, error);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 /**
@@ -50,17 +163,18 @@ export async function fetchSessionDetail(sessionId: string): Promise<SessionDeta
  *
  * @param sessionId - The session ID to fetch statistics for
  * @returns Promise resolving to session statistics response
- * @throws Error if the API request fails
+ * @throws APIError if the API request fails
  */
 export async function fetchSessionStatistics(
   sessionId: string,
 ): Promise<SessionStatisticsResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/statistics`);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to fetch session statistics: ${response.status} ${errorText}`);
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/sessions/${sessionId}/statistics`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error(`Failed to fetch statistics for session ${sessionId}:`, error);
+    }
+    throw error;
   }
-
-  return response.json();
 }

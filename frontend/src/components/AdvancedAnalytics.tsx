@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import toast from 'react-hot-toast';
 import {
   BarChart,
   Bar,
@@ -25,7 +26,7 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
-import { fetchSessionDetail, fetchSessionStatistics } from '../api/sessions';
+import { fetchSessionDetail, fetchSessionStatistics, APIError } from '../api/sessions';
 import type { AdvancedAnalytics as AdvancedAnalyticsType, SessionComparison } from '../types/analytics';
 import {
   computeAdvancedAnalytics,
@@ -63,7 +64,10 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
       const computed = computeAdvancedAnalytics(sessionData.session, statsData.statistics);
       setAnalytics(computed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load analytics');
+      const errorMessage = err instanceof APIError ? err.message : 'Failed to load analytics';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      console.error('Failed to load analytics:', err);
     } finally {
       setLoading(false);
     }
@@ -79,6 +83,8 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
       const comp = compareSessions(stats1.statistics, id1, stats2.statistics, id2);
       setComparison(comp);
     } catch (err) {
+      const errorMessage = err instanceof APIError ? err.message : 'Failed to load session comparison';
+      toast.error(errorMessage);
       console.error('Failed to load comparison:', err);
       setComparison(null);
     }

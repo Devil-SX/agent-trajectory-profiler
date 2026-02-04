@@ -9,7 +9,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { fetchSessions } from '../api/sessions';
+import toast from 'react-hot-toast';
+import { fetchSessions, APIError } from '../api/sessions';
 import type { SessionSummary } from '../types/session';
 import './SessionSelector.css';
 
@@ -49,7 +50,9 @@ export function SessionSelector({
             setSelectedSessionId(sessionIdParam);
             onSessionChange?.(sessionIdParam);
           } else {
-            setError(`Session not found: ${sessionIdParam}`);
+            const errorMsg = `Session not found: ${sessionIdParam}`;
+            setError(errorMsg);
+            toast.error(errorMsg);
           }
         } else if (data.sessions.length > 0) {
           // Default to first session in default mode
@@ -57,7 +60,10 @@ export function SessionSelector({
           onSessionChange?.(data.sessions[0].session_id);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load sessions');
+        const errorMessage = err instanceof APIError ? err.message : 'Failed to load sessions';
+        setError(errorMessage);
+        toast.error(errorMessage);
+        console.error('Failed to load sessions:', err);
       } finally {
         setLoading(false);
       }

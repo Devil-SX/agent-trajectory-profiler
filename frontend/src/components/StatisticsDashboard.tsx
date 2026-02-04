@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import toast from 'react-hot-toast';
 import {
   BarChart,
   Bar,
@@ -25,7 +26,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { fetchSessionStatistics } from '../api/sessions';
+import { fetchSessionStatistics, APIError } from '../api/sessions';
 import type { SessionStatistics } from '../types/session';
 import './StatisticsDashboard.css';
 
@@ -58,7 +59,10 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
       const data = await fetchSessionStatistics(id);
       setStatistics(data.statistics);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load statistics');
+      const errorMessage = err instanceof APIError ? err.message : 'Failed to load statistics';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      console.error('Failed to load statistics:', err);
     } finally {
       setLoading(false);
     }
