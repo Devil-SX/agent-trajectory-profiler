@@ -320,6 +320,74 @@ class SessionStatistics(BaseModel):
         """Get tool usage summary as dict."""
         return {tc.tool_name: tc.count for tc in self.tool_calls}
 
+    @property
+    def most_used_tools(self) -> list[tuple[str, int]]:
+        """
+        Get the most used tools sorted by usage count.
+
+        Returns:
+            List of tuples (tool_name, count) sorted by count descending
+        """
+        return [(tc.tool_name, tc.count) for tc in self.tool_calls]
+
+    @property
+    def tool_success_rate(self) -> dict[str, float]:
+        """
+        Calculate success rate for each tool.
+
+        Returns:
+            Dict mapping tool_name to success rate (0.0 to 1.0)
+        """
+        rates = {}
+        for tc in self.tool_calls:
+            total_results = tc.success_count + tc.error_count
+            if total_results > 0:
+                rates[tc.tool_name] = tc.success_count / total_results
+            else:
+                # No results tracked, assume 100% success
+                rates[tc.tool_name] = 1.0
+        return rates
+
+    @property
+    def tool_token_breakdown(self) -> dict[str, int]:
+        """
+        Get token usage breakdown by tool.
+
+        Returns:
+            Dict mapping tool_name to total tokens consumed
+        """
+        return {tc.tool_name: tc.total_tokens for tc in self.tool_calls}
+
+    @property
+    def total_tool_errors(self) -> int:
+        """Calculate total number of tool errors."""
+        return sum(tc.error_count for tc in self.tool_calls)
+
+    @property
+    def most_error_prone_tools(self) -> list[tuple[str, int]]:
+        """
+        Get tools with the most errors.
+
+        Returns:
+            List of tuples (tool_name, error_count) sorted by error count descending
+        """
+        tools_with_errors = [
+            (tc.tool_name, tc.error_count) for tc in self.tool_calls if tc.error_count > 0
+        ]
+        return sorted(tools_with_errors, key=lambda x: x[1], reverse=True)
+
+    def get_top_tools(self, n: int = 5) -> list[ToolCallStatistics]:
+        """
+        Get top N most frequently used tools.
+
+        Args:
+            n: Number of top tools to return
+
+        Returns:
+            List of ToolCallStatistics for the top N tools
+        """
+        return self.tool_calls[:n]
+
 
 class Session(BaseModel):
     """

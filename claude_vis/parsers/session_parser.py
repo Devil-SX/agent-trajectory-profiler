@@ -17,6 +17,9 @@ from claude_vis.models import (
     Session,
     SessionMetadata,
     SessionStatistics,
+    SubagentSession,
+    SubagentType,
+    ToolCallStatistics,
 )
 
 
@@ -110,15 +113,75 @@ def extract_session_metadata(
     )
 
 
+def extract_subagent_sessions(messages: list[MessageRecord]) -> list[SubagentSession]:
+    """
+    Extract and group subagent sessions from messages.
+
+    Subagent sessions are identified by the agentId field and grouped together.
+    This function analyzes the messages to find all subagent invocations and
+    group them into separate SubagentSession objects.
+
+    Args:
+        messages: List of all message records
+
+    Returns:
+        List of SubagentSession objects
+    """
+    # Group messages by agent_id
+    agent_messages: dict[str, list[MessageRecord]] = {}
+
+    for msg in messages:
+        if msg.is_subagent_message and msg.agentId:
+            if msg.agentId not in agent_messages:
+                agent_messages[msg.agentId] = []
+            agent_messages[msg.agentId].append(msg)
+
+    # Create SubagentSession objects
+    subagent_sessions: list[SubagentSession] = []
+
+    for agent_id, agent_msgs in agent_messages.items():
+        if not agent_msgs:
+            continue
+
+        # Sort messages by timestamp
+        agent_msgs.sort(key=lambda m: m.parsed_timestamp)
+
+        # Determine agent type from context (this could be enhanced with more heuristics)
+        agent_type = SubagentType.OTHER
+
+        # Find parent message uuid (the message that spawned this subagent)
+        parent_uuid = agent_msgs[0].parentUuid or ""
+
+        subagent_session = SubagentSession(
+            agent_id=agent_id,
+            agent_type=agent_type,
+            messages=agent_msgs,
+            start_time=agent_msgs[0].parsed_timestamp,
+            end_time=agent_msgs[-1].parsed_timestamp if len(agent_msgs) > 1 else None,
+            parent_message_uuid=parent_uuid,
+        )
+
+        subagent_sessions.append(subagent_session)
+
+    return subagent_sessions
+
+
 def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatistics:
     """
     Calculate comprehensive statistics for a session.
+
+    This function analyzes all messages in a session to provide detailed statistics including:
+    - Message counts by role (user, assistant, system)
+    - Token usage breakdown (input, output, cache)
+    - Tool call statistics with success/error tracking
+    - Subagent invocation tracking by type
+    - Session duration and timestamps
 
     Args:
         messages: List of message records
 
     Returns:
-        SessionStatistics object
+        SessionStatistics object with comprehensive metrics
     """
     user_count = 0
     assistant_count = 0
@@ -130,8 +193,12 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
     cache_read_tokens = 0
     cache_creation_tokens = 0
 
-    tool_call_counts: dict[str, int] = {}
-    subagent_counts: dict[str, int] = {}
+    # Enhanced tool tracking: tool_name -> {count, tokens, success, error}
+    tool_stats: dict[str, dict[str, int]] = {}
+    # Map tool_use_id to tool_name for result tracking
+    tool_use_map: dict[str, str] = {}
+    # Track subagent sessions by agent_id to deduplicate
+    subagent_sessions_map: dict[str, str] = {}
 
     first_time: datetime | None = None
     last_time: datetime | None = None
@@ -164,19 +231,73 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
             if usage.cache_creation_input_tokens:
                 cache_creation_tokens += usage.cache_creation_input_tokens
 
-        # Count tool calls
+        # Process message content for tool calls and results
         if msg.message and msg.message.content:
             if isinstance(msg.message.content, list):
                 for content_block in msg.message.content:
-                    if isinstance(content_block, dict) and content_block.get("type") == "tool_use":
-                        tool_name = content_block.get("name", "unknown")
-                        tool_call_counts[tool_name] = tool_call_counts.get(tool_name, 0) + 1
+                    if isinstance(content_block, dict):
+                        block_type = content_block.get("type")
 
-        # Count subagents
+                        # Track tool_use blocks
+                        if block_type == "tool_use":
+                            tool_name = content_block.get("name", "unknown")
+                            tool_id = content_block.get("id", "")
+
+                            # Initialize tool stats if not present
+                            if tool_name not in tool_stats:
+                                tool_stats[tool_name] = {
+                                    "count": 0,
+                                    "tokens": 0,
+                                    "success": 0,
+                                    "error": 0,
+                                }
+
+                            tool_stats[tool_name]["count"] += 1
+                            tool_use_map[tool_id] = tool_name
+
+                            # Add token cost for this tool call (if available)
+                            if msg.message.usage:
+                                tool_stats[tool_name]["tokens"] += msg.message.usage.total_tokens
+
+                        # Track tool_result blocks for success/error counting
+                        elif block_type == "tool_result":
+                            tool_use_id = content_block.get("tool_use_id", "")
+                            is_error = content_block.get("is_error", False)
+
+                            if tool_use_id in tool_use_map:
+                                tool_name = tool_use_map[tool_use_id]
+                                if tool_name in tool_stats:
+                                    if is_error:
+                                        tool_stats[tool_name]["error"] += 1
+                                    else:
+                                        tool_stats[tool_name]["success"] += 1
+
+        # Track subagent sessions
         if msg.is_subagent_message and msg.agentId:
-            # Try to infer agent type from available data
-            agent_type = "other"
-            subagent_counts[agent_type] = subagent_counts.get(agent_type, 0) + 1
+            subagent_sessions_map[msg.agentId] = msg.agentId
+
+    # Convert tool stats to ToolCallStatistics objects
+    tool_call_list = [
+        ToolCallStatistics(
+            tool_name=tool_name,
+            count=stats["count"],
+            total_tokens=stats["tokens"],
+            success_count=stats["success"],
+            error_count=stats["error"],
+        )
+        for tool_name, stats in tool_stats.items()
+    ]
+
+    # Sort by count descending for easier consumption
+    tool_call_list.sort(key=lambda x: x.count, reverse=True)
+
+    # Extract subagent sessions and count by type
+    subagent_sessions_list = extract_subagent_sessions(messages)
+    subagent_type_counts: dict[str, int] = {}
+
+    for subagent in subagent_sessions_list:
+        agent_type_str = subagent.agent_type.value
+        subagent_type_counts[agent_type_str] = subagent_type_counts.get(agent_type_str, 0) + 1
 
     # Calculate duration
     duration_seconds = None
@@ -193,9 +314,10 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
         total_output_tokens=total_output_tokens,
         cache_read_tokens=cache_read_tokens,
         cache_creation_tokens=cache_creation_tokens,
-        total_tool_calls=sum(tool_call_counts.values()),
-        subagent_count=sum(subagent_counts.values()),
-        subagent_sessions=subagent_counts,
+        tool_calls=tool_call_list,
+        total_tool_calls=sum(tool_stats[t]["count"] for t in tool_stats),
+        subagent_count=len(subagent_sessions_list),
+        subagent_sessions=subagent_type_counts,
         session_duration_seconds=duration_seconds,
         first_message_time=first_time,
         last_message_time=last_time,
@@ -210,7 +332,7 @@ def parse_session_file(file_path: Path) -> Session:
         file_path: Path to the .jsonl session file
 
     Returns:
-        Session object with complete data
+        Session object with complete data including subagent sessions
 
     Raises:
         SessionParseError: If parsing fails
@@ -227,6 +349,9 @@ def parse_session_file(file_path: Path) -> Session:
     # Extract metadata
     metadata = extract_session_metadata(messages, session_id, file_path)
 
+    # Extract subagent sessions
+    subagent_sessions = extract_subagent_sessions(messages)
+
     # Calculate statistics
     statistics = calculate_session_statistics(messages)
 
@@ -234,6 +359,7 @@ def parse_session_file(file_path: Path) -> Session:
     session = Session(
         metadata=metadata,
         messages=messages,
+        subagent_sessions=subagent_sessions,
         statistics=statistics,
     )
 
