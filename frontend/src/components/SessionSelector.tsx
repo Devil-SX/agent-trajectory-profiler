@@ -15,11 +15,18 @@ import './SessionSelector.css';
 
 interface SessionSelectorProps {
   onSessionChange?: (sessionId: string | null) => void;
+  onComparisonSessionChange?: (sessionId: string | null) => void;
+  selectedSessionId?: string | null;
+  comparisonSessionId?: string | null;
 }
 
-export function SessionSelector({ onSessionChange }: SessionSelectorProps) {
+export function SessionSelector({
+  onSessionChange,
+  onComparisonSessionChange,
+}: SessionSelectorProps) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [comparisonSessionId, setComparisonSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +72,12 @@ export function SessionSelector({ onSessionChange }: SessionSelectorProps) {
     onSessionChange?.(sessionId);
   };
 
+  const handleComparisonSessionChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const sessionId = event.target.value || null;
+    setComparisonSessionId(sessionId);
+    onComparisonSessionChange?.(sessionId);
+  };
+
   if (loading) {
     return (
       <div className="session-selector loading">
@@ -99,16 +112,41 @@ export function SessionSelector({ onSessionChange }: SessionSelectorProps) {
     );
   }
 
+  const showComparison = onComparisonSessionChange !== undefined;
+
   return (
     <div className="session-selector">
-      <label htmlFor="session-select">Session:</label>
-      <select id="session-select" value={selectedSessionId || ''} onChange={handleSessionChange}>
-        {sessions.map((session) => (
-          <option key={session.session_id} value={session.session_id}>
-            {session.session_id} - {new Date(session.created_at).toLocaleString()}
-          </option>
-        ))}
-      </select>
+      <div className="selector-row">
+        <label htmlFor="session-select">Session:</label>
+        <select id="session-select" value={selectedSessionId || ''} onChange={handleSessionChange}>
+          {sessions.map((session) => (
+            <option key={session.session_id} value={session.session_id}>
+              {session.session_id} - {new Date(session.created_at).toLocaleString()}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {showComparison && (
+        <div className="selector-row">
+          <label htmlFor="comparison-select">Compare with:</label>
+          <select
+            id="comparison-select"
+            value={comparisonSessionId || ''}
+            onChange={handleComparisonSessionChange}
+          >
+            <option value="">None</option>
+            {sessions
+              .filter((s) => s.session_id !== selectedSessionId)
+              .map((session) => (
+                <option key={session.session_id} value={session.session_id}>
+                  {session.session_id} - {new Date(session.created_at).toLocaleString()}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
+
       <div className="session-info">
         {selectedSessionId && (
           <>
