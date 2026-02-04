@@ -2,7 +2,11 @@
  * API client for session-related endpoints.
  */
 
-import type { SessionListResponse, SessionDetailResponse } from '../types/session';
+import type {
+  SessionListResponse,
+  SessionDetailResponse,
+  SessionStatisticsResponse,
+} from '../types/session';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -36,6 +40,26 @@ export async function fetchSessionDetail(sessionId: string): Promise<SessionDeta
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Failed to fetch session details: ${response.status} ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch session statistics and analytics.
+ *
+ * @param sessionId - The session ID to fetch statistics for
+ * @returns Promise resolving to session statistics response
+ * @throws Error if the API request fails
+ */
+export async function fetchSessionStatistics(
+  sessionId: string,
+): Promise<SessionStatisticsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/statistics`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to fetch session statistics: ${response.status} ${errorText}`);
   }
 
   return response.json();

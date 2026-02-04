@@ -151,3 +151,35 @@ export interface SessionMetadataDisplay {
   version: string;
   totalTokens: number;
 }
+
+export interface ToolCallStatistics {
+  tool_name: string;
+  count: number;
+  total_tokens: number;
+  success_count: number;
+  error_count: number;
+}
+
+export interface SessionStatistics {
+  message_count: number;
+  user_message_count: number;
+  assistant_message_count: number;
+  system_message_count: number;
+  total_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  tool_calls: ToolCallStatistics[];
+  total_tool_calls: number;
+  subagent_count: number;
+  subagent_sessions: Record<string, number>;
+  session_duration_seconds: number | null;
+  first_message_time: string | null;
+  last_message_time: string | null;
+}
+
+export interface SessionStatisticsResponse {
+  session_id: string;
+  statistics: SessionStatistics;
+}

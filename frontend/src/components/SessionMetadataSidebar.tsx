@@ -84,6 +84,8 @@ export function SessionMetadataSidebar({ sessionId }: SessionMetadataSidebarProp
     }
 
     async function loadMetadata() {
+      if (!sessionId) return;
+
       try {
         setLoading(true);
         setError(null);
