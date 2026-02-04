@@ -1,0 +1,323 @@
+/**
+ * Styles for MessageTimeline component.
+ * Social-media-style narrow, tall scrollable timeline with message bubbles.
+ */
+
+.message-timeline {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  background: #f5f5f5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.message-timeline.loading,
+.message-timeline.error,
+.message-timeline.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  min-height: 400px;
+}
+
+.loading-spinner {
+  font-size: 1.1rem;
+  color: #666;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.error-message {
+  text-align: center;
+  color: #d32f2f;
+}
+
+.error-message h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.3rem;
+}
+
+.timeline-header {
+  background: white;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.timeline-header h2 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.message-count {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for webkit browsers */
+.messages-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: #f5f5f5;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+  border-radius: 4px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: #a0a0a0;
+}
+
+.message-bubble {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* User messages - align right with blue theme */
+.message-bubble.user {
+  background: #2196f3;
+  color: white;
+  margin-left: auto;
+  max-width: 85%;
+}
+
+/* Assistant messages - align left with light gray theme */
+.message-bubble.assistant {
+  background: white;
+  color: #333;
+  margin-right: auto;
+  max-width: 85%;
+  border: 1px solid #e0e0e0;
+}
+
+/* Subagent messages - distinct purple theme */
+.message-bubble.subagent {
+  background: #9c27b0;
+  color: white;
+  margin-right: auto;
+  max-width: 85%;
+  border: 2px solid #7b1fa2;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.message-source {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.message-bubble.user .message-source {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.message-bubble.assistant .message-source {
+  color: #1976d2;
+}
+
+.message-bubble.subagent .message-source {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.message-timestamp {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.message-content {
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.message-text {
+  margin: 0.5rem 0;
+  white-space: pre-wrap;
+}
+
+.message-text:first-child {
+  margin-top: 0;
+}
+
+.message-text:last-child {
+  margin-bottom: 0;
+}
+
+/* Code blocks */
+.code-block-container {
+  margin: 0.75rem 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.code-block-header {
+  background: #2d2d2d;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid #3e3e3e;
+}
+
+.code-language {
+  font-size: 0.75rem;
+  color: #9cdcfe;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+/* Override react-syntax-highlighter default styles */
+.code-block-container pre {
+  margin: 0 !important;
+  padding: 0.75rem !important;
+  font-size: 0.85rem !important;
+  line-height: 1.5 !important;
+}
+
+/* Tool blocks */
+.thinking-block,
+.tool-use-block,
+.tool-result-block {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.message-bubble.user .thinking-block,
+.message-bubble.user .tool-use-block,
+.message-bubble.user .tool-result-block {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.message-bubble.subagent .thinking-block,
+.message-bubble.subagent .tool-use-block,
+.message-bubble.subagent .tool-result-block {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.tool-result-block.error {
+  background: rgba(244, 67, 54, 0.15);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.thinking-label,
+.tool-label,
+.tool-result-label {
+  font-weight: 600;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .message-timeline {
+    max-width: 100%;
+    border-radius: 0;
+  }
+
+  .message-bubble {
+    max-width: 90%;
+  }
+
+  .timeline-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .timeline-header h2 {
+    font-size: 1.2rem;
+  }
+
+  .messages-container {
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .message-bubble {
+    max-width: 95%;
+    padding: 0.75rem;
+  }
+
+  .message-header {
+    font-size: 0.75rem;
+  }
+
+  .message-content {
+    font-size: 0.9rem;
+  }
+
+  .code-block-container pre {
+    font-size: 0.75rem !important;
+  }
+}
+
+/* Keyboard navigation support */
+.message-bubble:focus-within {
+  outline: 2px solid #2196f3;
+  outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+  .message-timeline {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .messages-container {
+    overflow: visible;
+    height: auto;
+  }
+
+  .message-bubble {
+    page-break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+}

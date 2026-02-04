@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import './App.css';
 import { SessionSelector } from './components/SessionSelector';
+import { MessageTimeline } from './components/MessageTimeline';
 
 function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -18,8 +19,7 @@ function App() {
         <SessionSelector onSessionChange={handleSessionChange} />
         {selectedSessionId ? (
           <div className="session-content">
-            <p>Selected Session: {selectedSessionId}</p>
-            <p className="placeholder-text">Session visualization components will be added here.</p>
+            <MessageTimeline sessionId={selectedSessionId} autoScrollToBottom={true} />
           </div>
         ) : (
           <div className="no-session">
