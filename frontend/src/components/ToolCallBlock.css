@@ -1,0 +1,359 @@
+/**
+ * Styles for ToolCallBlock component.
+ * Provides color coding, expandable sections, and clear visual hierarchy.
+ */
+
+.tool-call-block {
+  margin: 0.75rem 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border-left: 4px solid;
+  background: rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+}
+
+.tool-call-block:hover {
+  background: rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Color coding by category */
+.tool-call-block.category-file-read {
+  border-left-color: #2196f3;
+}
+
+.tool-call-block.category-file-write {
+  border-left-color: #4caf50;
+}
+
+.tool-call-block.category-file-search {
+  border-left-color: #ff9800;
+}
+
+.tool-call-block.category-execution {
+  border-left-color: #9c27b0;
+}
+
+.tool-call-block.category-agent {
+  border-left-color: #e91e63;
+}
+
+.tool-call-block.category-web {
+  border-left-color: #00bcd4;
+}
+
+.tool-call-block.category-analysis {
+  border-left-color: #ffeb3b;
+}
+
+.tool-call-block.category-other {
+  border-left-color: #9e9e9e;
+}
+
+/* Error state */
+.tool-call-block.has-error {
+  border-left-color: #f44336;
+  background: rgba(244, 67, 54, 0.05);
+}
+
+.tool-call-block.has-error:hover {
+  background: rgba(244, 67, 54, 0.08);
+}
+
+/* Header */
+.tool-call-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+}
+
+.tool-call-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.tool-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #333;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.message-bubble.user .tool-name {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.message-bubble.subagent .tool-name {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.tool-category-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.1);
+  color: #666;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.message-bubble.user .tool-category-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.message-bubble.subagent .tool-category-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tool-error-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  background: #f44336;
+  color: white;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tool-call-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tool-tokens {
+  font-size: 0.75rem;
+  color: #666;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.message-bubble.user .tool-tokens {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.message-bubble.subagent .tool-tokens {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.expand-button,
+.result-toggle-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  color: #666;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.expand-button:hover,
+.result-toggle-button:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
+}
+
+.message-bubble.user .expand-button,
+.message-bubble.user .result-toggle-button {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.message-bubble.user .expand-button:hover,
+.message-bubble.user .result-toggle-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.message-bubble.subagent .expand-button,
+.message-bubble.subagent .result-toggle-button {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.message-bubble.subagent .expand-button:hover,
+.message-bubble.subagent .result-toggle-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.expand-button:focus,
+.result-toggle-button:focus {
+  outline: 2px solid #2196f3;
+  outline-offset: 2px;
+}
+
+/* Parameters section */
+.tool-call-parameters {
+  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.02);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.message-bubble.user .tool-call-parameters {
+  background: rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.15);
+}
+
+.message-bubble.subagent .tool-call-parameters {
+  background: rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.15);
+}
+
+.parameters-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.message-bubble.user .parameters-header {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.message-bubble.subagent .parameters-header {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.parameters-content {
+  margin: 0;
+  padding: 0.75rem;
+  background: rgba(30, 30, 30, 0.95);
+  color: #e0e0e0;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+/* Result section */
+.tool-result-section {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.message-bubble.user .tool-result-section {
+  border-top-color: rgba(255, 255, 255, 0.15);
+}
+
+.message-bubble.subagent .tool-result-section {
+  border-top-color: rgba(255, 255, 255, 0.15);
+}
+
+.result-toggle-button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+}
+
+.result-status-icon {
+  font-size: 1rem;
+  margin-right: 0.25rem;
+}
+
+.result-label {
+  flex: 1;
+  font-size: 0.85rem;
+}
+
+.result-toggle-icon {
+  margin-left: auto;
+}
+
+.tool-result-content {
+  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.message-bubble.user .tool-result-content {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.message-bubble.subagent .tool-result-content {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tool-result-content.error {
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.tool-result-content pre {
+  margin: 0;
+  padding: 0.75rem;
+  background: rgba(30, 30, 30, 0.95);
+  color: #e0e0e0;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.tool-result-content.error pre {
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .tool-call-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .tool-call-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .tool-category-badge {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .tool-call-block {
+    margin: 0.5rem 0;
+  }
+
+  .tool-call-header {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .tool-name {
+    font-size: 0.85rem;
+  }
+
+  .tool-tokens {
+    font-size: 0.7rem;
+  }
+
+  .parameters-content,
+  .tool-result-content pre {
+    font-size: 0.75rem;
+    padding: 0.5rem;
+  }
+}

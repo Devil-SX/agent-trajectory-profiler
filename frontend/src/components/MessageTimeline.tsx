@@ -24,6 +24,7 @@ import type {
   SubagentType,
 } from '../types/session';
 import { SubagentSession } from './SubagentSession';
+import { ToolCallBlock } from './ToolCallBlock';
 import './MessageTimeline.css';
 
 interface MessageTimelineProps {
@@ -80,7 +81,11 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     return 'assistant';
   };
 
-  const renderContentBlock = (content: unknown, index: number) => {
+  const renderContentBlock = (
+    content: unknown,
+    index: number,
+    allContent: unknown[]
+  ) => {
     if (!content || typeof content !== 'object') {
       return null;
     }
@@ -102,23 +107,31 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
 
     if (block.type === 'tool_use') {
       const toolBlock = block as unknown as ToolUseContent;
+
+      // Find the matching tool_result in the same message
+      const toolResult = allContent.find((c) => {
+        if (typeof c === 'object' && c !== null && 'type' in c) {
+          const contentBlock = c as Record<string, unknown>;
+          return (
+            contentBlock.type === 'tool_result' &&
+            contentBlock.tool_use_id === toolBlock.id
+          );
+        }
+        return false;
+      }) as ToolResultContent | undefined;
+
       return (
-        <div key={index} className="tool-use-block">
-          <span className="tool-label">🔧 Tool: {toolBlock.name}</span>
-        </div>
+        <ToolCallBlock
+          key={index}
+          toolUse={toolBlock}
+          toolResult={toolResult}
+        />
       );
     }
 
+    // Skip standalone tool_result blocks as they're rendered with their tool_use
     if (block.type === 'tool_result') {
-      const resultBlock = block as unknown as ToolResultContent;
-      const isError = resultBlock.is_error;
-      return (
-        <div key={index} className={`tool-result-block ${isError ? 'error' : ''}`}>
-          <span className="tool-result-label">
-            {isError ? '❌' : '✓'} Tool Result
-          </span>
-        </div>
-      );
+      return null;
     }
 
     return null;
@@ -187,7 +200,9 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     }
 
     if (Array.isArray(content)) {
-      const blocks = content.map((block, index) => renderContentBlock(block, index)).filter((b): b is React.ReactElement => b !== null);
+      const blocks = content
+        .map((block, index) => renderContentBlock(block, index, content))
+        .filter((b): b is React.ReactElement => b !== null);
       return blocks.length > 0 ? <>{blocks}</> : <p className="message-text">(Empty content)</p>;
     }
 

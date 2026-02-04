@@ -60,6 +60,33 @@ export interface ToolResultContent extends ContentBlock {
   is_error?: boolean | null;
 }
 
+// Tool categories for visualization
+export type ToolCategory =
+  | 'file-read'
+  | 'file-write'
+  | 'file-search'
+  | 'execution'
+  | 'agent'
+  | 'web'
+  | 'analysis'
+  | 'other';
+
+// Enhanced tool call data for visualization
+export interface ToolCallDisplay {
+  id: string;
+  name: string;
+  category: ToolCategory;
+  input: Record<string, unknown>;
+  result?: ToolResultContent;
+  tokens?: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  hasError: boolean;
+  timestamp?: string;
+}
+
 export type MessageContent = TextContent | ThinkingContent | ToolUseContent | ToolResultContent;
 
 export interface TokenUsage {
