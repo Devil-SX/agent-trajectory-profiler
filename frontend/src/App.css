@@ -1,12 +1,16 @@
 .app {
-  max-width: 1200px;
+  max-width: 100%;
   margin: 0 auto;
   padding: 2rem;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .app header {
   margin-bottom: 2rem;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .app header h1 {
@@ -19,6 +23,15 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  flex: 1;
+  overflow: hidden;
+}
+
+.main-content {
+  display: flex;
+  gap: 1.5rem;
+  flex: 1;
+  overflow: hidden;
 }
 
 .session-content {
@@ -26,8 +39,7 @@
   background-color: #ffffff;
   border-radius: 8px;
   border: 1px solid #e0e0e0;
-  height: calc(100vh - 250px);
-  min-height: 500px;
+  flex: 1;
   overflow: hidden;
 }
 
@@ -47,6 +59,21 @@
   background-color: #f9f9f9;
   border-radius: 8px;
   border: 1px dashed #ccc;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Responsive behavior */
+@media (max-width: 768px) {
+  .main-content {
+    flex-direction: column;
+  }
+
+  .app {
+    padding: 1rem;
+  }
 }
 
 @media (prefers-color-scheme: dark) {

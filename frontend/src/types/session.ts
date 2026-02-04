@@ -138,3 +138,16 @@ export interface SubagentSession {
   end_time?: string | null;
   parent_message_uuid: string;
 }
+
+export interface SessionMetadataDisplay {
+  sessionId: string;
+  createdAt: string;
+  duration: string;
+  totalMessages: number;
+  modelsUsed: string[];
+  status: 'active' | 'completed' | 'error';
+  gitBranch?: string | null;
+  projectPath: string;
+  version: string;
+  totalTokens: number;
+}
