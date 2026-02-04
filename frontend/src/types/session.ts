@@ -25,23 +25,11 @@ export interface ErrorResponse {
   status_code?: number;
 }
 
-export enum MessageRole {
-  USER = 'user',
-  ASSISTANT = 'assistant',
-  SYSTEM = 'system',
-}
+export type MessageRole = 'user' | 'assistant' | 'system';
 
-export enum MessageSource {
-  MAIN = 'main',
-  SUBAGENT = 'subagent',
-}
+export type MessageSource = 'main' | 'subagent';
 
-export enum MessageType {
-  USER = 'user',
-  ASSISTANT = 'assistant',
-  FILE_HISTORY_SNAPSHOT = 'file-history-snapshot',
-  SUMMARY = 'summary',
-}
+export type MessageType = 'user' | 'assistant' | 'file-history-snapshot' | 'summary';
 
 export interface ContentBlock {
   type: string;
@@ -129,4 +117,24 @@ export interface Session {
 
 export interface SessionDetailResponse {
   session: Session;
+}
+
+export type SubagentType =
+  | 'Explore'
+  | 'Bash'
+  | 'general-purpose'
+  | 'Plan'
+  | 'test-runner'
+  | 'build-validator'
+  | 'statusline-setup'
+  | 'prompt_suggestion'
+  | 'other';
+
+export interface SubagentSession {
+  agent_id: string;
+  agent_type: SubagentType;
+  messages: MessageRecord[];
+  start_time: string;
+  end_time?: string | null;
+  parent_message_uuid: string;
 }

@@ -1,0 +1,306 @@
+/**
+ * Styles for SubagentSession component.
+ * Visual hierarchy with distinct colors and nesting indicators.
+ */
+
+.subagent-session {
+  margin: 0.75rem 0;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  border-left: 4px solid;
+}
+
+/* Distinct color palette for nesting levels */
+.subagent-session.nest-level-0 {
+  background: #f3e5f5;
+  border-left-color: #9c27b0;
+}
+
+.subagent-session.nest-level-1 {
+  background: #e8eaf6;
+  border-left-color: #5c6bc0;
+}
+
+.subagent-session.nest-level-2 {
+  background: #e0f2f1;
+  border-left-color: #26a69a;
+}
+
+.subagent-session.nest-level-3 {
+  background: #fff3e0;
+  border-left-color: #ff9800;
+}
+
+.subagent-session.nest-level-4 {
+  background: #fce4ec;
+  border-left-color: #ec407a;
+}
+
+.subagent-session.nest-level-5 {
+  background: #f1f8e9;
+  border-left-color: #9ccc65;
+}
+
+/* Subagent header */
+.subagent-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.subagent-header:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.subagent-header-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.subagent-icon {
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+}
+
+.subagent-type {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+  letter-spacing: 0.3px;
+}
+
+.subagent-id {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #666;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+}
+
+.message-count-badge {
+  font-size: 0.75rem;
+  background: rgba(0, 0, 0, 0.1);
+  color: #555;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.expand-toggle {
+  background: none;
+  border: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  color: #666;
+  transition: transform 0.3s ease, color 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.expand-toggle:hover {
+  color: #333;
+}
+
+.expand-toggle.expanded {
+  transform: rotate(0deg);
+}
+
+.expand-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* Subagent content */
+.subagent-content {
+  padding: 0.75rem;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 5000px;
+  }
+}
+
+/* Subagent messages */
+.subagent-message {
+  background: white;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.subagent-message:last-child {
+  margin-bottom: 0;
+}
+
+.subagent-message .message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.subagent-message .message-role {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #7b1fa2;
+}
+
+.subagent-message .message-timestamp {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #999;
+}
+
+.subagent-message .message-content {
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  color: #333;
+}
+
+/* Nested subagent indentation */
+.subagent-session .subagent-session {
+  margin-left: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* Thinking and tool blocks within subagents */
+.subagent-message .thinking-block,
+.subagent-message .tool-use-block,
+.subagent-message .tool-result-block {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.subagent-message .tool-result-block.error {
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.2);
+}
+
+/* Code blocks within subagent messages */
+.subagent-message .code-block-container {
+  margin: 0.5rem 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.subagent-message .code-block-header {
+  background: #2d2d2d;
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid #3e3e3e;
+}
+
+.subagent-message .code-language {
+  font-size: 0.7rem;
+  color: #9cdcfe;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.subagent-message .code-block-container pre {
+  margin: 0 !important;
+  padding: 0.6rem !important;
+  font-size: 0.8rem !important;
+  line-height: 1.4 !important;
+}
+
+.subagent-message .message-text {
+  margin: 0.4rem 0;
+  white-space: pre-wrap;
+}
+
+.subagent-message .message-text:first-child {
+  margin-top: 0;
+}
+
+.subagent-message .message-text:last-child {
+  margin-bottom: 0;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .subagent-header {
+    padding: 0.6rem 0.8rem;
+  }
+
+  .subagent-type {
+    font-size: 0.85rem;
+  }
+
+  .subagent-content {
+    padding: 0.6rem;
+  }
+
+  .subagent-session .subagent-session {
+    margin-left: 0.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .subagent-header-content {
+    gap: 0.35rem;
+  }
+
+  .subagent-icon {
+    font-size: 1rem;
+  }
+
+  .subagent-type {
+    font-size: 0.8rem;
+  }
+
+  .subagent-id {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.3rem;
+  }
+
+  .message-count-badge {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+  }
+
+  .subagent-message {
+    padding: 0.6rem;
+  }
+}
+
+/* Print styles */
+@media print {
+  .expand-toggle {
+    display: none;
+  }
+
+  .subagent-session {
+    page-break-inside: avoid;
+  }
+
+  .subagent-content {
+    display: block !important;
+  }
+}

@@ -21,7 +21,9 @@ import type {
   TextContent,
   ToolUseContent,
   ToolResultContent,
+  SubagentType,
 } from '../types/session';
+import { SubagentSession } from './SubagentSession';
 import './MessageTimeline.css';
 
 interface MessageTimelineProps {
@@ -86,7 +88,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     const block = content as Record<string, unknown>;
 
     if (block.type === 'text') {
-      const textBlock = block as TextContent;
+      const textBlock = block as unknown as TextContent;
       return renderTextWithCodeBlocks(textBlock.text, index);
     }
 
@@ -99,7 +101,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     }
 
     if (block.type === 'tool_use') {
-      const toolBlock = block as ToolUseContent;
+      const toolBlock = block as unknown as ToolUseContent;
       return (
         <div key={index} className="tool-use-block">
           <span className="tool-label">🔧 Tool: {toolBlock.name}</span>
@@ -108,7 +110,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     }
 
     if (block.type === 'tool_result') {
-      const resultBlock = block as ToolResultContent;
+      const resultBlock = block as unknown as ToolResultContent;
       const isError = resultBlock.is_error;
       return (
         <div key={index} className={`tool-result-block ${isError ? 'error' : ''}`}>
@@ -125,7 +127,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   const renderTextWithCodeBlocks = (text: string, baseIndex: number) => {
     // Match code blocks with language specifier: ```language\ncode\n```
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-    const parts: JSX.Element[] = [];
+    const parts: React.ReactElement[] = [];
     let lastIndex = 0;
     let match;
     let matchIndex = 0;
@@ -172,7 +174,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     return parts.length > 0 ? parts : <p className="message-text">{text}</p>;
   };
 
-  const renderMessageContent = (message: MessageRecord) => {
+  const renderMessageContent = (message: MessageRecord): React.ReactElement | React.ReactElement[] => {
     if (!message.message || !message.message.content) {
       return <p className="message-text">(Empty message)</p>;
     }
@@ -180,11 +182,13 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     const content = message.message.content;
 
     if (typeof content === 'string') {
-      return renderTextWithCodeBlocks(content, 0);
+      const result = renderTextWithCodeBlocks(content, 0);
+      return Array.isArray(result) ? <>{result}</> : result;
     }
 
     if (Array.isArray(content)) {
-      return content.map((block, index) => renderContentBlock(block, index));
+      const blocks = content.map((block, index) => renderContentBlock(block, index)).filter((b): b is React.ReactElement => b !== null);
+      return blocks.length > 0 ? <>{blocks}</> : <p className="message-text">(Empty content)</p>;
     }
 
     return <p className="message-text">(Unknown content format)</p>;
@@ -217,29 +221,103 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     );
   }
 
-  // Filter out non-user and non-assistant messages for the timeline
-  const displayMessages = session.messages.filter(
-    (msg) => msg.type === 'user' || msg.type === 'assistant'
+  // Separate main messages from subagent messages
+  const mainMessages = session.messages.filter(
+    (msg) => (msg.type === 'user' || msg.type === 'assistant') && !msg.isSidechain
   );
+
+  // Group subagent messages by agentId and parent message
+  const subagentGroups = new Map<string, { agentId: string; messages: MessageRecord[] }>();
+  session.messages
+    .filter((msg) => msg.isSidechain && msg.agentId)
+    .forEach((msg) => {
+      const key = `${msg.parentUuid || 'root'}_${msg.agentId}`;
+      if (!subagentGroups.has(key)) {
+        subagentGroups.set(key, { agentId: msg.agentId!, messages: [] });
+      }
+      subagentGroups.get(key)!.messages.push(msg);
+    });
+
+  // Build a map of parent UUID to subagent groups
+  const subagentsByParent = new Map<string, typeof subagentGroups>();
+  subagentGroups.forEach((group, key) => {
+    const parentUuid = key.split('_')[0];
+    if (!subagentsByParent.has(parentUuid)) {
+      subagentsByParent.set(parentUuid, new Map());
+    }
+    subagentsByParent.get(parentUuid)!.set(key, group);
+  });
+
+  // Infer subagent type from messages or default to 'other'
+  const inferSubagentType = (messages: MessageRecord[]): SubagentType => {
+    // Try to infer from tool use or message content
+    for (const msg of messages) {
+      if (msg.message?.content) {
+        const content = msg.message.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (typeof block === 'object' && block !== null && 'type' in block) {
+              const toolBlock = block as Record<string, unknown>;
+              if (toolBlock.type === 'tool_use' && typeof toolBlock.name === 'string') {
+                const toolName = toolBlock.name.toLowerCase();
+                if (toolName.includes('explore') || toolName.includes('glob') || toolName.includes('grep')) {
+                  return 'Explore' as SubagentType;
+                }
+                if (toolName.includes('bash') || toolName.includes('command')) {
+                  return 'Bash' as SubagentType;
+                }
+                if (toolName.includes('plan')) {
+                  return 'Plan' as SubagentType;
+                }
+                if (toolName.includes('test')) {
+                  return 'test-runner' as SubagentType;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return 'other' as SubagentType;
+  };
 
   return (
     <div className="message-timeline" ref={timelineRef}>
       <div className="timeline-header">
         <h2>Conversation Timeline</h2>
         <p className="message-count">
-          {displayMessages.length} message{displayMessages.length !== 1 ? 's' : ''}
+          {mainMessages.length} message{mainMessages.length !== 1 ? 's' : ''}
+          {subagentGroups.size > 0 && ` · ${subagentGroups.size} subagent session${subagentGroups.size !== 1 ? 's' : ''}`}
         </p>
       </div>
       <div className="messages-container">
-        {displayMessages.map((message) => {
+        {mainMessages.map((message) => {
           const source = getMessageSource(message);
           return (
-            <div key={message.uuid} className={`message-bubble ${source}`}>
-              <div className="message-header">
-                <span className="message-source">{source}</span>
-                <span className="message-timestamp">{formatTimestamp(message.timestamp)}</span>
+            <div key={message.uuid}>
+              <div className={`message-bubble ${source}`}>
+                <div className="message-header">
+                  <span className="message-source">{source}</span>
+                  <span className="message-timestamp">{formatTimestamp(message.timestamp)}</span>
+                </div>
+                <div className="message-content">{renderMessageContent(message)}</div>
               </div>
-              <div className="message-content">{renderMessageContent(message)}</div>
+
+              {/* Render subagent sessions that are children of this message */}
+              {subagentsByParent.has(message.uuid) && (
+                <div className="subagent-sessions-container">
+                  {Array.from(subagentsByParent.get(message.uuid)!.values()).map((group) => (
+                    <SubagentSession
+                      key={group.agentId}
+                      agentId={group.agentId}
+                      agentType={inferSubagentType(group.messages)}
+                      messages={group.messages}
+                      renderMessageContent={renderMessageContent}
+                      formatTimestamp={formatTimestamp}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
