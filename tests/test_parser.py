@@ -31,7 +31,7 @@ def temp_session_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def sample_session_data() -> list[dict]:
+def sample_session_data() -> list[dict[str, object]]:
     """Sample session data for testing."""
     return [
         {
@@ -73,7 +73,7 @@ def sample_session_data() -> list[dict]:
 
 
 @pytest.fixture
-def sample_session_file(temp_session_dir: Path, sample_session_data: list[dict]) -> Path:
+def sample_session_file(temp_session_dir: Path, sample_session_data: list[dict[str, object]]) -> Path:
     """Create a sample JSONL session file."""
     session_file = temp_session_dir / "test-session-123.jsonl"
     with open(session_file, "w", encoding="utf-8") as f:
@@ -100,7 +100,7 @@ class TestParseJsonlFile:
         assert len(messages) == 0
 
     def test_parse_file_with_blank_lines(
-        self, temp_session_dir: Path, sample_session_data: list[dict]
+        self, temp_session_dir: Path, sample_session_data: list[dict[str, object]]
     ) -> None:
         """Test parsing JSONL with blank lines."""
         file_path = temp_session_dir / "with-blanks.jsonl"
@@ -288,7 +288,7 @@ class TestParseSessionDirectory:
         assert parsed_data.source_path == str(temp_session_dir)
 
     def test_parse_directory_multiple_sessions(
-        self, temp_session_dir: Path, sample_session_data: list[dict]
+        self, temp_session_dir: Path, sample_session_data: list[dict[str, object]]
     ) -> None:
         """Test parsing directory with multiple sessions."""
         # Create multiple session files
@@ -312,7 +312,7 @@ class TestParseSessionDirectory:
         assert "No session files found" in str(exc_info.value)
 
     def test_parse_directory_with_some_corrupt_files(
-        self, temp_session_dir: Path, sample_session_data: list[dict]
+        self, temp_session_dir: Path, sample_session_data: list[dict[str, object]]
     ) -> None:
         """Test parsing directory with some corrupt files."""
         # Create valid file

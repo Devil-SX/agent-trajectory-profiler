@@ -28,7 +28,7 @@ def temp_session_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def sample_messages_with_tools() -> list[dict]:
+def sample_messages_with_tools() -> list[dict[str, object]]:
     """Sample session data with tool calls for testing."""
     return [
         {
@@ -168,7 +168,7 @@ def sample_messages_with_tools() -> list[dict]:
 
 
 @pytest.fixture
-def sample_messages_with_subagents() -> list[dict]:
+def sample_messages_with_subagents() -> list[dict[str, object]]:
     """Sample session data with subagent messages."""
     return [
         {
@@ -253,7 +253,7 @@ class TestCalculateSessionStatistics:
     """Tests for calculate_session_statistics function."""
 
     def test_basic_message_counts(
-        self, temp_session_dir: Path, sample_messages_with_tools: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:
         """Test basic message counting."""
         file_path = temp_session_dir / "test.jsonl"
@@ -271,7 +271,7 @@ class TestCalculateSessionStatistics:
         assert stats.assistant_message_count == 3
 
     def test_token_statistics(
-        self, temp_session_dir: Path, sample_messages_with_tools: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:
         """Test token counting and breakdown."""
         file_path = temp_session_dir / "test.jsonl"
@@ -290,7 +290,7 @@ class TestCalculateSessionStatistics:
         assert stats.cache_creation_tokens == 25
 
     def test_tool_call_statistics(
-        self, temp_session_dir: Path, sample_messages_with_tools: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:
         """Test tool call counting and statistics."""
         file_path = temp_session_dir / "test.jsonl"
@@ -319,7 +319,7 @@ class TestCalculateSessionStatistics:
         assert edit_tool.error_count == 1
 
     def test_tool_token_breakdown(
-        self, temp_session_dir: Path, sample_messages_with_tools: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:
         """Test tool-specific token usage tracking."""
         file_path = temp_session_dir / "test.jsonl"
@@ -341,7 +341,7 @@ class TestCalculateSessionStatistics:
         assert edit_tool.total_tokens == 180
 
     def test_session_duration(
-        self, temp_session_dir: Path, sample_messages_with_tools: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:
         """Test session duration calculation."""
         file_path = temp_session_dir / "test.jsonl"
@@ -358,7 +358,7 @@ class TestCalculateSessionStatistics:
         assert stats.last_message_time is not None
 
     def test_most_used_tools(
-        self, temp_session_dir: Path, sample_messages_with_tools: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:
         """Test most used tools property."""
         file_path = temp_session_dir / "test.jsonl"
@@ -383,7 +383,7 @@ class TestExtractSubagentSessions:
     """Tests for extract_subagent_sessions function."""
 
     def test_extract_subagent_sessions(
-        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict[str, object]]
     ) -> None:
         """Test extracting subagent sessions from messages."""
         file_path = temp_session_dir / "test.jsonl"
@@ -397,7 +397,7 @@ class TestExtractSubagentSessions:
         assert len(subagent_sessions) == 2  # explore-agent-1 and bash-agent-1
 
     def test_subagent_message_grouping(
-        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict[str, object]]
     ) -> None:
         """Test that subagent messages are grouped correctly."""
         file_path = temp_session_dir / "test.jsonl"
@@ -423,7 +423,7 @@ class TestExtractSubagentSessions:
         assert bash_agent.message_count == 1
 
     def test_subagent_statistics(
-        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict[str, object]]
     ) -> None:
         """Test subagent statistics in session stats."""
         file_path = temp_session_dir / "test.jsonl"
@@ -598,7 +598,7 @@ class TestIntegrationWithParseSessionFile:
     """Integration tests with the full parse_session_file function."""
 
     def test_full_session_parsing_with_statistics(
-        self, temp_session_dir: Path, sample_messages_with_tools: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:
         """Test that parse_session_file includes complete statistics."""
         file_path = temp_session_dir / "test-session.jsonl"
@@ -614,7 +614,7 @@ class TestIntegrationWithParseSessionFile:
         assert session.statistics.total_tokens == 450
 
     def test_full_session_with_subagents(
-        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict]
+        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict[str, object]]
     ) -> None:
         """Test that parse_session_file includes subagent sessions."""
         file_path = temp_session_dir / "test-session.jsonl"
