@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 import { SessionSelector } from './components/SessionSelector';
 import { MessageTimeline } from './components/MessageTimeline';
@@ -12,6 +12,19 @@ function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [comparisonSessionId, setComparisonSessionId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ViewTab>('timeline');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const handleSessionChange = (sessionId: string | null) => {
     setSelectedSessionId(sessionId);
@@ -54,6 +67,15 @@ function App() {
             >
               Advanced Analytics
             </button>
+            {isMobile && activeView === 'timeline' && selectedSessionId && (
+              <button
+                className="tab-button mobile-sidebar-toggle"
+                onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+                aria-label="Toggle sidebar"
+              >
+                {isMobileSidebarOpen ? '✕ Close' : '☰ Info'}
+              </button>
+            )}
           </div>
         )}
 
@@ -78,7 +100,18 @@ function App() {
                   />
                 </div>
               )}
-              {activeView === 'timeline' && <SessionMetadataSidebar sessionId={selectedSessionId} />}
+              {activeView === 'timeline' && (
+                <div className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''}`}>
+                  {isMobile && isMobileSidebarOpen && (
+                    <div
+                      className="sidebar-overlay"
+                      onClick={() => setIsMobileSidebarOpen(false)}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <SessionMetadataSidebar sessionId={selectedSessionId} />
+                </div>
+              )}
             </>
           ) : (
             <div className="no-session">

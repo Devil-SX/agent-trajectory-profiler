@@ -5,6 +5,7 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
+  min-width: 320px;
 }
 
 .app header {
@@ -17,6 +18,7 @@
   font-size: 2rem;
   margin: 0;
   color: #333;
+  line-height: 1.2;
 }
 
 .app main {
@@ -85,6 +87,8 @@
   transition: all 0.2s;
   position: relative;
   bottom: -2px;
+  white-space: nowrap;
+  min-height: 44px;
 }
 
 .tab-button:hover {
@@ -97,14 +101,187 @@
   border-bottom-color: #1976d2;
 }
 
-/* Responsive behavior */
-@media (max-width: 768px) {
+.tab-button.mobile-sidebar-toggle {
+  margin-left: auto;
+  font-size: 0.9rem;
+}
+
+/* Sidebar container for mobile drawer */
+.sidebar-container {
+  position: relative;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+/* Desktop layout (three columns: selector, content, sidebar) */
+@media (min-width: 1025px) {
   .main-content {
-    flex-direction: column;
+    display: flex;
+    gap: 1.5rem;
+  }
+
+  .session-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sidebar-container {
+    flex-shrink: 0;
+  }
+}
+
+/* Tablet layout (two columns: selector + content, sidebar below or collapsed) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .main-content {
+    display: flex;
+    gap: 1.5rem;
+  }
+
+  .session-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sidebar-container {
+    flex-shrink: 0;
   }
 
   .app {
+    padding: 1.5rem;
+  }
+
+  .app header h1 {
+    font-size: 1.75rem;
+  }
+
+  .tab-button {
+    padding: 0.65rem 1.2rem;
+    font-size: 0.95rem;
+  }
+}
+
+/* Mobile layout (single column stacked, sidebar as drawer) */
+@media (max-width: 768px) {
+  .app {
     padding: 1rem;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .app header {
+    margin-bottom: 1rem;
+  }
+
+  .app header h1 {
+    font-size: 1.5rem;
+  }
+
+  .main-content {
+    flex-direction: column;
+    position: relative;
+  }
+
+  .session-content {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .view-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .view-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-button {
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+
+  /* Mobile drawer for sidebar */
+  .sidebar-container {
+    position: fixed;
+    top: 0;
+    right: -100%;
+    width: 85%;
+    max-width: 320px;
+    height: 100vh;
+    z-index: 1000;
+    transition: right 0.3s ease-in-out;
+  }
+
+  .sidebar-container.mobile-open {
+    right: 0;
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    animation: fadeIn 0.3s forwards;
+  }
+
+  @keyframes fadeIn {
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Touch-friendly spacing */
+  .no-session {
+    padding: 1.5rem;
+    font-size: 1rem;
+  }
+}
+
+/* Extra small mobile devices */
+@media (max-width: 480px) {
+  .app {
+    padding: 0.75rem;
+  }
+
+  .app header h1 {
+    font-size: 1.25rem;
+  }
+
+  .tab-button {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .sidebar-container {
+    width: 90%;
+  }
+}
+
+/* Ensure no horizontal scrolling */
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .app {
+    overflow-x: hidden;
+  }
+
+  .app main {
+    overflow-x: hidden;
   }
 }
 
