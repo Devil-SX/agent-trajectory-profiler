@@ -61,14 +61,40 @@ app.add_middleware(
 )
 
 
-@app.get("/", tags=["Root"])
-async def root() -> dict[str, str]:
-    """Root endpoint with API information."""
+@app.get("/api", tags=["Root"])
+async def api_root() -> dict[str, str]:
+    """API root endpoint with API information."""
     return {
         "name": "Claude Code Session Visualizer API",
         "version": "0.1.0",
         "docs": "/docs",
         "health": "/health",
+    }
+
+
+# Check if frontend is built - used for root path routing
+_frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+
+
+@app.get("/", tags=["Root"], include_in_schema=False, response_model=None)
+async def root() -> FileResponse | dict[str, str]:
+    """
+    Root endpoint - serves frontend if available, otherwise API info.
+
+    When frontend is built, serves the index.html for web UI.
+    When frontend is not built, returns API information.
+    """
+    index_path = _frontend_dist / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+
+    # Fallback to API info if frontend not built
+    return {
+        "name": "Claude Code Session Visualizer API",
+        "version": "0.1.0",
+        "docs": "/docs",
+        "health": "/health",
+        "hint": "Frontend not built. Run 'cd frontend && npm run build' to enable web UI.",
     }
 
 
@@ -225,10 +251,11 @@ async def global_exception_handler(request: Any, exc: Exception) -> ErrorRespons
 # Serve frontend static files in production mode
 # This assumes the frontend has been built and the dist folder exists
 # The frontend should be accessible at the root URL
-frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
+if _frontend_dist.exists():
     # Mount static assets with caching
-    app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+    assets_dir = _frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_frontend(full_path: str) -> FileResponse:
@@ -244,12 +271,12 @@ if frontend_dist.exists():
             raise HTTPException(status_code=404, detail="Not found")
 
         # Try to serve the requested file
-        file_path = frontend_dist / full_path
+        file_path = _frontend_dist / full_path
         if file_path.is_file():
             return FileResponse(file_path)
 
         # For all other routes, serve index.html (for client-side routing)
-        index_path = frontend_dist / "index.html"
+        index_path = _frontend_dist / "index.html"
         if index_path.exists():
             return FileResponse(index_path)
 

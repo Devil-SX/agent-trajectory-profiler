@@ -80,6 +80,30 @@ export function exportStatisticsToCSV(
       metric: 'Session Duration (seconds)',
       value: statistics.session_duration_seconds || 0,
     },
+    {
+      metric: 'Model Time (seconds)',
+      value: statistics.time_breakdown?.total_model_time_seconds || 0,
+    },
+    {
+      metric: 'Tool Time (seconds)',
+      value: statistics.time_breakdown?.total_tool_time_seconds || 0,
+    },
+    {
+      metric: 'User Time (seconds)',
+      value: statistics.time_breakdown?.total_user_time_seconds || 0,
+    },
+    {
+      metric: 'Model Time %',
+      value: statistics.time_breakdown?.model_time_percent || 0,
+    },
+    {
+      metric: 'Tool Time %',
+      value: statistics.time_breakdown?.tool_time_percent || 0,
+    },
+    {
+      metric: 'User Time %',
+      value: statistics.time_breakdown?.user_time_percent || 0,
+    },
   ];
 
   return convertToCSV(rows);
@@ -99,6 +123,7 @@ export function exportToolStatsToCSV(statistics: SessionStatistics): string {
       (tool.success_count / (tool.success_count + tool.error_count || 1)) *
       100
     ).toFixed(2),
+    avg_latency_seconds: tool.avg_latency_seconds,
   }));
 
   return convertToCSV(rows);

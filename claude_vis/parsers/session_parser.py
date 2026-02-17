@@ -19,6 +19,8 @@ from claude_vis.models import (
     SessionStatistics,
     SubagentSession,
     SubagentType,
+    TimeBreakdown,
+    TokenBreakdown,
     ToolCallStatistics,
 )
 
@@ -166,6 +168,17 @@ def extract_subagent_sessions(messages: list[MessageRecord]) -> list[SubagentSes
     return subagent_sessions
 
 
+def _has_tool_result_content(msg: MessageRecord) -> bool:
+    """Check if a message contains tool_result content blocks."""
+    if not msg.message or not msg.message.content:
+        return False
+    if isinstance(msg.message.content, list):
+        for block in msg.message.content:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                return True
+    return False
+
+
 def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatistics:
     """
     Calculate comprehensive statistics for a session.
@@ -173,9 +186,11 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
     This function analyzes all messages in a session to provide detailed statistics including:
     - Message counts by role (user, assistant, system)
     - Token usage breakdown (input, output, cache)
-    - Tool call statistics with success/error tracking
+    - Tool call statistics with success/error tracking and per-tool latency
     - Subagent invocation tracking by type
     - Session duration and timestamps
+    - Time breakdown (model / tool / user)
+    - Token breakdown (input / output / cache percentages)
 
     Args:
         messages: List of message records
@@ -193,15 +208,21 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
     cache_read_tokens = 0
     cache_creation_tokens = 0
 
-    # Enhanced tool tracking: tool_name -> {count, tokens, success, error}
-    tool_stats: dict[str, dict[str, int]] = {}
-    # Map tool_use_id to tool_name for result tracking
-    tool_use_map: dict[str, str] = {}
+    # Enhanced tool tracking: tool_name -> {count, tokens, success, error, total_latency}
+    tool_stats: dict[str, dict[str, float]] = {}
+    # Map tool_use_id to (tool_name, timestamp) for result tracking and latency
+    tool_use_map: dict[str, tuple[str, datetime]] = {}
     # Track subagent sessions by agent_id to deduplicate
     subagent_sessions_map: dict[str, str] = {}
 
     first_time: datetime | None = None
     last_time: datetime | None = None
+
+    # Time attribution accumulators
+    total_model_time = 0.0
+    total_tool_time = 0.0
+    total_user_time = 0.0
+    prev_timestamp: datetime | None = None
 
     for msg in messages:
         # Count message types
@@ -218,6 +239,21 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
             first_time = timestamp
         if last_time is None or timestamp > last_time:
             last_time = timestamp
+
+        # Time attribution: compute gap from previous message
+        if prev_timestamp is not None:
+            gap = (timestamp - prev_timestamp).total_seconds()
+            if gap >= 0:
+                if msg.is_assistant_message:
+                    # Gap before assistant message → model inference time
+                    total_model_time += gap
+                elif msg.is_user_message and _has_tool_result_content(msg):
+                    # Gap before user message with tool_result → tool execution time
+                    total_tool_time += gap
+                elif msg.is_user_message:
+                    # Gap before user message without tool_result → user idle time
+                    total_user_time += gap
+        prev_timestamp = timestamp
 
         # Count tokens
         if msg.message and msg.message.usage:
@@ -250,43 +286,57 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
                                     "tokens": 0,
                                     "success": 0,
                                     "error": 0,
+                                    "total_latency": 0.0,
+                                    "latency_count": 0,
                                 }
 
                             tool_stats[tool_name]["count"] += 1
-                            tool_use_map[tool_id] = tool_name
+                            tool_use_map[tool_id] = (tool_name, timestamp)
 
                             # Add token cost for this tool call (if available)
                             if msg.message.usage:
                                 tool_stats[tool_name]["tokens"] += msg.message.usage.total_tokens
 
-                        # Track tool_result blocks for success/error counting
+                        # Track tool_result blocks for success/error counting and latency
                         elif block_type == "tool_result":
                             tool_use_id = content_block.get("tool_use_id", "")
                             is_error = content_block.get("is_error", False)
 
                             if tool_use_id in tool_use_map:
-                                tool_name = tool_use_map[tool_use_id]
+                                tool_name, use_timestamp = tool_use_map[tool_use_id]
                                 if tool_name in tool_stats:
                                     if is_error:
                                         tool_stats[tool_name]["error"] += 1
                                     else:
                                         tool_stats[tool_name]["success"] += 1
 
+                                    # Compute per-tool latency
+                                    latency = (timestamp - use_timestamp).total_seconds()
+                                    if latency >= 0:
+                                        tool_stats[tool_name]["total_latency"] += latency
+                                        tool_stats[tool_name]["latency_count"] += 1
+
         # Track subagent sessions
         if msg.is_subagent_message and msg.agentId:
             subagent_sessions_map[msg.agentId] = msg.agentId
 
     # Convert tool stats to ToolCallStatistics objects
-    tool_call_list = [
-        ToolCallStatistics(
-            tool_name=tool_name,
-            count=stats["count"],
-            total_tokens=stats["tokens"],
-            success_count=stats["success"],
-            error_count=stats["error"],
+    tool_call_list = []
+    for tool_name, stats in tool_stats.items():
+        latency_count = int(stats["latency_count"])
+        total_latency = stats["total_latency"]
+        avg_latency = total_latency / latency_count if latency_count > 0 else 0.0
+        tool_call_list.append(
+            ToolCallStatistics(
+                tool_name=tool_name,
+                count=int(stats["count"]),
+                total_tokens=int(stats["tokens"]),
+                success_count=int(stats["success"]),
+                error_count=int(stats["error"]),
+                total_latency_seconds=round(total_latency, 3),
+                avg_latency_seconds=round(avg_latency, 3),
+            )
         )
-        for tool_name, stats in tool_stats.items()
-    ]
 
     # Sort by count descending for easier consumption
     tool_call_list.sort(key=lambda x: x.count, reverse=True)
@@ -304,6 +354,31 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
     if first_time and last_time:
         duration_seconds = (last_time - first_time).total_seconds()
 
+    # Build TimeBreakdown
+    total_attributed_time = total_model_time + total_tool_time + total_user_time
+    time_breakdown = None
+    if total_attributed_time > 0:
+        time_breakdown = TimeBreakdown(
+            total_model_time_seconds=round(total_model_time, 2),
+            total_tool_time_seconds=round(total_tool_time, 2),
+            total_user_time_seconds=round(total_user_time, 2),
+            model_time_percent=round(total_model_time / total_attributed_time * 100, 1),
+            tool_time_percent=round(total_tool_time / total_attributed_time * 100, 1),
+            user_time_percent=round(total_user_time / total_attributed_time * 100, 1),
+        )
+
+    # Build TokenBreakdown
+    # Use comprehensive total including cache tokens as denominator so all % sum to 100
+    token_breakdown = None
+    all_tokens = total_input_tokens + total_output_tokens + cache_read_tokens + cache_creation_tokens
+    if all_tokens > 0:
+        token_breakdown = TokenBreakdown(
+            input_percent=round(total_input_tokens / all_tokens * 100, 1),
+            output_percent=round(total_output_tokens / all_tokens * 100, 1),
+            cache_read_percent=round(cache_read_tokens / all_tokens * 100, 1) if cache_read_tokens else 0.0,
+            cache_creation_percent=round(cache_creation_tokens / all_tokens * 100, 1) if cache_creation_tokens else 0.0,
+        )
+
     return SessionStatistics(
         message_count=len(messages),
         user_message_count=user_count,
@@ -315,12 +390,14 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
         cache_read_tokens=cache_read_tokens,
         cache_creation_tokens=cache_creation_tokens,
         tool_calls=tool_call_list,
-        total_tool_calls=sum(tool_stats[t]["count"] for t in tool_stats),
+        total_tool_calls=sum(int(tool_stats[t]["count"]) for t in tool_stats),
         subagent_count=len(subagent_sessions_list),
         subagent_sessions=subagent_type_counts,
         session_duration_seconds=duration_seconds,
         first_message_time=first_time,
         last_message_time=last_time,
+        time_breakdown=time_breakdown,
+        token_breakdown=token_breakdown,
     )
 
 
@@ -368,7 +445,10 @@ def parse_session_file(file_path: Path) -> Session:
 
 def find_session_files(directory: Path) -> list[Path]:
     """
-    Find all .jsonl session files in a directory.
+    Find all .jsonl session files in a directory recursively.
+
+    This function searches for .jsonl files in the directory and all subdirectories.
+    It excludes files in 'subagents' directories as those are handled separately.
 
     Args:
         directory: Path to the session directory
@@ -382,10 +462,18 @@ def find_session_files(directory: Path) -> list[Path]:
     if not directory.is_dir():
         raise SessionParseError(f"Path is not a directory: {directory}")
 
-    # Find all .jsonl files
-    jsonl_files = list(directory.glob("*.jsonl"))
+    # Find all .jsonl files recursively
+    # Use rglob for recursive search
+    all_jsonl_files = list(directory.rglob("*.jsonl"))
 
-    return sorted(jsonl_files)
+    # Filter out files in 'subagents' directories (they are handled as part of main sessions)
+    # Also filter out history.jsonl which is a global history file
+    session_files = [
+        f for f in all_jsonl_files
+        if "subagents" not in f.parts and f.name != "history.jsonl"
+    ]
+
+    return sorted(session_files)
 
 
 def parse_session_directory(directory: Path) -> ParsedSessionData:

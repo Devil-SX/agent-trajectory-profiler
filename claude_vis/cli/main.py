@@ -1,12 +1,82 @@
 """Main CLI entry point for Claude Code Session Visualizer."""
 
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import click
 
-from claude_vis.parsers import SessionParseError, parse_session_directory
+from claude_vis.parsers import SessionParseError, parse_session_directory, parse_session_file
+
+
+def get_project_root() -> Path:
+    """Get the project root directory."""
+    return Path(__file__).parent.parent.parent
+
+
+def check_and_build_frontend() -> bool:
+    """
+    Check if frontend is built, build if necessary.
+
+    Returns:
+        True if frontend is ready, False otherwise
+    """
+    project_root = get_project_root()
+    frontend_dir = project_root / "frontend"
+    dist_dir = frontend_dir / "dist"
+    index_file = dist_dir / "index.html"
+
+    # Check if frontend directory exists
+    if not frontend_dir.exists():
+        click.echo("Warning: Frontend directory not found.", err=True)
+        return False
+
+    # Check if already built
+    if index_file.exists():
+        return True
+
+    click.echo("Frontend not built. Building automatically...")
+
+    # Check if npm is available
+    npm_path = shutil.which("npm")
+    if not npm_path:
+        click.echo("Error: npm not found. Please install Node.js to build frontend.", err=True)
+        return False
+
+    # Check if node_modules exists, install dependencies if not
+    node_modules = frontend_dir / "node_modules"
+    if not node_modules.exists():
+        click.echo("Installing frontend dependencies...")
+        try:
+            subprocess.run(
+                ["npm", "install"],
+                cwd=frontend_dir,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            click.echo("✓ Dependencies installed.")
+        except subprocess.CalledProcessError as e:
+            click.echo(f"Error installing dependencies: {e.stderr}", err=True)
+            return False
+
+    # Build frontend
+    click.echo("Building frontend...")
+    try:
+        subprocess.run(
+            ["npm", "run", "build"],
+            cwd=frontend_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        click.echo("✓ Frontend built successfully.")
+        return True
+    except subprocess.CalledProcessError as e:
+        click.echo(f"Error building frontend: {e.stderr}", err=True)
+        return False
 
 
 @click.group()
@@ -67,6 +137,8 @@ def serve(
     for accessing and analyzing Claude Code session data. The server
     also serves the frontend static files in production mode.
 
+    Frontend is automatically built if not already built.
+
     Examples:
 
         # Start server with default settings
@@ -94,6 +166,12 @@ def serve(
     import uvicorn
 
     from claude_vis.api.config import get_settings
+
+    # Auto-check and build frontend if needed
+    if not check_and_build_frontend():
+        click.echo("Warning: Frontend not available. API will still start.", err=True)
+        click.echo("Visit http://localhost:8000/docs for API documentation.", err=True)
+        click.echo()
 
     # Get settings
     settings = get_settings()
@@ -163,12 +241,109 @@ def serve(
         sys.exit(1)
 
 
+def _format_duration(seconds: float | None) -> str:
+    """Format seconds into human-readable duration."""
+    if seconds is None:
+        return "N/A"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = int(seconds // 60)
+    secs = seconds % 60
+    if minutes < 60:
+        return f"{minutes}m {secs:.0f}s"
+    hours = minutes // 60
+    mins = minutes % 60
+    return f"{hours}h {mins}m"
+
+
+def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> None:
+    """Print human-readable statistics for a single session."""
+    from claude_vis.models import SessionStatistics  # noqa: F811
+
+    header = f"Session: {session_id}" if session_id else "Session Statistics"
+    click.echo(f"\n{'=' * 60}")
+    click.echo(f"  {header}")
+    click.echo(f"{'=' * 60}")
+
+    # Messages
+    click.echo(f"\n  Messages")
+    click.echo(f"    Total:      {stats.message_count}")
+    click.echo(f"    User:       {stats.user_message_count}")
+    click.echo(f"    Assistant:  {stats.assistant_message_count}")
+    if stats.system_message_count:
+        click.echo(f"    System:     {stats.system_message_count}")
+
+    # Tokens (with percentages)
+    click.echo(f"\n  Tokens")
+    click.echo(f"    Total:       {stats.total_tokens:,}")
+    tb = stats.token_breakdown
+    inp_pct = f"  ({tb.input_percent:.1f}%)" if tb else ""
+    out_pct = f"  ({tb.output_percent:.1f}%)" if tb else ""
+    click.echo(f"    Input:       {stats.total_input_tokens:,}{inp_pct}")
+    click.echo(f"    Output:      {stats.total_output_tokens:,}{out_pct}")
+    if stats.cache_read_tokens:
+        cr_pct = f"  ({tb.cache_read_percent:.1f}%)" if tb else ""
+        click.echo(f"    Cache Read:  {stats.cache_read_tokens:,}{cr_pct}")
+    if stats.cache_creation_tokens:
+        cc_pct = f"  ({tb.cache_creation_percent:.1f}%)" if tb else ""
+        click.echo(f"    Cache Write: {stats.cache_creation_tokens:,}{cc_pct}")
+
+    # Tools (with avg latency column)
+    if stats.tool_calls:
+        click.echo(f"\n  Tool Calls ({stats.total_tool_calls} total)")
+        click.echo(f"    {'Tool':<28} {'Count':>5}  {'Avg Lat':>8}  {'Errors':>6}")
+        click.echo(f"    {'---':<28} {'-----':>5}  {'--------':>8}  {'------':>6}")
+        for tc in stats.tool_calls[:15]:
+            lat_str = f"{tc.avg_latency_seconds:.2f}s" if tc.avg_latency_seconds > 0 else "--"
+            err_str = str(tc.error_count) if tc.error_count > 0 else "--"
+            click.echo(f"    {tc.tool_name:<28} {tc.count:>5}  {lat_str:>8}  {err_str:>6}")
+        if len(stats.tool_calls) > 15:
+            click.echo(f"    ... and {len(stats.tool_calls) - 15} more tools")
+
+    # Subagents
+    if stats.subagent_count:
+        click.echo(f"\n  Subagents: {stats.subagent_count}")
+        for agent_type, count in stats.subagent_sessions.items():
+            click.echo(f"    {agent_type}: {count}")
+
+    # Time Breakdown
+    if stats.time_breakdown:
+        tbd = stats.time_breakdown
+        click.echo(f"\n  Time Breakdown")
+        click.echo(f"    Model:      {_format_duration(tbd.total_model_time_seconds):>12}  ({tbd.model_time_percent:>5.1f}%)")
+        click.echo(f"    Tool:       {_format_duration(tbd.total_tool_time_seconds):>12}  ({tbd.tool_time_percent:>5.1f}%)")
+        click.echo(f"    User:       {_format_duration(tbd.total_user_time_seconds):>12}  ({tbd.user_time_percent:>5.1f}%)")
+        # Identify bottleneck
+        categories = [
+            ("Model", tbd.model_time_percent),
+            ("Tool", tbd.tool_time_percent),
+            ("User", tbd.user_time_percent),
+        ]
+        bottleneck = max(categories, key=lambda x: x[1])
+        click.echo(f"    Bottleneck: {bottleneck[0]} ({bottleneck[1]:.1f}% of session time)")
+
+    # Duration
+    click.echo(f"\n  Duration:     {_format_duration(stats.session_duration_seconds)}")
+    if stats.first_message_time:
+        click.echo(f"  Start:        {stats.first_message_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    if stats.last_message_time:
+        click.echo(f"  End:          {stats.last_message_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    click.echo()
+
+
 @main.command()
 @click.option(
-    "--path",
+    "--file",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Parse a single .jsonl session file",
+)
+@click.option(
+    "--session",
     type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
     default=None,
-    help="Path to Claude session directory (default: ~/.claude/projects/)",
+    help="Parse all session files in a directory",
 )
 @click.option(
     "--output",
@@ -178,69 +353,118 @@ def serve(
     help="Output file path for JSON output (default: stdout)",
 )
 @click.option(
-    "--pretty",
+    "--compact",
     is_flag=True,
     default=False,
-    help="Pretty-print JSON output with indentation",
+    help="Compact JSON output without indentation (default is pretty-printed)",
 )
-def parse(path: Path | None, output: Path | None, pretty: bool) -> None:
+@click.option(
+    "--human",
+    is_flag=True,
+    default=False,
+    help="Display only statistics in human-readable format (no JSON)",
+)
+def parse(
+    file: Path | None,
+    session: Path | None,
+    output: Path | None,
+    compact: bool,
+    human: bool,
+) -> None:
     """
-    Parse Claude Code session files from a directory.
+    Parse Claude Code session data and output JSON.
 
-    Reads all .jsonl session files in the specified directory and outputs
-    structured data in JSON format. By default, uses ~/.claude/projects/
-    as the session directory.
+    Three modes of operation:
+
+    \b
+      --file <path.jsonl>   Parse a single .jsonl file
+      --session <dir>       Parse all .jsonl files in a directory
+      (default)             Parse all sessions under ~/.claude/projects/
 
     Examples:
 
-        # Parse sessions from default directory
-        claude-vis parse
+    \b
+        # Human-readable statistics
+        claude-vis parse --file session.jsonl --human
 
-        # Parse from custom directory
-        claude-vis parse --path /path/to/sessions
+    \b
+        # Parse a single file (pretty JSON by default)
+        claude-vis parse --file session.jsonl
 
-        # Save output to file
-        claude-vis parse --output sessions.json
+    \b
+        # Parse a session directory
+        claude-vis parse --session ./my-project-sessions/
 
-        # Pretty-print output
-        claude-vis parse --pretty
+    \b
+        # Compact JSON for piping
+        claude-vis parse --compact | jq .
     """
-    # Resolve default path
-    if path is None:
-        path = Path.home() / ".claude" / "projects"
-
-    # Expand path
-    path = path.expanduser().resolve()
-
-    click.echo(f"Parsing sessions from: {path}", err=True)
+    if file and session:
+        click.echo("Error: --file and --session are mutually exclusive.", err=True)
+        sys.exit(1)
 
     try:
-        # Parse session directory
-        parsed_data = parse_session_directory(path)
+        sessions_list: list[tuple[str, object]] = []  # (session_id, session_obj)
 
-        click.echo(
-            f"Successfully parsed {parsed_data.session_count} sessions "
-            f"({parsed_data.total_messages} messages)",
-            err=True,
-        )
+        if file:
+            # Mode 1: single file
+            file = file.expanduser().resolve()
+            click.echo(f"Parsing file: {file}", err=True)
+            session_obj = parse_session_file(file)
+            sessions_list = [(session_obj.metadata.session_id, session_obj)]
+            json_data = session_obj.model_dump(mode="json")
+            click.echo(
+                f"Successfully parsed 1 session ({session_obj.statistics.message_count} messages)",
+                err=True,
+            )
+        elif session:
+            # Mode 2: session directory
+            session = session.expanduser().resolve()
+            click.echo(f"Parsing session directory: {session}", err=True)
+            parsed_data = parse_session_directory(session)
+            sessions_list = [
+                (s.metadata.session_id, s) for s in parsed_data.sessions
+            ]
+            json_data = parsed_data.model_dump(mode="json")
+            click.echo(
+                f"Successfully parsed {parsed_data.session_count} sessions "
+                f"({parsed_data.total_messages} messages)",
+                err=True,
+            )
+        else:
+            # Mode 3: default user directory
+            path = Path.home() / ".claude" / "projects"
+            path = path.expanduser().resolve()
+            click.echo(f"Parsing sessions from: {path}", err=True)
+            parsed_data = parse_session_directory(path)
+            sessions_list = [
+                (s.metadata.session_id, s) for s in parsed_data.sessions
+            ]
+            json_data = parsed_data.model_dump(mode="json")
+            click.echo(
+                f"Successfully parsed {parsed_data.session_count} sessions "
+                f"({parsed_data.total_messages} messages)",
+                err=True,
+            )
 
-        # Convert to JSON
-        json_data = parsed_data.model_dump(mode="json")
+        # --human: print statistics only
+        if human:
+            for sid, s in sessions_list:
+                _print_session_stats(s.statistics, sid)  # type: ignore[union-attr]
+            return
 
-        # Determine output format
-        indent = 2 if pretty else None
+        # Output JSON (pretty by default, --compact for minified)
+        indent = None if compact else 2
 
-        # Write output
         if output:
             output.parent.mkdir(parents=True, exist_ok=True)
             with open(output, "w", encoding="utf-8") as f:
                 json.dump(json_data, f, indent=indent)
             click.echo(f"Output written to: {output}", err=True)
         else:
-            # Output to stdout
             json.dump(json_data, sys.stdout, indent=indent)
-            if pretty:
-                click.echo()  # Add newline for pretty output
+            if not compact:
+                click.echo()
 
     except SessionParseError as e:
         click.echo(f"Error: {e}", err=True)

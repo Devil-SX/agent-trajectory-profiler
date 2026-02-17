@@ -205,6 +205,7 @@ export function analyzeToolUsagePatterns(
       totalCalls: tool.count,
       averageTokensPerCall: avgTokens,
       successRate,
+      averageDuration: tool.avg_latency_seconds || undefined,
       commonParameters,
       errorPatterns: tool.error_count > 0 ? [{ errorType: 'unknown', count: tool.error_count }] : undefined,
     });

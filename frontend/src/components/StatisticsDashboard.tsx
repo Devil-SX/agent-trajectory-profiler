@@ -101,6 +101,12 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
   const tokenDistribution = [
     { name: 'Input Tokens', value: statistics.total_input_tokens },
     { name: 'Output Tokens', value: statistics.total_output_tokens },
+    ...(statistics.cache_read_tokens > 0
+      ? [{ name: 'Cache Read Tokens', value: statistics.cache_read_tokens }]
+      : []),
+    ...(statistics.cache_creation_tokens > 0
+      ? [{ name: 'Cache Creation Tokens', value: statistics.cache_creation_tokens }]
+      : []),
   ];
 
   // Prepare data for message type distribution
@@ -245,6 +251,28 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                   : 'N/A'}
               </span>
             </div>
+            {statistics.time_breakdown && (
+              <>
+                <div className="breakdown-item">
+                  <span className="breakdown-label">Model:</span>
+                  <span className="breakdown-value">
+                    {statistics.time_breakdown.model_time_percent.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="breakdown-item">
+                  <span className="breakdown-label">Tool:</span>
+                  <span className="breakdown-value">
+                    {statistics.time_breakdown.tool_time_percent.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="breakdown-item">
+                  <span className="breakdown-label">User:</span>
+                  <span className="breakdown-value">
+                    {statistics.time_breakdown.user_time_percent.toFixed(1)}%
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -354,6 +382,38 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
             </ResponsiveContainer>
           </div>
         )}
+
+        {/* Time Breakdown Pie Chart */}
+        {statistics.time_breakdown && (
+          <div className="chart-card">
+            <h3 className="card-title">Time Breakdown</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: 'Model', value: statistics.time_breakdown.total_model_time_seconds },
+                    { name: 'Tool', value: statistics.time_breakdown.total_tool_time_seconds },
+                    { name: 'User', value: statistics.time_breakdown.total_user_time_seconds },
+                  ]}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) =>
+                    `${name}: ${percent ? (percent * 100).toFixed(1) : 0}%`
+                  }
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  <Cell fill="#1976d2" />
+                  <Cell fill="#f57c00" />
+                  <Cell fill="#388e3c" />
+                </Pie>
+                <Tooltip formatter={(value) => `${(value as number).toFixed(1)}s`} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {/* Tool Statistics Table */}
@@ -367,6 +427,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                   <th>Tool Name</th>
                   <th>Calls</th>
                   <th>Total Tokens</th>
+                  <th>Avg Latency</th>
                   <th>Success</th>
                   <th>Errors</th>
                 </tr>
@@ -377,6 +438,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                     <td className="tool-name">{tool.tool_name}</td>
                     <td>{formatNumber(tool.count)}</td>
                     <td>{formatNumber(tool.total_tokens)}</td>
+                    <td>{tool.avg_latency_seconds > 0 ? tool.avg_latency_seconds.toFixed(2) + 's' : '--'}</td>
                     <td>{formatNumber(tool.success_count)}</td>
                     <td className={tool.error_count > 0 ? 'error-count' : ''}>
                       {formatNumber(tool.error_count)}

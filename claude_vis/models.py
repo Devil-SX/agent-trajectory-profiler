@@ -218,6 +218,26 @@ class MessageRecord(BaseModel):
         return MessageSource.SUBAGENT if self.is_subagent_message else MessageSource.MAIN
 
 
+class TimeBreakdown(BaseModel):
+    """Breakdown of session time by category."""
+
+    total_model_time_seconds: float = 0.0
+    total_tool_time_seconds: float = 0.0
+    total_user_time_seconds: float = 0.0
+    model_time_percent: float = 0.0
+    tool_time_percent: float = 0.0
+    user_time_percent: float = 0.0
+
+
+class TokenBreakdown(BaseModel):
+    """Percentage breakdown of token usage by category."""
+
+    input_percent: float = 0.0
+    output_percent: float = 0.0
+    cache_read_percent: float = 0.0
+    cache_creation_percent: float = 0.0
+
+
 class ToolCallStatistics(BaseModel):
     """Statistics about tool calls in a session."""
 
@@ -226,6 +246,8 @@ class ToolCallStatistics(BaseModel):
     total_tokens: int = 0
     success_count: int = 0
     error_count: int = 0
+    total_latency_seconds: float = 0.0
+    avg_latency_seconds: float = 0.0
 
 
 class SubagentSession(BaseModel):
@@ -307,6 +329,10 @@ class SessionStatistics(BaseModel):
     session_duration_seconds: float | None = None
     first_message_time: datetime | None = None
     last_message_time: datetime | None = None
+
+    # Time and token breakdowns
+    time_breakdown: TimeBreakdown | None = None
+    token_breakdown: TokenBreakdown | None = None
 
     @property
     def average_tokens_per_message(self) -> float:

@@ -153,6 +153,32 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
     invocations: eff.totalInvocations,
   }));
 
+  // Compute time-based bottleneck if time_breakdown is available
+  const allBottlenecks = useMemo(() => {
+    const bottlenecks = [...(analytics?.performanceBottlenecks || [])];
+    const tb = statsData?.statistics?.time_breakdown;
+    if (tb) {
+      const categories = [
+        { name: 'Model', percent: tb.model_time_percent },
+        { name: 'Tool execution', percent: tb.tool_time_percent },
+        { name: 'User', percent: tb.user_time_percent },
+      ];
+      const highest = categories.reduce((a, b) => (a.percent > b.percent ? a : b));
+      if (highest.percent > 60) {
+        bottlenecks.unshift({
+          type: 'long_duration' as const,
+          severity: highest.percent > 80 ? 'high' as const : 'medium' as const,
+          description: `${highest.name} dominates session time (${highest.percent.toFixed(1)}%)`,
+          affectedComponent: 'Session time distribution',
+          impactMetrics: {},
+          recommendation: `Investigate why ${highest.name.toLowerCase()} time is disproportionately high`,
+          relatedMessages: [],
+        });
+      }
+    }
+    return bottlenecks;
+  }, [analytics, statsData]);
+
   const formatNumber = (num: number): string => num.toLocaleString();
 
   return (
@@ -261,25 +287,33 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
                   <th>Tool</th>
                   <th>Calls</th>
                   <th>Avg Tokens/Call</th>
+                  <th>Avg Latency</th>
                   <th>Success Rate</th>
                   <th>Common Parameters</th>
                 </tr>
               </thead>
               <tbody>
-                {analytics.toolUsagePatterns.slice(0, 10).map((pattern) => (
-                  <tr key={pattern.toolName}>
-                    <td className="tool-name">{pattern.toolName}</td>
-                    <td>{formatNumber(pattern.totalCalls)}</td>
-                    <td>{Math.round(pattern.averageTokensPerCall)}</td>
-                    <td className={pattern.successRate < 0.7 ? 'low-success' : ''}>
-                      {(pattern.successRate * 100).toFixed(1)}%
-                    </td>
-                    <td className="params-cell">
-                      {Object.keys(pattern.commonParameters).slice(0, 3).join(', ')}
-                      {Object.keys(pattern.commonParameters).length > 3 ? '...' : ''}
-                    </td>
-                  </tr>
-                ))}
+                {analytics.toolUsagePatterns.slice(0, 10).map((pattern) => {
+                  const toolStat = statsData?.statistics?.tool_calls?.find(
+                    (tc) => tc.tool_name === pattern.toolName
+                  );
+                  const avgLatency = toolStat?.avg_latency_seconds || 0;
+                  return (
+                    <tr key={pattern.toolName}>
+                      <td className="tool-name">{pattern.toolName}</td>
+                      <td>{formatNumber(pattern.totalCalls)}</td>
+                      <td>{Math.round(pattern.averageTokensPerCall)}</td>
+                      <td>{avgLatency > 0 ? avgLatency.toFixed(2) + 's' : '--'}</td>
+                      <td className={pattern.successRate < 0.7 ? 'low-success' : ''}>
+                        {(pattern.successRate * 100).toFixed(1)}%
+                      </td>
+                      <td className="params-cell">
+                        {Object.keys(pattern.commonParameters).slice(0, 3).join(', ')}
+                        {Object.keys(pattern.commonParameters).length > 3 ? '...' : ''}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -329,11 +363,11 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
       )}
 
       {/* Performance Bottlenecks */}
-      {analytics.performanceBottlenecks.length > 0 && (
+      {allBottlenecks.length > 0 && (
         <div className="bottlenecks-section">
           <h3 className="section-title">Performance Bottlenecks</h3>
           <div className="bottlenecks-list">
-            {analytics.performanceBottlenecks.map((bottleneck, idx) => (
+            {allBottlenecks.map((bottleneck, idx) => (
               <div key={idx} className={`bottleneck-card severity-${bottleneck.severity}`}>
                 <div className="bottleneck-header">
                   <span className={`severity-badge ${bottleneck.severity}`}>{bottleneck.severity}</span>

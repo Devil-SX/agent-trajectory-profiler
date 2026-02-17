@@ -182,12 +182,30 @@ export interface SessionMetadataDisplay {
   totalTokens: number;
 }
 
+export interface TimeBreakdown {
+  total_model_time_seconds: number;
+  total_tool_time_seconds: number;
+  total_user_time_seconds: number;
+  model_time_percent: number;
+  tool_time_percent: number;
+  user_time_percent: number;
+}
+
+export interface TokenBreakdown {
+  input_percent: number;
+  output_percent: number;
+  cache_read_percent: number;
+  cache_creation_percent: number;
+}
+
 export interface ToolCallStatistics {
   tool_name: string;
   count: number;
   total_tokens: number;
   success_count: number;
   error_count: number;
+  total_latency_seconds: number;
+  avg_latency_seconds: number;
 }
 
 export interface SessionStatistics {
@@ -207,6 +225,8 @@ export interface SessionStatistics {
   session_duration_seconds: number | null;
   first_message_time: string | null;
   last_message_time: string | null;
+  time_breakdown: TimeBreakdown | null;
+  token_breakdown: TokenBreakdown | null;
 }
 
 export interface SessionStatisticsResponse {
