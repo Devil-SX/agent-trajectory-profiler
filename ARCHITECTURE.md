@@ -34,8 +34,9 @@ The parser in `session_parser.py` uses a **single-pass loop** over all messages:
    - Gap → assistant message: **model inference time**
    - Gap → user message with `tool_result` content: **tool execution time**
    - Gap → user message without `tool_result`: **user idle time**
+   - Gap exceeding **inactivity threshold** (default 30 min): **inactive time** (app closed, sleeping, AFK)
    - Negative gap: skipped (out-of-order timestamps)
-5. **Post-loop** — `TimeBreakdown` and `TokenBreakdown` are built from accumulators, per-tool avg latency computed.
+5. **Post-loop** — `TimeBreakdown` and `TokenBreakdown` are built from accumulators, per-tool avg latency computed. Active-time percentages (model/tool/user) are computed over active time only; inactive time is reported separately.
 
 ## API Layer
 
@@ -61,4 +62,5 @@ The parser in `session_parser.py` uses a **single-pass loop** over all messages:
 
 - **Batched tool calls**: When the assistant invokes multiple tools in a single message, all `tool_use` blocks share the same message timestamp. The latency computed for each tool reflects the gap from that shared timestamp to the `tool_result` message, which may overcount for the first tools in a batch.
 - **Subagent timing**: Subagent messages are interleaved in the main message stream. Time attribution treats them the same as main-session messages, so subagent time is folded into the model/tool/user buckets rather than tracked separately.
-- **User idle time**: Includes any time the user spends reading output, thinking, or is AFK. It does not distinguish active thinking from idle time.
+- **User idle time**: Includes any time the user spends reading output, thinking, or short breaks. It does not distinguish active thinking from short idle time.
+- **Inactivity threshold**: Gaps exceeding 30 minutes (configurable via `inactivity_threshold_seconds`) are classified as **inactive** rather than model/tool/user time. This prevents overnight sleep, app restarts, or multi-day breaks from inflating the active time metrics. Claude Code does not record explicit open/close events, so this heuristic is the best available signal.

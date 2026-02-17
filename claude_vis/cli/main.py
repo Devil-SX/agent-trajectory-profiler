@@ -80,7 +80,7 @@ def check_and_build_frontend() -> bool:
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="claude-vis")
+@click.version_option(version="0.2.0", prog_name="claude-vis")
 def main() -> None:
     """Claude Code Session Visualizer CLI."""
     pass
@@ -296,9 +296,27 @@ def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> No
         for tc in stats.tool_calls[:15]:
             lat_str = f"{tc.avg_latency_seconds:.2f}s" if tc.avg_latency_seconds > 0 else "--"
             err_str = str(tc.error_count) if tc.error_count > 0 else "--"
-            click.echo(f"    {tc.tool_name:<28} {tc.count:>5}  {lat_str:>8}  {err_str:>6}")
+            # Shorten MCP tool names: "mcp__server__method" -> "method (group)"
+            display_name = tc.tool_name
+            if tc.tool_name.startswith("mcp__"):
+                parts = tc.tool_name.split("__")
+                if len(parts) >= 3:
+                    display_name = f"{parts[-1]}"
+            click.echo(f"    {display_name:<28} {tc.count:>5}  {lat_str:>8}  {err_str:>6}")
         if len(stats.tool_calls) > 15:
             click.echo(f"    ... and {len(stats.tool_calls) - 15} more tools")
+
+    # Tool Groups (only show groups with multiple tools, e.g. MCP servers)
+    if stats.tool_groups:
+        multi_tool_groups = [g for g in stats.tool_groups if g.tool_count > 1]
+        if multi_tool_groups:
+            click.echo(f"\n  Tool Groups (MCP)")
+            click.echo(f"    {'Group':<28} {'Count':>5}  {'Avg Lat':>8}  {'Errors':>6}  {'Tools':>5}")
+            click.echo(f"    {'---':<28} {'-----':>5}  {'--------':>8}  {'------':>6}  {'-----':>5}")
+            for g in multi_tool_groups:
+                lat_str = f"{g.avg_latency_seconds:.2f}s" if g.avg_latency_seconds > 0 else "--"
+                err_str = str(g.error_count) if g.error_count > 0 else "--"
+                click.echo(f"    {g.group_name:<28} {g.count:>5}  {lat_str:>8}  {err_str:>6}  {g.tool_count:>5}")
 
     # Subagents
     if stats.subagent_count:
@@ -309,10 +327,12 @@ def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> No
     # Time Breakdown
     if stats.time_breakdown:
         tbd = stats.time_breakdown
-        click.echo(f"\n  Time Breakdown")
+        click.echo(f"\n  Time Breakdown (active: {_format_duration(tbd.total_active_time_seconds)})")
         click.echo(f"    Model:      {_format_duration(tbd.total_model_time_seconds):>12}  ({tbd.model_time_percent:>5.1f}%)")
         click.echo(f"    Tool:       {_format_duration(tbd.total_tool_time_seconds):>12}  ({tbd.tool_time_percent:>5.1f}%)")
         click.echo(f"    User:       {_format_duration(tbd.total_user_time_seconds):>12}  ({tbd.user_time_percent:>5.1f}%)")
+        if tbd.total_inactive_time_seconds > 0:
+            click.echo(f"    Inactive:   {_format_duration(tbd.total_inactive_time_seconds):>12}  (gaps > {_format_duration(tbd.inactivity_threshold_seconds)})")
         # Identify bottleneck
         categories = [
             ("Model", tbd.model_time_percent),
@@ -320,7 +340,8 @@ def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> No
             ("User", tbd.user_time_percent),
         ]
         bottleneck = max(categories, key=lambda x: x[1])
-        click.echo(f"    Bottleneck: {bottleneck[0]} ({bottleneck[1]:.1f}% of session time)")
+        click.echo(f"    Bottleneck: {bottleneck[0]} ({bottleneck[1]:.1f}% of active time)")
+        click.echo(f"    Interactions: {tbd.user_interaction_count}  ({tbd.interactions_per_hour:.1f}/hour)")
 
     # Duration
     click.echo(f"\n  Duration:     {_format_duration(stats.session_duration_seconds)}")

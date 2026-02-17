@@ -186,9 +186,15 @@ export interface TimeBreakdown {
   total_model_time_seconds: number;
   total_tool_time_seconds: number;
   total_user_time_seconds: number;
+  total_inactive_time_seconds: number;
+  total_active_time_seconds: number;
   model_time_percent: number;
   tool_time_percent: number;
   user_time_percent: number;
+  inactive_time_percent: number;
+  inactivity_threshold_seconds: number;
+  user_interaction_count: number;
+  interactions_per_hour: number;
 }
 
 export interface TokenBreakdown {
@@ -206,6 +212,19 @@ export interface ToolCallStatistics {
   error_count: number;
   total_latency_seconds: number;
   avg_latency_seconds: number;
+  tool_group: string;
+}
+
+export interface ToolGroupStatistics {
+  group_name: string;
+  count: number;
+  total_tokens: number;
+  success_count: number;
+  error_count: number;
+  total_latency_seconds: number;
+  avg_latency_seconds: number;
+  tool_count: number;
+  tools: string[];
 }
 
 export interface SessionStatistics {
@@ -219,6 +238,7 @@ export interface SessionStatistics {
   cache_read_tokens: number;
   cache_creation_tokens: number;
   tool_calls: ToolCallStatistics[];
+  tool_groups: ToolGroupStatistics[];
   total_tool_calls: number;
   subagent_count: number;
   subagent_sessions: Record<string, number>;

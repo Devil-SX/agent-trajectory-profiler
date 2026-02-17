@@ -224,9 +224,15 @@ class TimeBreakdown(BaseModel):
     total_model_time_seconds: float = 0.0
     total_tool_time_seconds: float = 0.0
     total_user_time_seconds: float = 0.0
+    total_inactive_time_seconds: float = 0.0
+    total_active_time_seconds: float = 0.0
     model_time_percent: float = 0.0
     tool_time_percent: float = 0.0
     user_time_percent: float = 0.0
+    inactive_time_percent: float = 0.0
+    inactivity_threshold_seconds: float = 1800.0
+    user_interaction_count: int = 0
+    interactions_per_hour: float = 0.0
 
 
 class TokenBreakdown(BaseModel):
@@ -248,6 +254,21 @@ class ToolCallStatistics(BaseModel):
     error_count: int = 0
     total_latency_seconds: float = 0.0
     avg_latency_seconds: float = 0.0
+    tool_group: str = ""
+
+
+class ToolGroupStatistics(BaseModel):
+    """Aggregated statistics for a group of related tools (e.g., all MCP tools from one server)."""
+
+    group_name: str
+    count: int = 0
+    total_tokens: int = 0
+    success_count: int = 0
+    error_count: int = 0
+    total_latency_seconds: float = 0.0
+    avg_latency_seconds: float = 0.0
+    tool_count: int = 0
+    tools: list[str] = Field(default_factory=list)
 
 
 class SubagentSession(BaseModel):
@@ -317,6 +338,7 @@ class SessionStatistics(BaseModel):
 
     # Tool statistics
     tool_calls: list[ToolCallStatistics] = Field(default_factory=list)
+    tool_groups: list[ToolGroupStatistics] = Field(default_factory=list)
     total_tool_calls: int = 0
 
     # Subagent statistics

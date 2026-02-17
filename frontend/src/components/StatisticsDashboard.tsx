@@ -271,6 +271,14 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                     {statistics.time_breakdown.user_time_percent.toFixed(1)}%
                   </span>
                 </div>
+                {statistics.time_breakdown.total_inactive_time_seconds > 0 && (
+                  <div className="breakdown-item">
+                    <span className="breakdown-label">Inactive:</span>
+                    <span className="breakdown-value">
+                      {formatDuration(statistics.time_breakdown.total_inactive_time_seconds)}
+                    </span>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -383,10 +391,17 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
           </div>
         )}
 
-        {/* Time Breakdown Pie Chart */}
+        {/* Time Breakdown Pie Chart (active time only, excludes inactive gaps) */}
         {statistics.time_breakdown && (
           <div className="chart-card">
-            <h3 className="card-title">Time Breakdown</h3>
+            <h3 className="card-title">
+              Active Time Breakdown
+              {statistics.time_breakdown.total_inactive_time_seconds > 0 && (
+                <span style={{ fontSize: '0.75em', fontWeight: 'normal', color: '#666', marginLeft: '8px' }}>
+                  (excl. {formatDuration(statistics.time_breakdown.total_inactive_time_seconds)} inactive)
+                </span>
+              )}
+            </h3>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -409,7 +424,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                   <Cell fill="#f57c00" />
                   <Cell fill="#388e3c" />
                 </Pie>
-                <Tooltip formatter={(value) => `${(value as number).toFixed(1)}s`} />
+                <Tooltip formatter={(value) => formatDuration(value as number)} />
               </PieChart>
             </ResponsiveContainer>
           </div>

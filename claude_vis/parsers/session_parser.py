@@ -22,6 +22,7 @@ from claude_vis.models import (
     TimeBreakdown,
     TokenBreakdown,
     ToolCallStatistics,
+    ToolGroupStatistics,
 )
 
 
@@ -168,6 +169,36 @@ def extract_subagent_sessions(messages: list[MessageRecord]) -> list[SubagentSes
     return subagent_sessions
 
 
+def _parse_tool_group(tool_name: str) -> str:
+    """
+    Determine the group name for a tool based on its naming convention.
+
+    MCP tools follow the pattern ``mcp__<server_name>__<method_name>``.
+    For these, the group is the server name with an " (MCP)" suffix.
+    Non-MCP tools each form their own group (group name == tool name).
+
+    Examples:
+        "mcp__plugin_autochip_WaveTool__get_fst_signals" -> "WaveTool (MCP)"
+        "mcp__obsidian__read_note"                       -> "obsidian (MCP)"
+        "mcp__bilibili-mcp__search_video"                -> "bilibili-mcp (MCP)"
+        "Bash"                                           -> "Bash"
+        "Read"                                           -> "Read"
+    """
+    if not tool_name.startswith("mcp__"):
+        return tool_name
+
+    parts = tool_name.split("__")
+    if len(parts) < 3:
+        return tool_name
+
+    server_name = parts[1]
+    # Use the last segment of underscore-separated server name as display name
+    # e.g. "plugin_autochip_WaveTool" -> "WaveTool"
+    segments = server_name.split("_")
+    display_name = segments[-1] if segments else server_name
+    return f"{display_name} (MCP)"
+
+
 def _has_tool_result_content(msg: MessageRecord) -> bool:
     """Check if a message contains tool_result content blocks."""
     if not msg.message or not msg.message.content:
@@ -219,15 +250,24 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
     last_time: datetime | None = None
 
     # Time attribution accumulators
+    # Gaps exceeding the inactivity threshold are classified as "inactive"
+    # (user closed app, sleeping, AFK) rather than model/tool/user time.
+    inactivity_threshold = 1800.0  # 30 minutes
     total_model_time = 0.0
     total_tool_time = 0.0
     total_user_time = 0.0
+    total_inactive_time = 0.0
+    # Count genuine user interactions (user messages that are NOT tool_results)
+    user_interaction_count = 0
     prev_timestamp: datetime | None = None
 
     for msg in messages:
         # Count message types
         if msg.is_user_message:
             user_count += 1
+            # Count genuine user interactions (not tool_result messages)
+            if not _has_tool_result_content(msg):
+                user_interaction_count += 1
         elif msg.is_assistant_message:
             assistant_count += 1
         else:
@@ -244,7 +284,10 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
         if prev_timestamp is not None:
             gap = (timestamp - prev_timestamp).total_seconds()
             if gap >= 0:
-                if msg.is_assistant_message:
+                if gap > inactivity_threshold:
+                    # Gap exceeds threshold → inactive (app closed, sleeping, AFK)
+                    total_inactive_time += gap
+                elif msg.is_assistant_message:
                     # Gap before assistant message → model inference time
                     total_model_time += gap
                 elif msg.is_user_message and _has_tool_result_content(msg):
@@ -335,11 +378,50 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
                 error_count=int(stats["error"]),
                 total_latency_seconds=round(total_latency, 3),
                 avg_latency_seconds=round(avg_latency, 3),
+                tool_group=_parse_tool_group(tool_name),
             )
         )
 
     # Sort by count descending for easier consumption
     tool_call_list.sort(key=lambda x: x.count, reverse=True)
+
+    # Build tool group statistics by aggregating tools that share a group
+    group_agg: dict[str, dict] = {}
+    for tc in tool_call_list:
+        g = tc.tool_group
+        if g not in group_agg:
+            group_agg[g] = {
+                "count": 0, "tokens": 0, "success": 0, "error": 0,
+                "total_latency": 0.0, "latency_count": 0, "tools": [],
+            }
+        ga = group_agg[g]
+        ga["count"] += tc.count
+        ga["tokens"] += tc.total_tokens
+        ga["success"] += tc.success_count
+        ga["error"] += tc.error_count
+        ga["total_latency"] += tc.total_latency_seconds
+        if tc.avg_latency_seconds > 0:
+            ga["latency_count"] += tc.count  # weight by call count
+        ga["tools"].append(tc.tool_name)
+
+    tool_group_list = []
+    for group_name, ga in group_agg.items():
+        total_lat = ga["total_latency"]
+        lat_count = ga["latency_count"]
+        tool_group_list.append(
+            ToolGroupStatistics(
+                group_name=group_name,
+                count=ga["count"],
+                total_tokens=ga["tokens"],
+                success_count=ga["success"],
+                error_count=ga["error"],
+                total_latency_seconds=round(total_lat, 3),
+                avg_latency_seconds=round(total_lat / ga["count"], 3) if ga["count"] > 0 else 0.0,
+                tool_count=len(ga["tools"]),
+                tools=ga["tools"],
+            )
+        )
+    tool_group_list.sort(key=lambda x: x.count, reverse=True)
 
     # Extract subagent sessions and count by type
     subagent_sessions_list = extract_subagent_sessions(messages)
@@ -355,16 +437,28 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
         duration_seconds = (last_time - first_time).total_seconds()
 
     # Build TimeBreakdown
-    total_attributed_time = total_model_time + total_tool_time + total_user_time
+    # Percentages are computed over active time only (excluding inactive gaps).
+    # Inactive time is reported separately so users see both the active breakdown
+    # and how much of the session span was inactive (app closed / AFK).
+    total_active_time = total_model_time + total_tool_time + total_user_time
+    total_span_time = total_active_time + total_inactive_time
+    active_hours = total_active_time / 3600.0
+    interactions_per_hour = round(user_interaction_count / active_hours, 1) if active_hours > 0 else 0.0
     time_breakdown = None
-    if total_attributed_time > 0:
+    if total_span_time > 0:
         time_breakdown = TimeBreakdown(
             total_model_time_seconds=round(total_model_time, 2),
             total_tool_time_seconds=round(total_tool_time, 2),
             total_user_time_seconds=round(total_user_time, 2),
-            model_time_percent=round(total_model_time / total_attributed_time * 100, 1),
-            tool_time_percent=round(total_tool_time / total_attributed_time * 100, 1),
-            user_time_percent=round(total_user_time / total_attributed_time * 100, 1),
+            total_inactive_time_seconds=round(total_inactive_time, 2),
+            total_active_time_seconds=round(total_active_time, 2),
+            model_time_percent=round(total_model_time / total_active_time * 100, 1) if total_active_time > 0 else 0.0,
+            tool_time_percent=round(total_tool_time / total_active_time * 100, 1) if total_active_time > 0 else 0.0,
+            user_time_percent=round(total_user_time / total_active_time * 100, 1) if total_active_time > 0 else 0.0,
+            inactive_time_percent=round(total_inactive_time / total_span_time * 100, 1),
+            inactivity_threshold_seconds=inactivity_threshold,
+            user_interaction_count=user_interaction_count,
+            interactions_per_hour=interactions_per_hour,
         )
 
     # Build TokenBreakdown
@@ -390,6 +484,7 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
         cache_read_tokens=cache_read_tokens,
         cache_creation_tokens=cache_creation_tokens,
         tool_calls=tool_call_list,
+        tool_groups=tool_group_list,
         total_tool_calls=sum(int(tool_stats[t]["count"]) for t in tool_stats),
         subagent_count=len(subagent_sessions_list),
         subagent_sessions=subagent_type_counts,

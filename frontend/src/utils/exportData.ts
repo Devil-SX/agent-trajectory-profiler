@@ -104,6 +104,14 @@ export function exportStatisticsToCSV(
       metric: 'User Time %',
       value: statistics.time_breakdown?.user_time_percent || 0,
     },
+    {
+      metric: 'Inactive Time (seconds)',
+      value: statistics.time_breakdown?.total_inactive_time_seconds || 0,
+    },
+    {
+      metric: 'Inactive Time %',
+      value: statistics.time_breakdown?.inactive_time_percent || 0,
+    },
   ];
 
   return convertToCSV(rows);
@@ -115,6 +123,7 @@ export function exportStatisticsToCSV(
 export function exportToolStatsToCSV(statistics: SessionStatistics): string {
   const rows = statistics.tool_calls.map((tool) => ({
     tool_name: tool.tool_name,
+    tool_group: tool.tool_group,
     total_calls: tool.count,
     total_tokens: tool.total_tokens,
     success_count: tool.success_count,
