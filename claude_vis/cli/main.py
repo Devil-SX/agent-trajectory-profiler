@@ -80,7 +80,7 @@ def check_and_build_frontend() -> bool:
 
 
 @click.group()
-@click.version_option(version="0.2.0", prog_name="claude-vis")
+@click.version_option(version="0.3.0", prog_name="claude-vis")
 def main() -> None:
     """Claude Code Session Visualizer CLI."""
     pass
@@ -256,6 +256,15 @@ def _format_duration(seconds: float | None) -> str:
     return f"{hours}h {mins}m"
 
 
+def _format_chars(chars: int) -> str:
+    """Format character count into human-readable form (e.g. 1.2K, 3.4M)."""
+    if chars < 1000:
+        return f"{chars}"
+    if chars < 1_000_000:
+        return f"{chars / 1000:.1f}K"
+    return f"{chars / 1_000_000:.1f}M"
+
+
 def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> None:
     """Print human-readable statistics for a single session."""
     from claude_vis.models import SessionStatistics  # noqa: F811
@@ -318,6 +327,40 @@ def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> No
                 err_str = str(g.error_count) if g.error_count > 0 else "--"
                 click.echo(f"    {g.group_name:<28} {g.count:>5}  {lat_str:>8}  {err_str:>6}  {g.tool_count:>5}")
 
+    # Bash Breakdown
+    if stats.bash_breakdown:
+        bb = stats.bash_breakdown
+        click.echo(f"\n  Bash Breakdown ({bb.total_calls} calls, {bb.total_sub_commands} sub-commands, avg {bb.avg_commands_per_call}/call)")
+
+        # Commands/call distribution — compact single line
+        dist_parts = []
+        for n in sorted(bb.commands_per_call_distribution.keys()):
+            if n <= 3:
+                dist_parts.append(f"{n}: {bb.commands_per_call_distribution[n]}")
+            else:
+                # Aggregate 4+
+                break
+        # Sum counts for 4+
+        four_plus = sum(
+            cnt for n, cnt in bb.commands_per_call_distribution.items() if n >= 4
+        )
+        if four_plus:
+            dist_parts.append(f"4+: {four_plus}")
+        click.echo(f"    Commands/Call    {', '.join(dist_parts)}")
+
+        # Top commands table with latency and output
+        top_n = 10
+        click.echo(f"    {'Command':<20} {'Count':>5}  {'Total Lat':>10}  {'Avg Lat':>8}  {'Output':>8}")
+        click.echo(f"    {'---':<20} {'-----':>5}  {'----------':>10}  {'--------':>8}  {'------':>8}")
+        for cs in bb.command_stats[:top_n]:
+            tot_lat = _format_duration(cs.total_latency_seconds) if cs.total_latency_seconds > 0 else "--"
+            avg_lat = f"{cs.avg_latency_seconds:.2f}s" if cs.avg_latency_seconds > 0 else "--"
+            out_str = _format_chars(cs.total_output_chars) if cs.total_output_chars > 0 else "--"
+            click.echo(f"    {cs.command_name:<20} {cs.count:>5}  {tot_lat:>10}  {avg_lat:>8}  {out_str:>8}")
+        remaining = len(bb.command_stats) - top_n
+        if remaining > 0:
+            click.echo(f"    ... and {remaining} more")
+
     # Subagents
     if stats.subagent_count:
         click.echo(f"\n  Subagents: {stats.subagent_count}")
@@ -349,6 +392,8 @@ def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> No
         click.echo(f"  Start:        {stats.first_message_time.strftime('%Y-%m-%d %H:%M:%S')}")
     if stats.last_message_time:
         click.echo(f"  End:          {stats.last_message_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    if stats.compact_count > 0:
+        click.echo(f"  Auto Compacts: {stats.compact_count}")
 
     click.echo()
 

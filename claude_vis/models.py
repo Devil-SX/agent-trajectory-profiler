@@ -271,6 +271,35 @@ class ToolGroupStatistics(BaseModel):
     tools: list[str] = Field(default_factory=list)
 
 
+class CompactEvent(BaseModel):
+    """A single auto-compact (context summarization) event."""
+
+    timestamp: str
+    trigger: str = "auto"
+    pre_tokens: int = 0
+
+
+class BashCommandStats(BaseModel):
+    """Stats for a base command (e.g. 'grep', 'python') used within Bash calls."""
+
+    command_name: str
+    count: int = 0
+    total_latency_seconds: float = 0.0
+    avg_latency_seconds: float = 0.0
+    total_output_chars: int = 0
+    avg_output_chars: float = 0.0
+
+
+class BashBreakdown(BaseModel):
+    """Detailed breakdown of Bash tool usage."""
+
+    total_calls: int = 0
+    total_sub_commands: int = 0
+    avg_commands_per_call: float = 0.0
+    commands_per_call_distribution: dict[int, int] = Field(default_factory=dict)
+    command_stats: list[BashCommandStats] = Field(default_factory=list)
+
+
 class SubagentSession(BaseModel):
     """
     A subagent session nested within a main session.
@@ -355,6 +384,13 @@ class SessionStatistics(BaseModel):
     # Time and token breakdowns
     time_breakdown: TimeBreakdown | None = None
     token_breakdown: TokenBreakdown | None = None
+
+    # Bash breakdown
+    bash_breakdown: BashBreakdown | None = None
+
+    # Auto-compact events
+    compact_count: int = 0
+    compact_events: list[CompactEvent] = Field(default_factory=list)
 
     @property
     def average_tokens_per_message(self) -> float:

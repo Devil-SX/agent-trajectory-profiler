@@ -6,12 +6,17 @@ reading JSONL session files and extracting structured data.
 """
 
 import json
+import re
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from claude_vis.models import (
+    BashBreakdown,
+    BashCommandStats,
+    CompactEvent,
     MessageRecord,
     ParsedSessionData,
     Session,
@@ -169,6 +174,122 @@ def extract_subagent_sessions(messages: list[MessageRecord]) -> list[SubagentSes
     return subagent_sessions
 
 
+def _split_bash_on_operators(command_str: str) -> list[str]:
+    """
+    Split a shell command string on chaining operators (&&, ||, ;, |)
+    while respecting single quotes, double quotes, and backtick quotes.
+
+    Returns a list of sub-command strings.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    i = 0
+    n = len(command_str)
+    quote_char: str | None = None  # None, "'", '"', '`'
+
+    while i < n:
+        ch = command_str[i]
+
+        # Handle escape sequences inside double quotes / unquoted
+        if ch == '\\' and quote_char != "'" and i + 1 < n:
+            current.append(ch)
+            current.append(command_str[i + 1])
+            i += 2
+            continue
+
+        # Toggle quote state
+        if quote_char is None and ch in ("'", '"', '`'):
+            quote_char = ch
+            current.append(ch)
+            i += 1
+            continue
+        if quote_char and ch == quote_char:
+            quote_char = None
+            current.append(ch)
+            i += 1
+            continue
+
+        # Only split when outside quotes
+        if quote_char is None:
+            # Check two-char operators first: && ||
+            if i + 1 < n:
+                two = command_str[i:i + 2]
+                if two in ('&&', '||'):
+                    parts.append(''.join(current))
+                    current = []
+                    i += 2
+                    continue
+            # Single-char operators: | ;
+            if ch in ('|', ';'):
+                parts.append(''.join(current))
+                current = []
+                i += 1
+                continue
+
+        current.append(ch)
+        i += 1
+
+    # Last segment
+    tail = ''.join(current).strip()
+    if tail:
+        parts.append(tail)
+
+    return parts
+
+
+# Regex to validate that an extracted token looks like a real command name
+# (starts with letter, dot, or underscore — filters out numbers, punctuation, etc.)
+_CMD_NAME_RE = re.compile(r'^[a-zA-Z_.]')
+
+
+def _parse_bash_sub_commands(command_str: str) -> list[str]:
+    """
+    Extract base command names from a Bash command string.
+
+    Splits on shell chaining operators (&&, ||, ;, |) while respecting
+    quoted strings, then extracts the first "real word" from each
+    sub-command, stripping any path prefix.
+
+    Args:
+        command_str: The full shell command string.
+
+    Returns:
+        List of base command names (e.g. ['cd', 'make', 'tail']).
+    """
+    if not command_str or not command_str.strip():
+        return []
+
+    parts = _split_bash_on_operators(command_str)
+    commands: list[str] = []
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+
+        # Tokenize on whitespace, skip env var assignments (FOO=bar)
+        tokens = part.split()
+        cmd_token = None
+        for token in tokens:
+            # Skip env var assignments like VAR=value
+            if '=' in token and not token.startswith('-') and token.split('=')[0].isidentifier():
+                continue
+            cmd_token = token
+            break
+
+        if cmd_token:
+            # Strip path prefix: /usr/bin/python -> python
+            base = cmd_token.rsplit('/', 1)[-1]
+            # Strip leading ./ prefix
+            if base.startswith('./'):
+                base = base[2:]
+            # Validate it looks like a command name
+            if base and _CMD_NAME_RE.match(base):
+                commands.append(base)
+
+    return commands
+
+
 def _parse_tool_group(tool_name: str) -> str:
     """
     Determine the group name for a tool based on its naming convention.
@@ -245,6 +366,14 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
     tool_use_map: dict[str, tuple[str, datetime]] = {}
     # Track subagent sessions by agent_id to deduplicate
     subagent_sessions_map: dict[str, str] = {}
+
+    # Bash breakdown accumulators
+    bash_command_counts: Counter[str] = Counter()
+    bash_command_latency: Counter[str] = Counter()  # total latency per command (distributed)
+    bash_command_output_chars: Counter[str] = Counter()  # total output chars per command
+    bash_commands_per_call: list[int] = []
+    # Map tool_use_id -> list of sub-command names (for distributing latency/output on result)
+    bash_sub_cmds_map: dict[str, list[str]] = {}
 
     first_time: datetime | None = None
     last_time: datetime | None = None
@@ -336,6 +465,16 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
                             tool_stats[tool_name]["count"] += 1
                             tool_use_map[tool_id] = (tool_name, timestamp)
 
+                            # Bash breakdown: extract sub-commands
+                            if tool_name == "Bash":
+                                cmd_str = content_block.get("input", {}).get("command", "")
+                                sub_cmds = _parse_bash_sub_commands(cmd_str)
+                                bash_commands_per_call.append(len(sub_cmds))
+                                for cmd in sub_cmds:
+                                    bash_command_counts[cmd] += 1
+                                if sub_cmds:
+                                    bash_sub_cmds_map[tool_id] = sub_cmds
+
                             # Add token cost for this tool call (if available)
                             if msg.message.usage:
                                 tool_stats[tool_name]["tokens"] += msg.message.usage.total_tokens
@@ -358,6 +497,32 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
                                     if latency >= 0:
                                         tool_stats[tool_name]["total_latency"] += latency
                                         tool_stats[tool_name]["latency_count"] += 1
+
+                                        # Distribute Bash latency equally among sub-commands
+                                        if tool_name == "Bash" and tool_use_id in bash_sub_cmds_map:
+                                            sub_cmds = bash_sub_cmds_map[tool_use_id]
+                                            if sub_cmds:
+                                                per_cmd = latency / len(sub_cmds)
+                                                for cmd in sub_cmds:
+                                                    bash_command_latency[cmd] += per_cmd
+
+                                    # Distribute Bash result output chars among sub-commands
+                                    if tool_name == "Bash" and tool_use_id in bash_sub_cmds_map:
+                                        sub_cmds = bash_sub_cmds_map[tool_use_id]
+                                        if sub_cmds:
+                                            result_content = content_block.get("content", "")
+                                            if isinstance(result_content, str):
+                                                result_chars = len(result_content)
+                                            elif isinstance(result_content, list):
+                                                result_chars = sum(
+                                                    len(b.get("text", "")) if isinstance(b, dict) else len(str(b))
+                                                    for b in result_content
+                                                )
+                                            else:
+                                                result_chars = 0
+                                            per_cmd_chars = result_chars // len(sub_cmds)
+                                            for cmd in sub_cmds:
+                                                bash_command_output_chars[cmd] += per_cmd_chars
 
         # Track subagent sessions
         if msg.is_subagent_message and msg.agentId:
@@ -473,6 +638,37 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
             cache_creation_percent=round(cache_creation_tokens / all_tokens * 100, 1) if cache_creation_tokens else 0.0,
         )
 
+    # Build BashBreakdown
+    bash_breakdown = None
+    if bash_commands_per_call:
+        total_bash_calls = len(bash_commands_per_call)
+        total_sub = sum(bash_commands_per_call)
+        avg_per_call = round(total_sub / total_bash_calls, 2) if total_bash_calls > 0 else 0.0
+
+        # Distribution: count of calls with N sub-commands
+        dist: Counter[int] = Counter(bash_commands_per_call)
+
+        # Top commands sorted by count desc, with latency and output chars
+        sorted_cmds = [
+            BashCommandStats(
+                command_name=name,
+                count=cnt,
+                total_latency_seconds=round(bash_command_latency.get(name, 0.0), 2),
+                avg_latency_seconds=round(bash_command_latency.get(name, 0.0) / cnt, 2) if cnt > 0 else 0.0,
+                total_output_chars=bash_command_output_chars.get(name, 0),
+                avg_output_chars=round(bash_command_output_chars.get(name, 0) / cnt, 2) if cnt > 0 else 0.0,
+            )
+            for name, cnt in bash_command_counts.most_common()
+        ]
+
+        bash_breakdown = BashBreakdown(
+            total_calls=total_bash_calls,
+            total_sub_commands=total_sub,
+            avg_commands_per_call=avg_per_call,
+            commands_per_call_distribution=dict(sorted(dist.items())),
+            command_stats=sorted_cmds,
+        )
+
     return SessionStatistics(
         message_count=len(messages),
         user_message_count=user_count,
@@ -493,7 +689,47 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
         last_message_time=last_time,
         time_breakdown=time_breakdown,
         token_breakdown=token_breakdown,
+        bash_breakdown=bash_breakdown,
     )
+
+
+def extract_compact_events(file_path: Path) -> list[CompactEvent]:
+    """
+    Extract auto-compact (context summarization) events from a raw JSONL file.
+
+    Compact events are system messages with ``subtype: "compact_boundary"`` and
+    a ``compactMetadata`` dict containing ``trigger`` and ``preTokens``.
+    These messages are not captured by the standard ``MessageRecord`` parser
+    because ``type: "system"`` is not in the ``MessageType`` enum.
+
+    Args:
+        file_path: Path to the .jsonl session file.
+
+    Returns:
+        List of CompactEvent objects sorted by timestamp.
+    """
+    events: list[CompactEvent] = []
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or "compact_boundary" not in line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if data.get("subtype") != "compact_boundary":
+                    continue
+                cm = data.get("compactMetadata", {})
+                events.append(CompactEvent(
+                    timestamp=data.get("timestamp", ""),
+                    trigger=cm.get("trigger", "unknown"),
+                    pre_tokens=cm.get("preTokens", 0),
+                ))
+    except OSError:
+        pass
+    return events
 
 
 def parse_session_file(file_path: Path) -> Session:
@@ -526,6 +762,11 @@ def parse_session_file(file_path: Path) -> Session:
 
     # Calculate statistics
     statistics = calculate_session_statistics(messages)
+
+    # Extract compact events from raw JSONL (these aren't in MessageRecord)
+    compact_events = extract_compact_events(file_path)
+    statistics.compact_count = len(compact_events)
+    statistics.compact_events = compact_events
 
     # Create session object
     session = Session(

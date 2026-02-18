@@ -48,3 +48,6 @@ Thumbs.db
 # Project specific
 *.log
 output/
+
+# Session data (private)
+tests/fixtures/*.jsonl

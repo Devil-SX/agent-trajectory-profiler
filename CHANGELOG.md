@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-18
+
+### Added
+
+- Bash command breakdown: parse sub-commands from Bash tool calls by splitting on shell operators (`&&`, `||`, `;`, `|`) with quote-aware parsing
+- Per-command statistics: count, latency (distributed equally among sub-commands per call), and output character count for each extracted command name
+- `BashCommandStats` and `BashBreakdown` models with `total_latency_seconds`, `avg_latency_seconds`, `total_output_chars`, `avg_output_chars` fields
+- `bash_breakdown` field on `SessionStatistics` with commands-per-call distribution and ranked command stats
+- Auto-compact event detection: extract `compact_boundary` system messages from raw JSONL with trigger type and pre-compact token count
+- `CompactEvent` model and `compact_count` / `compact_events` fields on `SessionStatistics`
+- `extract_compact_events()` parser function for reading compact metadata directly from JSONL (bypasses `MessageRecord` validation since `type: "system"` is not in `MessageType`)
+- CLI `--human` output: Bash Breakdown section with commands/call distribution, top 10 commands table (count, latency, output), and Auto Compacts count
+- `_format_chars()` CLI helper for human-readable character counts (e.g., `100.9K`)
+- `_split_bash_on_operators()` and `_parse_bash_sub_commands()` parser helpers with quote-aware shell command splitting
+- Frontend TypeScript interfaces: `CompactEvent`, `BashCommandStats`, `BashBreakdown`
+- `.gitignore` entry for `tests/fixtures/*.jsonl` (private session data)
+
 ## [0.2.0] - 2026-02-17
 
 ### Added

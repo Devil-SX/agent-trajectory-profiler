@@ -227,6 +227,29 @@ export interface ToolGroupStatistics {
   tools: string[];
 }
 
+export interface CompactEvent {
+  timestamp: string;
+  trigger: string;
+  pre_tokens: number;
+}
+
+export interface BashCommandStats {
+  command_name: string;
+  count: number;
+  total_latency_seconds: number;
+  avg_latency_seconds: number;
+  total_output_chars: number;
+  avg_output_chars: number;
+}
+
+export interface BashBreakdown {
+  total_calls: number;
+  total_sub_commands: number;
+  avg_commands_per_call: number;
+  commands_per_call_distribution: Record<number, number>;
+  command_stats: BashCommandStats[];
+}
+
 export interface SessionStatistics {
   message_count: number;
   user_message_count: number;
@@ -247,6 +270,9 @@ export interface SessionStatistics {
   last_message_time: string | null;
   time_breakdown: TimeBreakdown | null;
   token_breakdown: TokenBreakdown | null;
+  bash_breakdown: BashBreakdown | null;
+  compact_count: number;
+  compact_events: CompactEvent[];
 }
 
 export interface SessionStatisticsResponse {
