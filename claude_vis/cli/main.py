@@ -1,6 +1,7 @@
 """Main CLI entry point for Claude Code Session Visualizer."""
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import click
 
+from claude_vis.formatters.human import OutputLevel, format_session_stats
 from claude_vis.parsers import SessionParseError, parse_session_directory, parse_session_file
 
 
@@ -80,7 +82,7 @@ def check_and_build_frontend() -> bool:
 
 
 @click.group()
-@click.version_option(version="0.3.0", prog_name="claude-vis")
+@click.version_option(version="0.4.0", prog_name="claude-vis")
 def main() -> None:
     """Claude Code Session Visualizer CLI."""
     pass
@@ -241,161 +243,14 @@ def serve(
         sys.exit(1)
 
 
-def _format_duration(seconds: float | None) -> str:
-    """Format seconds into human-readable duration."""
-    if seconds is None:
-        return "N/A"
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    minutes = int(seconds // 60)
-    secs = seconds % 60
-    if minutes < 60:
-        return f"{minutes}m {secs:.0f}s"
-    hours = minutes // 60
-    mins = minutes % 60
-    return f"{hours}h {mins}m"
-
-
-def _format_chars(chars: int) -> str:
-    """Format character count into human-readable form (e.g. 1.2K, 3.4M)."""
-    if chars < 1000:
-        return f"{chars}"
-    if chars < 1_000_000:
-        return f"{chars / 1000:.1f}K"
-    return f"{chars / 1_000_000:.1f}M"
+def _format_session_stats(stats: "SessionStatistics", session_id: str = "") -> str:
+    """Format human-readable statistics for a single session as a string."""
+    return format_session_stats(stats, session_id, level=OutputLevel.STANDARD)
 
 
 def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> None:
     """Print human-readable statistics for a single session."""
-    from claude_vis.models import SessionStatistics  # noqa: F811
-
-    header = f"Session: {session_id}" if session_id else "Session Statistics"
-    click.echo(f"\n{'=' * 60}")
-    click.echo(f"  {header}")
-    click.echo(f"{'=' * 60}")
-
-    # Messages
-    click.echo(f"\n  Messages")
-    click.echo(f"    Total:      {stats.message_count}")
-    click.echo(f"    User:       {stats.user_message_count}")
-    click.echo(f"    Assistant:  {stats.assistant_message_count}")
-    if stats.system_message_count:
-        click.echo(f"    System:     {stats.system_message_count}")
-
-    # Tokens (with percentages)
-    click.echo(f"\n  Tokens")
-    click.echo(f"    Total:       {stats.total_tokens:,}")
-    tb = stats.token_breakdown
-    inp_pct = f"  ({tb.input_percent:.1f}%)" if tb else ""
-    out_pct = f"  ({tb.output_percent:.1f}%)" if tb else ""
-    click.echo(f"    Input:       {stats.total_input_tokens:,}{inp_pct}")
-    click.echo(f"    Output:      {stats.total_output_tokens:,}{out_pct}")
-    if stats.cache_read_tokens:
-        cr_pct = f"  ({tb.cache_read_percent:.1f}%)" if tb else ""
-        click.echo(f"    Cache Read:  {stats.cache_read_tokens:,}{cr_pct}")
-    if stats.cache_creation_tokens:
-        cc_pct = f"  ({tb.cache_creation_percent:.1f}%)" if tb else ""
-        click.echo(f"    Cache Write: {stats.cache_creation_tokens:,}{cc_pct}")
-
-    # Tools (with avg latency column)
-    if stats.tool_calls:
-        click.echo(f"\n  Tool Calls ({stats.total_tool_calls} total)")
-        click.echo(f"    {'Tool':<28} {'Count':>5}  {'Avg Lat':>8}  {'Errors':>6}")
-        click.echo(f"    {'---':<28} {'-----':>5}  {'--------':>8}  {'------':>6}")
-        for tc in stats.tool_calls[:15]:
-            lat_str = f"{tc.avg_latency_seconds:.2f}s" if tc.avg_latency_seconds > 0 else "--"
-            err_str = str(tc.error_count) if tc.error_count > 0 else "--"
-            # Shorten MCP tool names: "mcp__server__method" -> "method (group)"
-            display_name = tc.tool_name
-            if tc.tool_name.startswith("mcp__"):
-                parts = tc.tool_name.split("__")
-                if len(parts) >= 3:
-                    display_name = f"{parts[-1]}"
-            click.echo(f"    {display_name:<28} {tc.count:>5}  {lat_str:>8}  {err_str:>6}")
-        if len(stats.tool_calls) > 15:
-            click.echo(f"    ... and {len(stats.tool_calls) - 15} more tools")
-
-    # Tool Groups (only show groups with multiple tools, e.g. MCP servers)
-    if stats.tool_groups:
-        multi_tool_groups = [g for g in stats.tool_groups if g.tool_count > 1]
-        if multi_tool_groups:
-            click.echo(f"\n  Tool Groups (MCP)")
-            click.echo(f"    {'Group':<28} {'Count':>5}  {'Avg Lat':>8}  {'Errors':>6}  {'Tools':>5}")
-            click.echo(f"    {'---':<28} {'-----':>5}  {'--------':>8}  {'------':>6}  {'-----':>5}")
-            for g in multi_tool_groups:
-                lat_str = f"{g.avg_latency_seconds:.2f}s" if g.avg_latency_seconds > 0 else "--"
-                err_str = str(g.error_count) if g.error_count > 0 else "--"
-                click.echo(f"    {g.group_name:<28} {g.count:>5}  {lat_str:>8}  {err_str:>6}  {g.tool_count:>5}")
-
-    # Bash Breakdown
-    if stats.bash_breakdown:
-        bb = stats.bash_breakdown
-        click.echo(f"\n  Bash Breakdown ({bb.total_calls} calls, {bb.total_sub_commands} sub-commands, avg {bb.avg_commands_per_call}/call)")
-
-        # Commands/call distribution — compact single line
-        dist_parts = []
-        for n in sorted(bb.commands_per_call_distribution.keys()):
-            if n <= 3:
-                dist_parts.append(f"{n}: {bb.commands_per_call_distribution[n]}")
-            else:
-                # Aggregate 4+
-                break
-        # Sum counts for 4+
-        four_plus = sum(
-            cnt for n, cnt in bb.commands_per_call_distribution.items() if n >= 4
-        )
-        if four_plus:
-            dist_parts.append(f"4+: {four_plus}")
-        click.echo(f"    Commands/Call    {', '.join(dist_parts)}")
-
-        # Top commands table with latency and output
-        top_n = 10
-        click.echo(f"    {'Command':<20} {'Count':>5}  {'Total Lat':>10}  {'Avg Lat':>8}  {'Output':>8}")
-        click.echo(f"    {'---':<20} {'-----':>5}  {'----------':>10}  {'--------':>8}  {'------':>8}")
-        for cs in bb.command_stats[:top_n]:
-            tot_lat = _format_duration(cs.total_latency_seconds) if cs.total_latency_seconds > 0 else "--"
-            avg_lat = f"{cs.avg_latency_seconds:.2f}s" if cs.avg_latency_seconds > 0 else "--"
-            out_str = _format_chars(cs.total_output_chars) if cs.total_output_chars > 0 else "--"
-            click.echo(f"    {cs.command_name:<20} {cs.count:>5}  {tot_lat:>10}  {avg_lat:>8}  {out_str:>8}")
-        remaining = len(bb.command_stats) - top_n
-        if remaining > 0:
-            click.echo(f"    ... and {remaining} more")
-
-    # Subagents
-    if stats.subagent_count:
-        click.echo(f"\n  Subagents: {stats.subagent_count}")
-        for agent_type, count in stats.subagent_sessions.items():
-            click.echo(f"    {agent_type}: {count}")
-
-    # Time Breakdown
-    if stats.time_breakdown:
-        tbd = stats.time_breakdown
-        click.echo(f"\n  Time Breakdown (active: {_format_duration(tbd.total_active_time_seconds)})")
-        click.echo(f"    Model:      {_format_duration(tbd.total_model_time_seconds):>12}  ({tbd.model_time_percent:>5.1f}%)")
-        click.echo(f"    Tool:       {_format_duration(tbd.total_tool_time_seconds):>12}  ({tbd.tool_time_percent:>5.1f}%)")
-        click.echo(f"    User:       {_format_duration(tbd.total_user_time_seconds):>12}  ({tbd.user_time_percent:>5.1f}%)")
-        if tbd.total_inactive_time_seconds > 0:
-            click.echo(f"    Inactive:   {_format_duration(tbd.total_inactive_time_seconds):>12}  (gaps > {_format_duration(tbd.inactivity_threshold_seconds)})")
-        # Identify bottleneck
-        categories = [
-            ("Model", tbd.model_time_percent),
-            ("Tool", tbd.tool_time_percent),
-            ("User", tbd.user_time_percent),
-        ]
-        bottleneck = max(categories, key=lambda x: x[1])
-        click.echo(f"    Bottleneck: {bottleneck[0]} ({bottleneck[1]:.1f}% of active time)")
-        click.echo(f"    Interactions: {tbd.user_interaction_count}  ({tbd.interactions_per_hour:.1f}/hour)")
-
-    # Duration
-    click.echo(f"\n  Duration:     {_format_duration(stats.session_duration_seconds)}")
-    if stats.first_message_time:
-        click.echo(f"  Start:        {stats.first_message_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    if stats.last_message_time:
-        click.echo(f"  End:          {stats.last_message_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    if stats.compact_count > 0:
-        click.echo(f"  Auto Compacts: {stats.compact_count}")
-
-    click.echo()
+    click.echo(format_session_stats(stats, session_id, level=OutputLevel.STANDARD))
 
 
 @main.command()
@@ -430,12 +285,19 @@ def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> No
     default=False,
     help="Display only statistics in human-readable format (no JSON)",
 )
+@click.option(
+    "--level",
+    type=click.Choice(["1", "2", "3"], case_sensitive=False),
+    default="2",
+    help="Output detail level for --human: 1=summary, 2=standard, 3=detailed",
+)
 def parse(
     file: Path | None,
     session: Path | None,
     output: Path | None,
     compact: bool,
     human: bool,
+    level: str,
 ) -> None:
     """
     Parse Claude Code session data and output JSON.
@@ -515,8 +377,9 @@ def parse(
 
         # --human: print statistics only
         if human:
+            output_level = OutputLevel(int(level))
             for sid, s in sessions_list:
-                _print_session_stats(s.statistics, sid)  # type: ignore[union-attr]
+                click.echo(format_session_stats(s.statistics, sid, level=output_level))  # type: ignore[union-attr]
             return
 
         # Output JSON (pretty by default, --compact for minified)
@@ -538,6 +401,314 @@ def parse(
     except Exception as e:
         click.echo(f"Unexpected error: {e}", err=True)
         sys.exit(1)
+
+
+@main.command()
+@click.option(
+    "--path",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Directory to scan (default: ~/.claude/projects/)",
+)
+@click.option(
+    "--ecosystem",
+    default="claude_code",
+    help="Parser ecosystem (default: claude_code)",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Force full re-parse of all files",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.claude-vis/profiler.db)",
+)
+def sync(
+    path: Path | None,
+    ecosystem: str,
+    force: bool,
+    db_path: Path | None,
+) -> None:
+    """
+    Incrementally scan and parse agent trajectory files into the database.
+
+    Compares file modification times against the DB to skip unchanged files.
+
+    Examples:
+
+    \b
+        # Sync default directory
+        claude-vis sync
+
+    \b
+        # Sync a specific directory
+        claude-vis sync --path ~/.claude/projects/my-project/
+
+    \b
+        # Force re-parse everything
+        claude-vis sync --force
+    """
+    from claude_vis.db.connection import get_connection
+    from claude_vis.db.repository import SessionRepository
+    from claude_vis.db.sync import SyncEngine
+    from claude_vis.parsers.registry import get_parser
+
+    scan_path = (path or Path.home() / ".claude" / "projects").expanduser().resolve()
+
+    try:
+        parser = get_parser(ecosystem)
+    except KeyError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    engine = SyncEngine(repo, parser)
+
+    click.echo(f"Scanning: {scan_path}", err=True)
+    result = engine.sync(scan_path, force=force)
+    conn.close()
+
+    click.echo(
+        f"Sync complete: {result.parsed} parsed, {result.skipped} skipped, "
+        f"{len(result.errors)} errors",
+        err=True,
+    )
+    for err in result.errors[:10]:
+        click.echo(f"  - {err}", err=True)
+
+
+@main.command()
+@click.option(
+    "--session-id",
+    default=None,
+    help="Show statistics for a specific session",
+)
+@click.option(
+    "--level",
+    type=click.Choice(["1", "2", "3"], case_sensitive=False),
+    default="2",
+    help="Output detail level: 1=summary, 2=standard, 3=detailed",
+)
+@click.option(
+    "--sort-by",
+    type=click.Choice(
+        ["created_at", "parsed_at", "total_tokens", "duration_seconds"],
+        case_sensitive=False,
+    ),
+    default="created_at",
+    help="Sort sessions by field (default: created_at)",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=20,
+    help="Maximum number of sessions to show (default: 20)",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.claude-vis/profiler.db)",
+)
+def stats(
+    session_id: str | None,
+    level: str,
+    sort_by: str,
+    limit: int,
+    db_path: Path | None,
+) -> None:
+    """
+    Query session statistics from the database.
+
+    Run 'claude-vis sync' first to populate the database.
+
+    Examples:
+
+    \b
+        # List all sessions (summary)
+        claude-vis stats --level 1
+
+    \b
+        # Detailed stats for one session
+        claude-vis stats --session-id abc123 --level 3
+
+    \b
+        # Sort by token usage
+        claude-vis stats --sort-by total_tokens --limit 10
+    """
+    from claude_vis.db.connection import get_connection
+    from claude_vis.db.repository import SessionRepository
+
+    conn = get_connection(db_path, create=False)
+    repo = SessionRepository(conn)
+    output_level = OutputLevel(int(level))
+
+    if session_id:
+        statistics = repo.get_statistics(session_id)
+        if statistics is None:
+            click.echo(f"Error: Session '{session_id}' not found in database.", err=True)
+            click.echo("Run 'claude-vis sync' first to populate the database.", err=True)
+            conn.close()
+            sys.exit(1)
+        click.echo(format_session_stats(statistics, session_id, level=output_level))
+    else:
+        rows = repo.list_sessions(sort_by=sort_by, sort_order="DESC", limit=limit)
+        if not rows:
+            click.echo("No sessions in database. Run 'claude-vis sync' first.", err=True)
+            conn.close()
+            sys.exit(1)
+
+        for row in rows:
+            sid = row["session_id"]
+            if output_level == OutputLevel.SUMMARY:
+                # Build a one-liner from the DB summary columns
+                from claude_vis.formatters.human import _format_duration, _format_tokens
+
+                dur = _format_duration(row["duration_seconds"])
+                tok = _format_tokens(row["total_tokens"] or 0)
+                bn = row["bottleneck"] or "--"
+                ar = f"{row['automation_ratio']:.0f}:1" if row["automation_ratio"] else "--"
+                click.echo(f"{sid} | {dur} | {tok} tok | Bottleneck: {bn} | Auto: {ar}")
+            else:
+                statistics = repo.get_statistics(sid)
+                if statistics:
+                    click.echo(format_session_stats(statistics, sid, level=output_level))
+
+    conn.close()
+
+
+@main.command()
+@click.option(
+    "--file",
+    required=True,
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    help="Path to a .jsonl session file",
+)
+@click.option(
+    "--model",
+    default="sonnet",
+    help="Claude model name (default: sonnet)",
+)
+@click.option(
+    "--lang",
+    type=click.Choice(["en", "cn"], case_sensitive=False),
+    default="en",
+    help="Report language (default: en)",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output path for analysis report (default: output/<session_id>_analysis.md)",
+)
+def analyze(
+    file: Path,
+    model: str,
+    lang: str,
+    output: Path | None,
+) -> None:
+    """
+    Invoke Claude to produce an AI-powered analysis of a session trajectory.
+
+    Parses the JSONL file, computes statistics, then calls `claude -p` headless
+    to generate an actionable Markdown report with bottleneck analysis,
+    automation degree rating, and improvement recommendations.
+
+    Examples:
+
+    \b
+        # English analysis with default model
+        claude-vis analyze --file session.jsonl
+
+    \b
+        # Chinese analysis with specific model
+        claude-vis analyze --file session.jsonl --lang cn --model sonnet
+
+    \b
+        # Custom output path
+        claude-vis analyze --file session.jsonl -o report.md
+    """
+    from claude_vis.prompts.analyze import build_analyze_prompt
+
+    file = file.expanduser().resolve()
+
+    # 1. Parse session
+    click.echo(f"Parsing file: {file}", err=True)
+    try:
+        session_obj = parse_session_file(file)
+    except SessionParseError as e:
+        click.echo(f"Error parsing session: {e}", err=True)
+        sys.exit(1)
+
+    session_id = session_obj.metadata.session_id
+    stats_text = _format_session_stats(session_obj.statistics, session_id)
+
+    # 2. Build prompt
+    prompt, system_role = build_analyze_prompt(
+        stats_text=stats_text,
+        jsonl_file_path=str(file),
+        session_id=session_id,
+        lang=lang,
+    )
+
+    # 3. Check claude CLI exists
+    if not shutil.which("claude"):
+        click.echo(
+            "Error: 'claude' CLI not found in PATH. "
+            "Install Claude Code: https://docs.anthropic.com/en/docs/claude-code",
+            err=True,
+        )
+        sys.exit(1)
+
+    # 4. Determine output path
+    if output is None:
+        output = get_project_root() / "output" / f"{session_id}_analysis.md"
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    # 5. Invoke claude headless
+    click.echo(f"Invoking Claude ({model}) for analysis...", err=True)
+    env = os.environ.copy()
+    env.pop("CLAUDE_CODE_ENTRYPOINT", None)
+
+    cmd = [
+        "claude", "-p", prompt,
+        "--model", model,
+        "--system-prompt", system_role,
+        "--dangerously-skip-permissions",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+            timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        click.echo("Error: Claude analysis timed out after 10 minutes.", err=True)
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        click.echo(f"Error: Claude process failed (exit code {e.returncode}).", err=True)
+        if e.stderr:
+            click.echo(e.stderr[:500], err=True)
+        sys.exit(1)
+
+    report = result.stdout.strip()
+    if not report:
+        click.echo("Error: Claude returned empty output.", err=True)
+        sys.exit(1)
+
+    # 6. Write report
+    output.write_text(report, encoding="utf-8")
+    click.echo(f"Analysis report written to: {output}", err=True)
 
 
 if __name__ == "__main__":

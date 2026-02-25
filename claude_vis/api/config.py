@@ -26,6 +26,12 @@ class Settings(BaseSettings):
         description="Load only a specific session by ID",
     )
 
+    # Database path
+    db_path: Path = Field(
+        default_factory=lambda: Path.home() / ".claude-vis" / "profiler.db",
+        description="Path to SQLite database",
+    )
+
     # API configuration
     api_host: str = "0.0.0.0"
     api_port: int = 8000

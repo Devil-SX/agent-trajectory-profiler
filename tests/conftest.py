@@ -271,10 +271,11 @@ def multi_session_directory(
 
 
 @pytest.fixture
-def test_settings(temp_session_dir: Path) -> Settings:
-    """Create test settings with temporary session directory."""
+def test_settings(temp_session_dir: Path, tmp_path: Path) -> Settings:
+    """Create test settings with temporary session directory and database."""
     return Settings(
         session_path=temp_session_dir,
+        db_path=tmp_path / "test_profiler.db",
         api_host="127.0.0.1",
         api_port=8000,
         api_reload=False,
@@ -284,20 +285,26 @@ def test_settings(temp_session_dir: Path) -> Settings:
 
 
 @pytest.fixture
-def session_service(multi_session_directory: Path) -> SessionService:
+def session_service(multi_session_directory: Path, tmp_path: Path) -> SessionService:
     """Create a SessionService instance with test data."""
-    service = SessionService(session_path=multi_session_directory)
+    service = SessionService(
+        session_path=multi_session_directory,
+        db_path=tmp_path / "test_service.db",
+    )
     return service
 
 
 @pytest.fixture
 def initialized_session_service_sync(
-    multi_session_directory: Path,
+    multi_session_directory: Path, tmp_path: Path,
 ) -> SessionService:
     """Create and initialize a SessionService instance with test data (sync version for testing)."""
     import asyncio
 
-    service = SessionService(session_path=multi_session_directory)
+    service = SessionService(
+        session_path=multi_session_directory,
+        db_path=tmp_path / "test_init_service.db",
+    )
     # Run initialization synchronously for testing
     asyncio.run(service.initialize())
     return service
@@ -308,16 +315,14 @@ def test_client(
     test_settings: Settings, multi_session_directory: Path
 ) -> Generator[TestClient, None, None]:
     """Create a FastAPI test client with test settings."""
+    from unittest.mock import patch
 
-    # Override settings
-    def override_get_settings() -> Settings:
-        return test_settings
+    # Patch get_settings at the module level so the lifespan picks it up.
+    # dependency_overrides only works for FastAPI Depends(), not direct calls.
+    get_settings.cache_clear()
 
-    app.dependency_overrides[get_settings] = override_get_settings
+    with patch("claude_vis.api.app.get_settings", return_value=test_settings):
+        with TestClient(app) as client:
+            yield client
 
-    # Use TestClient with lifespan context
-    with TestClient(app) as client:
-        yield client
-
-    # Clean up
-    app.dependency_overrides.clear()
+    get_settings.cache_clear()

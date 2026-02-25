@@ -21,12 +21,16 @@ class SessionSummary(BaseModel):
 
     session_id: str
     project_path: str
-    created_at: datetime
-    updated_at: datetime | None = None
+    created_at: datetime | str
+    updated_at: datetime | str | None = None
     total_messages: int
     total_tokens: int
     git_branch: str | None = None
-    version: str
+    version: str = ""
+    parsed_at: str | None = None
+    duration_seconds: float | None = None
+    bottleneck: str | None = None
+    automation_ratio: float | None = None
 
 
 class SessionListResponse(BaseModel):
@@ -50,6 +54,14 @@ class SessionStatisticsResponse(BaseModel):
 
     session_id: str
     statistics: SessionStatistics
+
+
+class SyncStatusResponse(BaseModel):
+    """Response model for GET /api/sync/status."""
+
+    total_files: int
+    total_sessions: int
+    last_parsed_at: str | None = None
 
 
 class ErrorResponse(BaseModel):

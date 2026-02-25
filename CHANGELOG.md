@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-24
+
+### Added
+
+- **SQLite persistence layer** (`claude_vis/db/`): incremental file detection via mtime + size, WAL-mode connection management, `SessionRepository` CRUD, `SyncEngine` for batch sync
+- `sync` CLI command: scan session directories, detect new/changed files, parse and persist to SQLite (`~/.claude-vis/profiler.db`)
+- `stats` CLI command: query session statistics from the database with `--session-id`, `--level`, `--sort-by`, `--limit`
+- `--level [1|2|3]` flag on `parse` command for output detail control (summary/standard/detailed)
+- `GET /api/sync/status` endpoint returning sync database status
+- `TrajectoryParser` ABC (`parsers/base.py`) defining the interface for ecosystem-specific parsers
+- `ClaudeCodeParser` class (`parsers/claude_code.py`) wrapping existing parser functions into the ABC
+- Parser registry (`parsers/registry.py`) with `register_parser()` / `get_parser()` for ecosystem extensibility
+- Multi-level formatters (`formatters/human.py`): `OutputLevel` enum (SUMMARY/STANDARD/DETAILED) and `format_session_stats()`
+- `exceptions.py` centralizing `SessionParseError`
+- `SessionSummary` fields: `parsed_at`, `duration_seconds`, `bottleneck`, `automation_ratio`
+- Frontend: session dropdown now shows duration and bottleneck labels
+- Core Methodology section in README (EN/CN): Time Attribution, Bottleneck Analysis, Automation Ratio, Output Levels
+- `test_repository.py` (13 tests) and `test_sync.py` (9 tests)
+
+### Changed
+
+- `api/service.py`: rewritten to read from SQLite with in-memory fallback
+- `api/app.py`: passes `db_path` to service, auto-syncs on empty DB
+- `session_parser.py` → backward-compatibility shim re-exporting from `parsers/claude_code.py`
+- `cli/main.py`: extracted formatting logic to `formatters/human.py`
+- `analyze` CLI subcommand: invoke `claude -p` headless to generate AI-powered Markdown analysis reports with bottleneck analysis, automation degree rating, and improvement recommendations
+- `claude_vis/prompts/` module with EN/CN prompt templates and `build_analyze_prompt()` function
+- `--model`, `--lang`, `--output` options for `analyze` command
+- Bilingual README (English + Chinese) with language switcher
+- Updated CLAUDE.md, ARCHITECTURE.md with new package structure
+
+### Removed
+
+- `api/main.py` (dead code)
+
 ## [0.3.0] - 2026-02-18
 
 ### Added

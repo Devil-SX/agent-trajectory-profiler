@@ -228,8 +228,9 @@ class TestSessionServiceIntegration:
         """Test listing sessions through the service."""
         import asyncio
 
-        sessions = asyncio.run(initialized_session_service_sync.list_sessions())
+        sessions, total = asyncio.run(initialized_session_service_sync.list_sessions())
         assert len(sessions) > 0
+        assert total > 0
         assert all(hasattr(s, "session_id") for s in sessions)
         assert all(hasattr(s, "total_messages") for s in sessions)
 
@@ -239,7 +240,7 @@ class TestSessionServiceIntegration:
         """Test getting a session by ID."""
         import asyncio
 
-        sessions = asyncio.run(initialized_session_service_sync.list_sessions())
+        sessions, _ = asyncio.run(initialized_session_service_sync.list_sessions())
         assert len(sessions) > 0
 
         session_id = sessions[0].session_id
@@ -253,7 +254,7 @@ class TestSessionServiceIntegration:
         """Test getting session statistics."""
         import asyncio
 
-        sessions = asyncio.run(initialized_session_service_sync.list_sessions())
+        sessions, _ = asyncio.run(initialized_session_service_sync.list_sessions())
         assert len(sessions) > 0
 
         session_id = sessions[0].session_id

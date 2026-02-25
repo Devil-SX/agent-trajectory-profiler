@@ -21,6 +21,7 @@ from claude_vis.api.models import (
     SessionDetailResponse,
     SessionListResponse,
     SessionStatisticsResponse,
+    SyncStatusResponse,
 )
 from claude_vis.api.service import SessionService
 
@@ -34,7 +35,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global session_service
     settings = get_settings()
     session_service = SessionService(
-        session_path=settings.session_path, single_session=settings.single_session
+        session_path=settings.session_path,
+        single_session=settings.single_session,
+        db_path=settings.db_path,
     )
     await session_service.initialize()
     yield
@@ -240,6 +243,26 @@ async def get_session_statistics(session_id: str, response: Response) -> Session
             status_code=500,
             detail=f"Failed to get statistics for session {session_id}: {str(e)}",
         ) from e
+
+
+@app.get(
+    "/api/sync/status",
+    response_model=SyncStatusResponse,
+    tags=["Sync"],
+    summary="Get sync status",
+    description="Get the current synchronization status of the database",
+)
+async def sync_status() -> SyncStatusResponse:
+    """Return information about the sync state (file count, last sync time)."""
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    info = session_service.get_sync_status()
+    return SyncStatusResponse(
+        total_files=info["total_files"],
+        total_sessions=info["total_sessions"],
+        last_parsed_at=info["last_parsed_at"],
+    )
 
 
 @app.exception_handler(Exception)

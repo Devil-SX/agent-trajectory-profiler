@@ -125,6 +125,21 @@ export function SessionSelector({
 
   const showComparison = onComparisonSessionChange !== undefined;
 
+  const formatDuration = (seconds: number | null): string => {
+    if (seconds == null) return '';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const mins = Math.floor(seconds / 60);
+    if (mins < 60) return `${mins}m`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  };
+
+  const formatOptionLabel = (session: SessionSummary): string => {
+    const date = new Date(session.created_at).toLocaleString();
+    const dur = session.duration_seconds ? ` (${formatDuration(session.duration_seconds)})` : '';
+    const bn = session.bottleneck ? ` [${session.bottleneck}]` : '';
+    return `${session.session_id.slice(0, 8)}... - ${date}${dur}${bn}`;
+  };
+
   return (
     <div className="session-selector">
       <div className="selector-row">
@@ -132,7 +147,7 @@ export function SessionSelector({
         <select id="session-select" value={selectedSessionId || ''} onChange={handleSessionChange}>
           {sessions.map((session) => (
             <option key={session.session_id} value={session.session_id}>
-              {session.session_id} - {new Date(session.created_at).toLocaleString()}
+              {formatOptionLabel(session)}
             </option>
           ))}
         </select>

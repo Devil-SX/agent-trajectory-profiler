@@ -12,6 +12,10 @@ export interface SessionSummary {
   total_tokens: number;
   git_branch: string | null;
   version: string;
+  parsed_at: string | null;
+  duration_seconds: number | null;
+  bottleneck: string | null;
+  automation_ratio: number | null;
 }
 
 export interface SessionListResponse {
