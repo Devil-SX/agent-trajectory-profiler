@@ -18,13 +18,30 @@ class TestAPIHealthEndpoints:
     """Tests for health check and root endpoints."""
 
     def test_root_endpoint(self, test_client: TestClient) -> None:
-        """Test root endpoint returns API information."""
+        """Test root endpoint returns frontend HTML or API information."""
         response = test_client.get("/")
         assert response.status_code == 200
+        content_type = response.headers.get("content-type", "")
+
+        if "application/json" in content_type:
+            data = response.json()
+            assert "name" in data
+            assert "version" in data
+            assert data["name"] == "Agent Trajectory Visualizer API"
+            assert data["docs"] == "/docs"
+        else:
+            assert "text/html" in content_type
+            assert "<html" in response.text.lower()
+
+    def test_api_root_endpoint_uses_agent_neutral_branding(
+        self, test_client: TestClient
+    ) -> None:
+        """API metadata endpoint should use ecosystem-neutral service naming."""
+        response = test_client.get("/api")
+        assert response.status_code == 200
         data = response.json()
-        assert "name" in data
-        assert "version" in data
-        assert data["docs"] == "/docs"
+        assert data["name"] == "Agent Trajectory Visualizer API"
+        assert data["version"] == "0.1.0"
 
     def test_health_check_endpoint(self, test_client: TestClient) -> None:
         """Test health check endpoint returns service status."""

@@ -31,6 +31,13 @@ else
     log "INFO" "claude-vis not found in $INSTALL_DIR (already removed?)"
 fi
 
+if [[ -f "$INSTALL_DIR/agent-vis" ]]; then
+    rm -f "$INSTALL_DIR/agent-vis"
+    log "INFO" "Removed $INSTALL_DIR/agent-vis"
+else
+    log "INFO" "agent-vis not found in $INSTALL_DIR (already removed?)"
+fi
+
 log "SUCCESS" "Agent Trajectory Profiler uninstalled successfully!"
 echo ""
 echo "Note: The project directory and uv environment are preserved."

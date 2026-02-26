@@ -1,8 +1,8 @@
 """
-FastAPI application for Claude Code Session Visualizer.
+FastAPI application for Agent Trajectory Visualizer.
 
 Provides REST API endpoints to access session data, detailed information,
-and computed statistics for Claude Code sessions.
+and computed statistics for local agent trajectories.
 """
 
 import re
@@ -61,8 +61,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 # Application metadata
 app = FastAPI(
-    title="Claude Code Session Visualizer API",
-    description="REST API for visualizing and analyzing Claude Code sessions",
+    title="Agent Trajectory Visualizer API",
+    description="REST API for visualizing and analyzing local agent trajectories",
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -116,7 +116,7 @@ def _normalize_date_range(
 async def api_root() -> dict[str, str]:
     """API root endpoint with API information."""
     return {
-        "name": "Claude Code Session Visualizer API",
+        "name": "Agent Trajectory Visualizer API",
         "version": "0.1.0",
         "docs": "/docs",
         "health": "/health",
@@ -141,7 +141,7 @@ async def root() -> FileResponse | dict[str, str]:
 
     # Fallback to API info if frontend not built
     return {
-        "name": "Claude Code Session Visualizer API",
+        "name": "Agent Trajectory Visualizer API",
         "version": "0.1.0",
         "docs": "/docs",
         "health": "/health",
@@ -167,7 +167,7 @@ async def health_check() -> dict[str, Any]:
     response_model=SessionListResponse,
     tags=["Sessions"],
     summary="List all sessions",
-    description="Get a list of all available Claude Code sessions with basic metadata",
+    description="Get a list of all available agent sessions with basic metadata",
 )
 async def list_sessions(
     response: Response,

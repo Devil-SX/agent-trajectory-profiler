@@ -49,7 +49,10 @@ uv sync
 ./install.sh
 ```
 
-After installation, `claude-vis` is available globally from any directory.
+After installation, both commands are available globally:
+
+- `agent-vis` (canonical)
+- `claude-vis` (legacy compatibility alias)
 
 To uninstall:
 ```bash
@@ -64,7 +67,15 @@ cd agent-trajectory-profiler
 uv sync
 ```
 
-Use `uv run claude-vis` instead of `claude-vis` in all commands below.
+Use `uv run agent-vis` for new scripts (recommended).  
+`uv run claude-vis` remains supported as a compatibility alias.
+
+## Migration Notes (`claude_vis` -> `agent_vis`)
+
+- Canonical Python package namespace is now `agent_vis`.
+- Canonical CLI command is now `agent-vis`.
+- Legacy `claude_vis` imports and `claude-vis` command remain supported during migration.
+- Deprecation path: `claude_vis` / `claude-vis` remain backward-compatible throughout `0.x`; removal (if any) will only happen in a future major release with explicit release notes.
 
 ## Usage
 
