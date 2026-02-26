@@ -247,6 +247,20 @@ class TokenBreakdown(BaseModel):
     cache_creation_percent: float = 0.0
 
 
+class CharacterBreakdown(BaseModel):
+    """Character counts by producer and script family."""
+
+    total_chars: int = 0
+    user_chars: int = 0
+    model_chars: int = 0
+    tool_chars: int = 0
+    cjk_chars: int = 0
+    latin_chars: int = 0
+    digit_chars: int = 0
+    whitespace_chars: int = 0
+    other_chars: int = 0
+
+
 class ToolCallStatistics(BaseModel):
     """Statistics about tool calls in a session."""
 
@@ -378,6 +392,8 @@ class SessionStatistics(BaseModel):
     total_output_tokens: int
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
+    trajectory_file_size_bytes: int = 0
+    character_breakdown: CharacterBreakdown = Field(default_factory=CharacterBreakdown)
 
     # Tool statistics
     tool_calls: list[ToolCallStatistics] = Field(default_factory=list)

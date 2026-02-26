@@ -17,6 +17,7 @@ from claude_vis.exceptions import SessionParseError
 from claude_vis.models import (
     BashBreakdown,
     BashCommandStats,
+    CharacterBreakdown,
     CompactEvent,
     MessageRecord,
     ParsedSessionData,
@@ -228,6 +229,35 @@ def _extract_tool_result_text(content: str | list[dict[str, Any]] | Any) -> str:
     return str(content)
 
 
+def _classify_characters(text: str) -> dict[str, int]:
+    """Count text characters by script family."""
+    counts = {
+        "cjk": 0,
+        "latin": 0,
+        "digit": 0,
+        "whitespace": 0,
+        "other": 0,
+    }
+    for char in text:
+        code_point = ord(char)
+        if char.isspace():
+            counts["whitespace"] += 1
+        elif (
+            0x4E00 <= code_point <= 0x9FFF
+            or 0x3400 <= code_point <= 0x4DBF
+            or 0x3040 <= code_point <= 0x30FF
+            or 0xAC00 <= code_point <= 0xD7AF
+        ):
+            counts["cjk"] += 1
+        elif ("a" <= char <= "z") or ("A" <= char <= "Z"):
+            counts["latin"] += 1
+        elif char.isdigit():
+            counts["digit"] += 1
+        else:
+            counts["other"] += 1
+    return counts
+
+
 # ---------------------------------------------------------------------------
 # Public module-level functions (backward compatibility)
 # ---------------------------------------------------------------------------
@@ -377,6 +407,7 @@ def calculate_session_statistics(
     *,
     inactivity_threshold: float = 1800.0,
     model_timeout_threshold: float = 600.0,
+    trajectory_file_size_bytes: int = 0,
 ) -> SessionStatistics:
     """
     Calculate comprehensive statistics for a session.
@@ -437,6 +468,14 @@ def calculate_session_statistics(
     user_interaction_count = 0
     model_timeout_count = 0
     prev_timestamp: datetime | None = None
+    user_chars = 0
+    model_chars = 0
+    tool_chars = 0
+    cjk_chars = 0
+    latin_chars = 0
+    digit_chars = 0
+    whitespace_chars = 0
+    other_chars = 0
 
     for msg in messages:
         # Count message types
@@ -564,6 +603,18 @@ def calculate_session_statistics(
                                     else:
                                         tool_stats[tool_name]["success"] += 1
 
+                                    result_text = _extract_tool_result_text(
+                                        content_block.get("content", "")
+                                    )
+                                    if result_text:
+                                        counts = _classify_characters(result_text)
+                                        tool_chars += len(result_text)
+                                        cjk_chars += counts["cjk"]
+                                        latin_chars += counts["latin"]
+                                        digit_chars += counts["digit"]
+                                        whitespace_chars += counts["whitespace"]
+                                        other_chars += counts["other"]
+
                                     # Compute per-tool latency
                                     latency = (timestamp - use_timestamp).total_seconds()
                                     if latency >= 0:
@@ -595,6 +646,34 @@ def calculate_session_statistics(
                                             per_cmd_chars = result_chars // len(sub_cmds)
                                             for cmd in sub_cmds:
                                                 bash_command_output_chars[cmd] += per_cmd_chars
+
+                        elif block_type in ("text", "thinking"):
+                            text_value = content_block.get("text")
+                            if block_type == "thinking":
+                                text_value = content_block.get("thinking")
+                            if isinstance(text_value, str) and text_value:
+                                counts = _classify_characters(text_value)
+                                if msg.is_assistant_message:
+                                    model_chars += len(text_value)
+                                elif msg.is_user_message:
+                                    user_chars += len(text_value)
+                                cjk_chars += counts["cjk"]
+                                latin_chars += counts["latin"]
+                                digit_chars += counts["digit"]
+                                whitespace_chars += counts["whitespace"]
+                                other_chars += counts["other"]
+            elif isinstance(msg.message.content, str) and msg.message.content:
+                text_value = msg.message.content
+                counts = _classify_characters(text_value)
+                if msg.is_assistant_message:
+                    model_chars += len(text_value)
+                elif msg.is_user_message:
+                    user_chars += len(text_value)
+                cjk_chars += counts["cjk"]
+                latin_chars += counts["latin"]
+                digit_chars += counts["digit"]
+                whitespace_chars += counts["whitespace"]
+                other_chars += counts["other"]
 
         # Track subagent sessions
         if msg.is_subagent_message and msg.agentId:
@@ -753,6 +832,18 @@ def calculate_session_statistics(
         total_output_tokens=total_output_tokens,
         cache_read_tokens=cache_read_tokens,
         cache_creation_tokens=cache_creation_tokens,
+        trajectory_file_size_bytes=trajectory_file_size_bytes,
+        character_breakdown=CharacterBreakdown(
+            total_chars=user_chars + model_chars + tool_chars,
+            user_chars=user_chars,
+            model_chars=model_chars,
+            tool_chars=tool_chars,
+            cjk_chars=cjk_chars,
+            latin_chars=latin_chars,
+            digit_chars=digit_chars,
+            whitespace_chars=whitespace_chars,
+            other_chars=other_chars,
+        ),
         tool_calls=tool_call_list,
         tool_groups=tool_group_list,
         total_tool_calls=sum(int(tool_stats[t]["count"]) for t in tool_stats),
@@ -845,10 +936,16 @@ def parse_session_file(
     subagent_sessions = extract_subagent_sessions(messages)
 
     # Calculate statistics
+    try:
+        trajectory_file_size_bytes = file_path.stat().st_size
+    except OSError:
+        trajectory_file_size_bytes = 0
+
     statistics = calculate_session_statistics(
         messages,
         inactivity_threshold=inactivity_threshold,
         model_timeout_threshold=model_timeout_threshold,
+        trajectory_file_size_bytes=trajectory_file_size_bytes,
     )
 
     # Extract compact events from raw JSONL (these aren't in MessageRecord)

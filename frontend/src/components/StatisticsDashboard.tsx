@@ -67,6 +67,18 @@ function formatDuration(seconds: number | null): string {
   return `${secs}s`;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let idx = 0;
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024;
+    idx += 1;
+  }
+  return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+}
+
 function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -120,6 +132,17 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
   const toolErrorRecords = statistics.tool_error_records || [];
   const errorCategoryEntries = Object.entries(statistics.tool_error_category_counts || {})
     .sort((a, b) => b[1] - a[1]);
+  const characterBreakdown = statistics.character_breakdown || {
+    total_chars: 0,
+    user_chars: 0,
+    model_chars: 0,
+    tool_chars: 0,
+    cjk_chars: 0,
+    latin_chars: 0,
+    digit_chars: 0,
+    whitespace_chars: 0,
+    other_chars: 0,
+  };
 
   const toggleErrorDetail = (key: string): void => {
     setExpandedErrors((prev) => ({
@@ -590,6 +613,46 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
               <div className="breakdown-item">
                 <span className="breakdown-label">Created</span>
                 <span className="breakdown-value">{formatNumber(statistics.cache_creation_tokens)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="stat-card">
+            <h4 className="card-title">Trajectory Size</h4>
+            <div className="stat-value large">{formatBytes(statistics.trajectory_file_size_bytes)}</div>
+            <div className="stat-breakdown">
+              <div className="breakdown-item">
+                <span className="breakdown-label">Raw bytes</span>
+                <span className="breakdown-value">
+                  {formatNumber(statistics.trajectory_file_size_bytes)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="stat-card">
+            <h4 className="card-title">Character Volume</h4>
+            <div className="stat-value large">
+              {formatNumber(characterBreakdown.total_chars)}
+            </div>
+            <div className="stat-breakdown">
+              <div className="breakdown-item">
+                <span className="breakdown-label">CJK / Latin</span>
+                <span className="breakdown-value">
+                  {formatNumber(characterBreakdown.cjk_chars)}
+                  {' / '}
+                  {formatNumber(characterBreakdown.latin_chars)}
+                </span>
+              </div>
+              <div className="breakdown-item">
+                <span className="breakdown-label">User / Model / Tool</span>
+                <span className="breakdown-value">
+                  {formatNumber(characterBreakdown.user_chars)}
+                  {' / '}
+                  {formatNumber(characterBreakdown.model_chars)}
+                  {' / '}
+                  {formatNumber(characterBreakdown.tool_chars)}
+                </span>
               </div>
             </div>
           </div>

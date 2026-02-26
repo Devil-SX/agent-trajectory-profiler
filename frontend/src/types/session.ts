@@ -235,6 +235,18 @@ export interface ToolGroupStatistics {
   tools: string[];
 }
 
+export interface CharacterBreakdown {
+  total_chars: number;
+  user_chars: number;
+  model_chars: number;
+  tool_chars: number;
+  cjk_chars: number;
+  latin_chars: number;
+  digit_chars: number;
+  whitespace_chars: number;
+  other_chars: number;
+}
+
 export interface ToolErrorRecord {
   timestamp: string;
   tool_name: string;
@@ -277,6 +289,8 @@ export interface SessionStatistics {
   total_output_tokens: number;
   cache_read_tokens: number;
   cache_creation_tokens: number;
+  trajectory_file_size_bytes: number;
+  character_breakdown: CharacterBreakdown;
   tool_calls: ToolCallStatistics[];
   tool_groups: ToolGroupStatistics[];
   total_tool_calls: number;
@@ -338,6 +352,14 @@ export interface AnalyticsOverviewResponse {
   total_output_tokens: number;
   total_cache_read_tokens: number;
   total_cache_creation_tokens: number;
+  total_trajectory_file_size_bytes: number;
+  total_chars: number;
+  total_user_chars: number;
+  total_model_chars: number;
+  total_tool_chars: number;
+  total_cjk_chars: number;
+  total_latin_chars: number;
+  total_other_chars: number;
   avg_automation_ratio: number;
   avg_session_duration_seconds: number;
   model_time_seconds: number;
