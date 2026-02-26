@@ -23,12 +23,19 @@ Centralized exception definitions. `SessionParseError` for all parse failures.
 Core parser layer with ecosystem extensibility.
 
 - `base.py` — `TrajectoryParser` ABC defining the interface: `parse_file()`, `extract_metadata()`, `calculate_statistics()`, `find_session_files()`, `parse_session()`
+- `canonical.py` — Canonical conversion middle layer:
+  - `CanonicalEvent` / `CanonicalSession` agent-neutral models
+  - `TrajectoryEventAdapter` contract (`to_canonical_event()` and `canonical_to_message()`)
+  - adapter registry (`register_adapter()`, `get_adapter()`, `list_adapters()`)
+  - conversion helpers: `parse_jsonl_to_canonical()` and `canonical_to_messages()`
 - `claude_code.py` — `ClaudeCodeParser` class implementing the ABC. Contains all parsing logic as module-level functions (single-pass loop, tool tracking, time attribution, bash breakdown, compact event extraction)
 - `registry.py` — Parser registry with `register_parser()` / `get_parser(ecosystem)` factory. Auto-registers `ClaudeCodeParser` for `"claude_code"` ecosystem
 - `session_parser.py` — Backward-compatibility shim re-exporting from `claude_code.py`
 - `__init__.py` — Public API: `parse_session_file()`, `parse_session_directory()`, `SessionParseError`, `ClaudeCodeParser`
 
 **Parser algorithm** (in `claude_code.py`):
+0. **Canonical conversion** — each source JSONL line is normalized through ecosystem adapter:
+   `source json -> CanonicalEvent -> MessageRecord`
 1. **Message counting** — user, assistant, system counts
 2. **Token accumulation** — input, output, cache read, cache creation
 3. **Tool tracking** — `tool_use_map` maps `tool_use_id → (tool_name, timestamp)`. When a matching `tool_result` arrives, latency = `result_ts - use_ts`.
@@ -127,6 +134,7 @@ Pytest test suite. Fixtures in `conftest.py` (composable). Test data in `tests/f
 ## Invariants
 
 - Parser is single-pass: every message is visited exactly once in chronological order
+- All ecosystems parse through the canonical adapter contract before entering analytics logic
 - Time percentages (model/tool/user) are computed over active time only; inactive time is separate
 - CLI data output goes to stdout, status/error messages to stderr
 - All Python functions must have type annotations (`mypy --strict`)

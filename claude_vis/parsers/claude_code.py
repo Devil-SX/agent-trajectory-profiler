@@ -11,8 +11,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-
-from pydantic import ValidationError
+from typing import Any
 
 from claude_vis.exceptions import SessionParseError
 from claude_vis.models import (
@@ -32,7 +31,14 @@ from claude_vis.models import (
     ToolGroupStatistics,
 )
 from claude_vis.parsers.base import TrajectoryParser
-
+from claude_vis.parsers.canonical import (
+    CanonicalEvent,
+    TrajectoryEventAdapter,
+    canonical_to_messages,
+    get_adapter,
+    parse_jsonl_to_canonical,
+    register_adapter,
+)
 
 # ---------------------------------------------------------------------------
 # Module-level helper functions (private)
@@ -201,6 +207,32 @@ def _has_tool_result_content(msg: MessageRecord) -> bool:
 # ---------------------------------------------------------------------------
 
 
+@register_adapter
+class ClaudeCodeEventAdapter(TrajectoryEventAdapter):
+    """Canonical conversion adapter for Claude Code source events."""
+
+    ecosystem_name = "claude_code"
+
+    def to_canonical_event(
+        self, raw_event: dict[str, Any], *, source_path: Path, line_number: int
+    ) -> CanonicalEvent | None:
+        timestamp = raw_event.get("timestamp")
+        event_type = raw_event.get("type")
+
+        return CanonicalEvent(
+            ecosystem=self.ecosystem_name,
+            source_path=str(source_path),
+            line_number=line_number,
+            event_kind=str(event_type or "message"),
+            timestamp=timestamp if isinstance(timestamp, str) else None,
+            actor=event_type if isinstance(event_type, str) else None,
+            payload=raw_event,
+        )
+
+    def canonical_to_message(self, event: CanonicalEvent) -> MessageRecord | None:
+        return MessageRecord(**event.payload)
+
+
 def parse_jsonl_file(file_path: Path) -> list[MessageRecord]:
     """
     Parse a JSONL session file into MessageRecord objects.
@@ -214,33 +246,9 @@ def parse_jsonl_file(file_path: Path) -> list[MessageRecord]:
     Raises:
         SessionParseError: If the file cannot be parsed
     """
-    messages: list[MessageRecord] = []
-
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                if not line:
-                    continue
-
-                try:
-                    data = json.loads(line)
-                    message = MessageRecord(**data)
-                    messages.append(message)
-                except json.JSONDecodeError as e:
-                    raise SessionParseError(
-                        f"Invalid JSON at {file_path}:{line_num}: {e}"
-                    ) from e
-                except ValidationError:
-                    # Log validation error but continue parsing
-                    # Some fields may be optional or have unknown formats
-                    continue
-    except FileNotFoundError as e:
-        raise SessionParseError(f"Session file not found: {file_path}") from e
-    except OSError as e:
-        raise SessionParseError(f"Error reading file {file_path}: {e}") from e
-
-    return messages
+    adapter = get_adapter("claude_code")
+    canonical_session = parse_jsonl_to_canonical(file_path, adapter)
+    return canonical_to_messages(canonical_session, adapter)
 
 
 def extract_session_metadata(
