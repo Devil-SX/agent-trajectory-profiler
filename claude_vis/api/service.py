@@ -6,6 +6,7 @@ back to on-the-fly parsing when the database is empty.
 """
 
 import asyncio
+import functools
 import json
 import sqlite3
 from collections import defaultdict
@@ -28,8 +29,7 @@ from claude_vis.db.connection import get_connection
 from claude_vis.db.repository import SessionRepository
 from claude_vis.db.sync import SyncEngine
 from claude_vis.models import Session, SessionStatistics
-from claude_vis.parsers import SessionParseError, parse_session_directory, parse_session_file
-from claude_vis.parsers.claude_code import ClaudeCodeParser
+from claude_vis.parsers import SessionParseError, get_parser
 
 AnalyticsDimension = Literal[
     "bottleneck",
@@ -54,12 +54,18 @@ class SessionService:
     def __init__(
         self,
         session_path: Path,
+        codex_session_path: Path | None = None,
         single_session: str | None = None,
         db_path: Path | None = None,
         inactivity_threshold: float = 1800.0,
         model_timeout_threshold: float = 600.0,
     ) -> None:
         self.session_path = session_path
+        self.codex_session_path = (
+            codex_session_path
+            if codex_session_path is not None
+            else Path.home() / ".codex" / "sessions"
+        )
         self.single_session = single_session
         self._db_path = db_path
         self._inactivity_threshold = inactivity_threshold
@@ -67,7 +73,14 @@ class SessionService:
         self._conn: sqlite3.Connection | None = None
         self._repo: SessionRepository | None = None
         self._sessions: dict[str, Session] = {}
+        self._session_ecosystem: dict[str, str] = {}
         self._initialized = False
+
+    def _sync_targets(self) -> list[tuple[str, Path]]:
+        return [
+            ("claude_code", self.session_path),
+            ("codex", self.codex_session_path),
+        ]
 
     async def initialize(self) -> None:
         """
@@ -97,40 +110,73 @@ class SessionService:
         if self._repo is None:
             return
 
-        parser = ClaudeCodeParser(
-            inactivity_threshold=self._inactivity_threshold,
-            model_timeout_threshold=self._model_timeout_threshold,
-        )
-        engine = SyncEngine(self._repo, parser)
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, engine.sync, self.session_path)
+        for ecosystem, path in self._sync_targets():
+            if not path.exists():
+                continue
+            try:
+                parser = get_parser(ecosystem)
+            except KeyError:
+                continue
+
+            if hasattr(parser, "inactivity_threshold"):
+                parser.inactivity_threshold = self._inactivity_threshold  # type: ignore[attr-defined]
+            if hasattr(parser, "model_timeout_threshold"):
+                parser.model_timeout_threshold = self._model_timeout_threshold  # type: ignore[attr-defined]
+
+            engine = SyncEngine(self._repo, parser)
+            _sync = functools.partial(engine.sync, path)
+            await loop.run_in_executor(None, _sync)
 
     async def _load_sessions_in_memory(self) -> None:
         """Legacy fallback: load all sessions into memory."""
         try:
             loop = asyncio.get_event_loop()
-            import functools
+            all_sessions: dict[str, Session] = {}
+            all_ecosystems: dict[str, str] = {}
 
-            _parse_dir = functools.partial(
-                parse_session_directory,
-                self.session_path,
-                inactivity_threshold=self._inactivity_threshold,
-                model_timeout_threshold=self._model_timeout_threshold,
-            )
-            parsed_data = await loop.run_in_executor(None, _parse_dir)
-            all_sessions = {
-                session.metadata.session_id: session for session in parsed_data.sessions
-            }
+            for ecosystem, path in self._sync_targets():
+                if not path.exists():
+                    continue
+                try:
+                    parser = get_parser(ecosystem)
+                except KeyError:
+                    continue
+
+                if hasattr(parser, "inactivity_threshold"):
+                    parser.inactivity_threshold = self._inactivity_threshold  # type: ignore[attr-defined]
+                if hasattr(parser, "model_timeout_threshold"):
+                    parser.model_timeout_threshold = self._model_timeout_threshold  # type: ignore[attr-defined]
+
+                try:
+                    files = await loop.run_in_executor(None, parser.find_session_files, path)
+                except SessionParseError:
+                    continue
+
+                for file_path in files:
+                    try:
+                        session = await loop.run_in_executor(None, parser.parse_session, file_path)
+                    except SessionParseError:
+                        continue
+                    sid = session.metadata.session_id
+                    all_sessions[sid] = session
+                    all_ecosystems[sid] = ecosystem
 
             if self.single_session:
                 if self.single_session in all_sessions:
                     self._sessions = {self.single_session: all_sessions[self.single_session]}
+                    self._session_ecosystem = {
+                        self.single_session: all_ecosystems.get(self.single_session, "claude_code")
+                    }
                 else:
                     self._sessions = {}
+                    self._session_ecosystem = {}
             else:
                 self._sessions = all_sessions
+                self._session_ecosystem = all_ecosystems
         except SessionParseError:
             self._sessions = {}
+            self._session_ecosystem = {}
 
     async def refresh_sessions(self) -> None:
         """Re-sync from disk."""
@@ -147,6 +193,7 @@ class SessionService:
         sort_order: str = "DESC",
         start_date: str | None = None,
         end_date: str | None = None,
+        ecosystem: str | None = None,
     ) -> tuple[list[SessionSummary], int]:
         """
         Get list of all available sessions with pagination.
@@ -154,8 +201,16 @@ class SessionService:
         Reads from DB when available, otherwise from in-memory cache.
         """
         if self._repo is not None and self._repo.count_sessions() > 0:
-            return self._list_from_db(page, page_size, sort_by, sort_order, start_date, end_date)
-        return self._list_from_memory(page, page_size, start_date, end_date)
+            return self._list_from_db(
+                page,
+                page_size,
+                sort_by,
+                sort_order,
+                start_date,
+                end_date,
+                ecosystem,
+            )
+        return self._list_from_memory(page, page_size, start_date, end_date, ecosystem)
 
     def _list_from_db(
         self,
@@ -165,20 +220,27 @@ class SessionService:
         sort_order: str,
         start_date: str | None = None,
         end_date: str | None = None,
+        ecosystem: str | None = None,
     ) -> tuple[list[SessionSummary], int]:
         assert self._repo is not None
-        total_count = self._repo.count_sessions(start_date=start_date, end_date=end_date)
+        total_count = self._repo.count_sessions(
+            start_date=start_date,
+            end_date=end_date,
+            ecosystem=ecosystem,
+        )
         offset = (page - 1) * page_size
         rows = self._repo.list_sessions(
             sort_by=sort_by, sort_order=sort_order,
             limit=page_size, offset=offset,
             start_date=start_date, end_date=end_date,
+            ecosystem=ecosystem,
         )
         summaries = []
         for row in rows:
             summaries.append(
                 SessionSummary(
                     session_id=row["session_id"],
+                    ecosystem=row["ecosystem"] or "claude_code",
                     project_path=row["project_path"] or "",
                     created_at=row["created_at"] or "",
                     updated_at=row["updated_at"],
@@ -200,9 +262,15 @@ class SessionService:
         page_size: int,
         start_date: str | None = None,
         end_date: str | None = None,
+        ecosystem: str | None = None,
     ) -> tuple[list[SessionSummary], int]:
         summaries = []
         for session in self._sessions.values():
+            sid = session.metadata.session_id
+            session_ecosystem = self._session_ecosystem.get(sid, "claude_code")
+            if ecosystem and ecosystem != session_ecosystem:
+                continue
+
             # Apply date filtering on in-memory sessions
             created = str(session.metadata.created_at) if session.metadata.created_at else ""
             if start_date and created < start_date:
@@ -216,7 +284,8 @@ class SessionService:
                     continue
 
             summary = SessionSummary(
-                session_id=session.metadata.session_id,
+                session_id=sid,
+                ecosystem=session_ecosystem,
                 project_path=session.metadata.project_path,
                 created_at=session.metadata.created_at,
                 updated_at=session.metadata.updated_at,
@@ -248,14 +317,17 @@ class SessionService:
             file_path = self._repo.get_file_path_for_session(session_id)
             if file_path is not None and file_path.exists():
                 try:
-                    import functools
+                    ecosystem = "claude_code"
+                    row = self._repo.get_session(session_id)
+                    if row is not None and isinstance(row["ecosystem"], str):
+                        ecosystem = row["ecosystem"]
+                    parser = get_parser(ecosystem)
+                    if hasattr(parser, "inactivity_threshold"):
+                        parser.inactivity_threshold = self._inactivity_threshold  # type: ignore[attr-defined]
+                    if hasattr(parser, "model_timeout_threshold"):
+                        parser.model_timeout_threshold = self._model_timeout_threshold  # type: ignore[attr-defined]
 
-                    _parse_file = functools.partial(
-                        parse_session_file,
-                        file_path,
-                        inactivity_threshold=self._inactivity_threshold,
-                        model_timeout_threshold=self._model_timeout_threshold,
-                    )
+                    _parse_file = functools.partial(parser.parse_session, file_path)
                     loop = asyncio.get_event_loop()
                     session = await loop.run_in_executor(None, _parse_file)
                     return session
@@ -709,6 +781,7 @@ class SessionService:
                 normalized.append(
                     {
                         "session_id": row["session_id"],
+                        "ecosystem": row["ecosystem"] if "ecosystem" in row.keys() else "claude_code",
                         "project_path": row["project_path"] or "",
                         "git_branch": row["git_branch"],
                         "created_at": row["created_at"],
@@ -733,6 +806,9 @@ class SessionService:
             rows.append(
                 {
                     "session_id": session.metadata.session_id,
+                    "ecosystem": self._session_ecosystem.get(
+                        session.metadata.session_id, "claude_code"
+                    ),
                     "project_path": session.metadata.project_path,
                     "git_branch": session.metadata.git_branch,
                     "created_at": created_at,

@@ -17,7 +17,12 @@ class Settings(BaseSettings):
     # Session path configuration
     session_path: Path = Field(
         default_factory=lambda: Path.home() / ".claude" / "projects",
-        description="Path to Claude session directory",
+        description="Path to Claude Code session directory",
+    )
+
+    codex_session_path: Path = Field(
+        default_factory=lambda: Path.home() / ".codex" / "sessions",
+        description="Path to Codex rollout session directory",
     )
 
     # Single session mode (optional)

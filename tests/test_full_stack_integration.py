@@ -8,7 +8,6 @@ ensure all components work together correctly.
 import json
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 from claude_vis.parsers import parse_session_directory, parse_session_file
@@ -196,7 +195,12 @@ class TestFullStackErrorHandling:
 
         # Create service with non-existent directory
         nonexistent_dir = tmp_path / "nonexistent"
-        service = SessionService(session_path=nonexistent_dir)
+        codex_session_dir = tmp_path / "codex_sessions_empty"
+        codex_session_dir.mkdir(parents=True, exist_ok=True)
+        _service = SessionService(
+            session_path=nonexistent_dir,
+            codex_session_path=codex_session_dir,
+        )
 
         # Should handle gracefully during initialization
         # (implementation allows this to proceed with empty sessions)

@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Namespace compatibility regression tests to ensure canonical and legacy imports expose equivalent symbols.
 - Canonical parser middle layer (`claude_vis.parsers.canonical`) with adapter contract (`TrajectoryEventAdapter`), neutral event models (`CanonicalEvent` / `CanonicalSession`), and ecosystem adapter registry.
 - Canonical conversion contract tests covering registry extension, source-to-canonical normalization, and canonical-to-message compatibility behavior.
+- New `CodexParser` with Codex rollout adapter for local files under `~/.codex/sessions/**/rollout-*.jsonl`.
+- Mixed-ecosystem API/session tests covering Codex fixture ingestion and `/api/sessions?ecosystem=` filtering.
 
 ### Changed
 
@@ -21,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CLI user-facing branding and examples now prefer `agent-vis` as canonical command.
 - README (EN/CN) now includes explicit migration notes and deprecation path for `claude_vis` -> `agent_vis`.
 - Claude parser ingestion path now uses the canonical adapter pipeline (`JSONL -> CanonicalEvent -> MessageRecord`) without changing downstream statistics logic.
+- Session sync and service initialization now support mixed local roots (Claude + Codex), and session list responses now expose ecosystem metadata.
 
 ## [0.6.0] - 2026-02-26
 

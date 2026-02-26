@@ -7,7 +7,6 @@ API testing, and integration testing scenarios.
 
 import json
 from collections.abc import Generator
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -271,10 +270,108 @@ def multi_session_directory(
 
 
 @pytest.fixture
+def codex_session_root(tmp_path: Path) -> Path:
+    """Create a temporary Codex rollout root directory."""
+    root = tmp_path / "codex_sessions"
+    (root / "2026" / "02" / "26").mkdir(parents=True)
+    return root
+
+
+@pytest.fixture
+def sample_codex_rollout_file(codex_session_root: Path) -> Path:
+    """Create a minimal Codex rollout JSONL fixture."""
+    session_id = "123e4567-e89b-12d3-a456-426614174000"
+    rollout = (
+        codex_session_root
+        / "2026"
+        / "02"
+        / "26"
+        / f"rollout-2026-02-26T12-10-32-{session_id}.jsonl"
+    )
+
+    events: list[dict[str, object]] = [
+        {
+            "timestamp": "2026-02-26T04:10:42.443Z",
+            "type": "session_meta",
+            "payload": {
+                "id": session_id,
+                "cwd": "/tmp/codex-project",
+                "cli_version": "0.105.0",
+                "source": "cli",
+            },
+        },
+        {
+            "timestamp": "2026-02-26T04:10:42.500Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "user_message",
+                "message": "Please inspect the project files",
+            },
+        },
+        {
+            "timestamp": "2026-02-26T04:10:43.000Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{\"cmd\":\"pwd\"}",
+                "call_id": "call-test-1",
+            },
+        },
+        {
+            "timestamp": "2026-02-26T04:10:43.200Z",
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call-test-1",
+                "output": "Process exited with code 0\\nOutput:\\n/tmp/codex-project\\n",
+            },
+        },
+        {
+            "timestamp": "2026-02-26T04:10:43.500Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "I found the project root and can continue.",
+                    }
+                ],
+            },
+        },
+        {
+            "timestamp": "2026-02-26T04:10:43.700Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "last_token_usage": {
+                        "input_tokens": 12,
+                        "output_tokens": 7,
+                        "cached_input_tokens": 3,
+                    }
+                },
+            },
+        },
+    ]
+
+    with open(rollout, "w", encoding="utf-8") as f:
+        for event in events:
+            f.write(json.dumps(event) + "\n")
+
+    return rollout
+
+
+@pytest.fixture
 def test_settings(temp_session_dir: Path, tmp_path: Path) -> Settings:
     """Create test settings with temporary session directory and database."""
+    codex_session_dir = tmp_path / "codex_sessions_empty"
+    codex_session_dir.mkdir(parents=True, exist_ok=True)
     return Settings(
         session_path=temp_session_dir,
+        codex_session_path=codex_session_dir,
         db_path=tmp_path / "test_profiler.db",
         api_host="127.0.0.1",
         api_port=8000,
@@ -287,8 +384,11 @@ def test_settings(temp_session_dir: Path, tmp_path: Path) -> Settings:
 @pytest.fixture
 def session_service(multi_session_directory: Path, tmp_path: Path) -> SessionService:
     """Create a SessionService instance with test data."""
+    codex_session_dir = tmp_path / "codex_sessions_empty"
+    codex_session_dir.mkdir(parents=True, exist_ok=True)
     service = SessionService(
         session_path=multi_session_directory,
+        codex_session_path=codex_session_dir,
         db_path=tmp_path / "test_service.db",
     )
     return service
@@ -301,8 +401,11 @@ def initialized_session_service_sync(
     """Create and initialize a SessionService instance with test data (sync version for testing)."""
     import asyncio
 
+    codex_session_dir = tmp_path / "codex_sessions_empty"
+    codex_session_dir.mkdir(parents=True, exist_ok=True)
     service = SessionService(
         session_path=multi_session_directory,
+        codex_session_path=codex_session_dir,
         db_path=tmp_path / "test_init_service.db",
     )
     # Run initialization synchronously for testing

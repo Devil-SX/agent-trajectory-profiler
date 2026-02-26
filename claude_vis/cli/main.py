@@ -534,7 +534,10 @@ def sync(
     from claude_vis.db.sync import SyncEngine
     from claude_vis.parsers.registry import get_parser
 
-    scan_path = (path or Path.home() / ".claude" / "projects").expanduser().resolve()
+    default_path = Path.home() / ".claude" / "projects"
+    if ecosystem == "codex":
+        default_path = Path.home() / ".codex" / "sessions"
+    scan_path = (path or default_path).expanduser().resolve()
 
     try:
         parser = get_parser(ecosystem)
