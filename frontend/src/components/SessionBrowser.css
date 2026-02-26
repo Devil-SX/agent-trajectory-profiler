@@ -56,6 +56,41 @@
   color: #666;
 }
 
+.session-browser-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.session-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.session-view-toggle__button {
+  border: none;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.session-view-toggle__button.active {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.session-view-toggle__button:not(.active):hover {
+  background: #eff6ff;
+}
+
 /* Compare button */
 .compare-button {
   padding: 0.5rem 0.9rem;
@@ -221,6 +256,11 @@
     width: 100%;
     text-align: center;
     font-size: 0.75rem;
+  }
+
+  .session-browser-meta {
+    width: 100%;
+    justify-content: center;
   }
 }
 

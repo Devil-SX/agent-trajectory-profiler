@@ -31,6 +31,8 @@ interface SessionBrowserProps {
   comparisonSessionId?: string | null;
 }
 
+type SessionViewMode = 'cards' | 'table';
+
 const EMPTY_SESSIONS: SessionSummary[] = [];
 
 function shortId(sessionId: string | null | undefined): string {
@@ -65,6 +67,7 @@ export function SessionBrowser({
   );
 
   const [isPickingComparison, setIsPickingComparison] = useState(false);
+  const [viewMode, setViewMode] = useState<SessionViewMode>('cards');
 
   // Filter and sort state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -74,7 +77,7 @@ export function SessionBrowser({
   );
 
   const sessions: SessionSummary[] = data?.sessions ?? EMPTY_SESSIONS;
-  const loading = isLoading;
+  const loading = isLoading && !data;
   const error = queryError?.message || null;
 
   const initRef = useRef(false);
@@ -251,12 +254,33 @@ export function SessionBrowser({
             sessions={filteredAndSortedSessions}
             selectedId={activeSessionId}
             onSelect={handleSessionSelect}
+            viewMode={viewMode}
           />
         </div>
 
         <div className="session-browser-actions">
-          <div className="session-count">
-            {filteredAndSortedSessions.length} of {sessions.length} sessions
+          <div className="session-browser-meta">
+            <div className="session-view-toggle" role="group" aria-label="Session view mode">
+              <button
+                className={`session-view-toggle__button ${viewMode === 'cards' ? 'active' : ''}`}
+                type="button"
+                onClick={() => setViewMode('cards')}
+                aria-pressed={viewMode === 'cards'}
+              >
+                Card View
+              </button>
+              <button
+                className={`session-view-toggle__button ${viewMode === 'table' ? 'active' : ''}`}
+                type="button"
+                onClick={() => setViewMode('table')}
+                aria-pressed={viewMode === 'table'}
+              >
+                Table View
+              </button>
+            </div>
+            <div className="session-count">
+              {filteredAndSortedSessions.length} of {sessions.length} sessions
+            </div>
           </div>
 
           {showComparison && (
