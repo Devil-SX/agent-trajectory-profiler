@@ -26,14 +26,15 @@ function getRelativeTime(timestamp: string): string {
   const now = new Date();
   const past = new Date(timestamp);
   const diffMs = now.getTime() - past.getTime();
+  if (diffMs < 60000) return 'just now';
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffMins < 60) return `${diffMins} min ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return past.toLocaleDateString();
+  return past.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function getProjectName(projectPath: string): string {
@@ -44,12 +45,22 @@ function getProjectName(projectPath: string): string {
 function getDisplayName(
   projectName: string,
   gitBranch: string | null,
-  relativeTime: string,
 ): string {
   const parts = [projectName];
-  if (gitBranch) parts.push(gitBranch);
-  parts.push(relativeTime);
-  return parts.join(' \u2022 ');
+  if (gitBranch) {
+    parts.push(gitBranch);
+  }
+  return parts.join(' | ');
+}
+
+function formatAbsoluteTime(timestamp: string): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function SessionCard({
@@ -58,8 +69,10 @@ export function SessionCard({
   onClick,
 }: SessionCardProps) {
   const projectName = getProjectName(session.project_path);
-  const relativeTime = getRelativeTime(session.updated_at || session.created_at);
-  const displayName = getDisplayName(projectName, session.git_branch, relativeTime);
+  const updatedTime = session.updated_at || session.created_at;
+  const relativeTime = getRelativeTime(updatedTime);
+  const absoluteTime = formatAbsoluteTime(updatedTime);
+  const displayName = getDisplayName(projectName, session.git_branch);
   const bottleneckColor = session.bottleneck
     ? BOTTLENECK_COLORS[session.bottleneck] || '#6b7280'
     : '#6b7280';
@@ -69,16 +82,22 @@ export function SessionCard({
   const shortSessionId = session.session_id.slice(0, 8);
 
   return (
-    <div
+    <button
+      type="button"
       className={`session-card ${isSelected ? 'session-card--selected' : ''}`}
       onClick={() => onClick?.(session.session_id)}
+      aria-pressed={isSelected}
+      aria-label={`Session ${projectName}, updated ${relativeTime}`}
     >
-      {/* Header with project-branch-time display */}
+      {/* Header with project and branch */}
       <div className="session-card__header">
         <h3 className="session-card__title" title={session.project_path}>
           {displayName}
         </h3>
       </div>
+      <p className="session-card__time" title={absoluteTime}>
+        Updated {relativeTime} ({absoluteTime})
+      </p>
 
       {/* Bottleneck badge */}
       {session.bottleneck && (
@@ -118,6 +137,6 @@ export function SessionCard({
           <code>{shortSessionId}</code>
         </span>
       </div>
-    </div>
+    </button>
   );
 }

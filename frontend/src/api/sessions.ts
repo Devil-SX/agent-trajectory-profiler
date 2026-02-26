@@ -3,6 +3,11 @@
  */
 
 import type {
+  AnalyticsDimension,
+  AnalyticsDistributionResponse,
+  AnalyticsInterval,
+  AnalyticsOverviewResponse,
+  AnalyticsTimeseriesResponse,
   SessionListResponse,
   SessionDetailResponse,
   SessionStatisticsResponse,
@@ -201,6 +206,102 @@ export async function fetchSessionStatistics(
   } catch (error) {
     if (import.meta.env.DEV) {
       console.error(`Failed to fetch statistics for session ${sessionId}:`, error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch cross-session analytics overview.
+ *
+ * @param startDate - Optional start date (YYYY-MM-DD)
+ * @param endDate - Optional end date (YYYY-MM-DD)
+ */
+export async function fetchAnalyticsOverview(
+  startDate: string | null = null,
+  endDate: string | null = null
+): Promise<AnalyticsOverviewResponse> {
+  try {
+    const params = new URLSearchParams();
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/analytics/overview${suffix}`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to fetch analytics overview:', error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch cross-session analytics distribution for a single dimension.
+ *
+ * @param dimension - Distribution dimension
+ * @param startDate - Optional start date (YYYY-MM-DD)
+ * @param endDate - Optional end date (YYYY-MM-DD)
+ */
+export async function fetchAnalyticsDistribution(
+  dimension: AnalyticsDimension,
+  startDate: string | null = null,
+  endDate: string | null = null
+): Promise<AnalyticsDistributionResponse> {
+  try {
+    const params = new URLSearchParams({
+      dimension,
+    });
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/analytics/distributions?${params.toString()}`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error(`Failed to fetch analytics distribution (${dimension}):`, error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch cross-session analytics time-series.
+ *
+ * @param interval - Grouping interval (day|week)
+ * @param startDate - Optional start date (YYYY-MM-DD)
+ * @param endDate - Optional end date (YYYY-MM-DD)
+ */
+export async function fetchAnalyticsTimeseries(
+  interval: AnalyticsInterval = 'day',
+  startDate: string | null = null,
+  endDate: string | null = null
+): Promise<AnalyticsTimeseriesResponse> {
+  try {
+    const params = new URLSearchParams({
+      interval,
+    });
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/analytics/timeseries?${params.toString()}`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to fetch analytics timeseries:', error);
     }
     throw error;
   }

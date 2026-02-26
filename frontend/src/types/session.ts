@@ -285,3 +285,87 @@ export interface SessionStatisticsResponse {
   session_id: string;
   statistics: SessionStatistics;
 }
+
+export interface AnalyticsBucket {
+  key: string;
+  label: string;
+  count: number;
+  value: number;
+  percent: number;
+}
+
+export interface ProjectAggregate {
+  project_path: string;
+  project_name: string;
+  sessions: number;
+  total_tokens: number;
+  total_messages: number;
+  percent_sessions: number;
+  percent_tokens: number;
+}
+
+export interface ToolAggregate {
+  tool_name: string;
+  total_calls: number;
+  sessions_using_tool: number;
+  error_count: number;
+  avg_latency_seconds: number;
+  percent_of_tool_calls: number;
+}
+
+export interface AnalyticsOverviewResponse {
+  start_date: string;
+  end_date: string;
+  total_sessions: number;
+  total_messages: number;
+  total_tokens: number;
+  total_tool_calls: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read_tokens: number;
+  total_cache_creation_tokens: number;
+  avg_automation_ratio: number;
+  avg_session_duration_seconds: number;
+  model_time_seconds: number;
+  tool_time_seconds: number;
+  user_time_seconds: number;
+  inactive_time_seconds: number;
+  model_timeout_count: number;
+  bottleneck_distribution: AnalyticsBucket[];
+  top_projects: ProjectAggregate[];
+  top_tools: ToolAggregate[];
+}
+
+export type AnalyticsDimension =
+  | 'bottleneck'
+  | 'project'
+  | 'branch'
+  | 'automation_band'
+  | 'tool'
+  | 'session_token_share';
+
+export interface AnalyticsDistributionResponse {
+  dimension: AnalyticsDimension;
+  start_date: string;
+  end_date: string;
+  total: number;
+  buckets: AnalyticsBucket[];
+}
+
+export type AnalyticsInterval = 'day' | 'week';
+
+export interface AnalyticsTimeseriesPoint {
+  period: string;
+  sessions: number;
+  tokens: number;
+  tool_calls: number;
+  avg_automation_ratio: number;
+  avg_duration_seconds: number;
+}
+
+export interface AnalyticsTimeseriesResponse {
+  interval: AnalyticsInterval;
+  start_date: string;
+  end_date: string;
+  points: AnalyticsTimeseriesPoint[];
+}

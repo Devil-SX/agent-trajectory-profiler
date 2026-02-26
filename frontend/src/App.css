@@ -1,11 +1,12 @@
 .app {
-  max-width: 100%;
+  max-width: 1800px;
   margin: 0 auto;
   padding: 2rem;
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   min-width: 320px;
+  box-sizing: border-box;
 }
 
 .app header {
@@ -26,14 +27,15 @@
   flex-direction: column;
   gap: 1.5rem;
   flex: 1;
-  overflow: hidden;
+  min-height: 0;
 }
 
 .main-content {
   display: flex;
   gap: 1.5rem;
   flex: 1;
-  overflow: hidden;
+  align-items: flex-start;
+  min-height: 0;
 }
 
 .session-content {
@@ -42,7 +44,8 @@
   border-radius: 8px;
   border: 1px solid #e0e0e0;
   flex: 1;
-  overflow: hidden;
+  min-width: 0;
+  overflow: visible;
 }
 
 .session-content p {
@@ -166,8 +169,6 @@
 @media (max-width: 768px) {
   .app {
     padding: 1rem;
-    height: 100vh;
-    overflow: hidden;
   }
 
   .app header {
@@ -181,6 +182,7 @@
   .main-content {
     flex-direction: column;
     position: relative;
+    overflow: visible;
   }
 
   .session-content {
@@ -277,11 +279,7 @@
   }
 
   .app {
-    overflow-x: hidden;
-  }
-
-  .app main {
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 }
 

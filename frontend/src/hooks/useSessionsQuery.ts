@@ -4,11 +4,19 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import {
+  fetchAnalyticsDistribution,
+  fetchAnalyticsOverview,
+  fetchAnalyticsTimeseries,
   fetchSessions,
   fetchSessionDetail,
   fetchSessionStatistics,
 } from '../api/sessions';
 import type {
+  AnalyticsDimension,
+  AnalyticsDistributionResponse,
+  AnalyticsInterval,
+  AnalyticsOverviewResponse,
+  AnalyticsTimeseriesResponse,
   SessionListResponse,
   SessionDetailResponse,
   SessionStatisticsResponse,
@@ -26,6 +34,21 @@ export const sessionKeys = {
   detail: (id: string) => [...sessionKeys.details(), id] as const,
   statistics: () => [...sessionKeys.all, 'statistics'] as const,
   statistic: (id: string) => [...sessionKeys.statistics(), id] as const,
+  analytics: () => [...sessionKeys.all, 'analytics'] as const,
+  analyticsOverview: (startDate: string | null, endDate: string | null) =>
+    [...sessionKeys.analytics(), 'overview', { startDate, endDate }] as const,
+  analyticsDistribution: (
+    dimension: AnalyticsDimension,
+    startDate: string | null,
+    endDate: string | null,
+  ) =>
+    [...sessionKeys.analytics(), 'distribution', { dimension, startDate, endDate }] as const,
+  analyticsTimeseries: (
+    interval: AnalyticsInterval,
+    startDate: string | null,
+    endDate: string | null,
+  ) =>
+    [...sessionKeys.analytics(), 'timeseries', { interval, startDate, endDate }] as const,
 };
 
 /**
@@ -69,5 +92,49 @@ export function useSessionStatisticsQuery(
     queryFn: () => fetchSessionStatistics(sessionId!),
     enabled: !!sessionId,
     staleTime: 10 * 60 * 1000, // 10 minutes - statistics are immutable
+  });
+}
+
+/**
+ * Hook to fetch cross-session analytics overview.
+ */
+export function useAnalyticsOverviewQuery(
+  startDate: string | null = null,
+  endDate: string | null = null
+): UseQueryResult<AnalyticsOverviewResponse, Error> {
+  return useQuery({
+    queryKey: sessionKeys.analyticsOverview(startDate, endDate),
+    queryFn: () => fetchAnalyticsOverview(startDate, endDate),
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+/**
+ * Hook to fetch cross-session analytics distribution.
+ */
+export function useAnalyticsDistributionQuery(
+  dimension: AnalyticsDimension,
+  startDate: string | null = null,
+  endDate: string | null = null,
+): UseQueryResult<AnalyticsDistributionResponse, Error> {
+  return useQuery({
+    queryKey: sessionKeys.analyticsDistribution(dimension, startDate, endDate),
+    queryFn: () => fetchAnalyticsDistribution(dimension, startDate, endDate),
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+/**
+ * Hook to fetch cross-session analytics timeseries.
+ */
+export function useAnalyticsTimeseriesQuery(
+  interval: AnalyticsInterval = 'day',
+  startDate: string | null = null,
+  endDate: string | null = null,
+): UseQueryResult<AnalyticsTimeseriesResponse, Error> {
+  return useQuery({
+    queryKey: sessionKeys.analyticsTimeseries(interval, startDate, endDate),
+    queryFn: () => fetchAnalyticsTimeseries(interval, startDate, endDate),
+    staleTime: 60 * 1000, // 1 minute
   });
 }

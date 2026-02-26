@@ -180,9 +180,77 @@ class SessionRepository:
         cur = self._conn.execute(f"SELECT COUNT(*) FROM sessions {where_sql}", params)
         return cur.fetchone()[0]
 
+    def list_sessions_for_analytics(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> list[sqlite3.Row]:
+        """Return all session summary rows used by analytics endpoints."""
+        where_clauses, params = self._build_date_filter(
+            start_date, end_date, created_col="s.created_at"
+        )
+        where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
+        cur = self._conn.execute(
+            f"""\
+            SELECT
+                s.session_id,
+                s.project_path,
+                s.git_branch,
+                s.created_at,
+                s.updated_at,
+                s.total_messages,
+                s.total_tokens,
+                s.total_tool_calls,
+                s.duration_seconds,
+                s.bottleneck,
+                s.automation_ratio,
+                s.version
+            FROM sessions s
+            {where_sql}
+            ORDER BY s.created_at DESC
+            """,
+            params,
+        )
+        return cur.fetchall()
+
+    def list_statistics_for_analytics(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> list[sqlite3.Row]:
+        """Return session rows joined with statistics JSON for analytics."""
+        where_clauses, params = self._build_date_filter(
+            start_date, end_date, created_col="s.created_at"
+        )
+        where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
+        cur = self._conn.execute(
+            f"""\
+            SELECT
+                s.session_id,
+                s.project_path,
+                s.git_branch,
+                s.created_at,
+                s.updated_at,
+                s.total_messages,
+                s.total_tokens,
+                s.total_tool_calls,
+                s.duration_seconds,
+                s.bottleneck,
+                s.automation_ratio,
+                s.version,
+                ss.statistics_json
+            FROM sessions s
+            LEFT JOIN session_statistics ss
+            ON ss.session_id = s.session_id
+            {where_sql}
+            ORDER BY s.created_at DESC
+            """,
+            params,
+        )
+        return cur.fetchall()
+
     @staticmethod
     def _build_date_filter(
-        start_date: str | None, end_date: str | None
+        start_date: str | None,
+        end_date: str | None,
+        *,
+        created_col: str = "created_at",
     ) -> tuple[list[str], list[str]]:
         """Build WHERE clause fragments for date filtering on created_at.
 
@@ -196,13 +264,13 @@ class SessionRepository:
 
         if start_date:
             datetime.fromisoformat(start_date)  # Validate format
-            clauses.append("created_at >= ?")
+            clauses.append(f"{created_col} >= ?")
             params.append(start_date)
 
         if end_date:
             end_dt = datetime.fromisoformat(end_date)  # Validate format
             next_day = (end_dt + timedelta(days=1)).isoformat()[:10]
-            clauses.append("created_at < ?")
+            clauses.append(f"{created_col} < ?")
             params.append(next_day)
 
         return clauses, params

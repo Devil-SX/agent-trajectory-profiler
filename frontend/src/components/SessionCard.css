@@ -1,6 +1,7 @@
 .session-card {
   display: flex;
   flex-direction: column;
+  width: 100%;
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -8,12 +9,20 @@
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
 .session-card:hover {
   border-color: #3b82f6;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
   transform: translateY(-2px);
+}
+
+.session-card:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 1px;
 }
 
 .session-card--selected {
@@ -27,7 +36,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   gap: 8px;
 }
 
@@ -40,6 +49,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.session-card__time {
+  margin: 0 0 12px;
+  font-size: 0.76rem;
+  color: #64748b;
 }
 
 /* Bottleneck badge section */
@@ -144,6 +159,10 @@
 
   .session-card__title {
     font-size: 0.875rem;
+  }
+
+  .session-card__time {
+    font-size: 0.72rem;
   }
 
   .session-card__stats {

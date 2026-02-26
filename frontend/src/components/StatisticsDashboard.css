@@ -1,9 +1,8 @@
 .statistics-dashboard {
-  padding: 2rem;
-  background-color: #f8f9fa;
+  padding: 1.5rem;
+  background-color: #f8fbff;
   min-height: 100%;
-  max-height: calc(100vh - 200px);
-  overflow-y: scroll;
+  overflow: visible;
 }
 
 .statistics-dashboard.empty,
@@ -12,9 +11,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 400px;
+  min-height: 320px;
   text-align: center;
-  color: #999;
+  color: #6b7280;
   font-size: 1rem;
 }
 
@@ -23,104 +22,129 @@
 }
 
 .dashboard-title {
-  font-size: 1.75rem;
-  font-weight: 600;
-  margin: 0 0 2rem 0;
-  color: #333;
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0 0 1.2rem 0;
+  color: #12365a;
 }
 
-/* Stats Grid */
+.metrics-section {
+  background: #ffffff;
+  border: 1px solid #e3ebf3;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.section-header h3 {
+  margin: 0;
+  color: #1f3d5b;
+  font-size: 1.1rem;
+}
+
+.section-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
 }
 
 .stat-card {
   background-color: #ffffff;
   border-radius: 8px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e0e0e0;
+  padding: 1rem;
+  border: 1px solid #dde5ee;
 }
 
 .card-title {
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #666;
-  margin: 0 0 1rem 0;
+  color: #64748b;
+  margin: 0 0 0.65rem 0;
 }
 
 .stat-value {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: 700;
-  color: #1976d2;
-  margin-bottom: 0.75rem;
+  color: #1565c0;
+  margin-bottom: 0.65rem;
 }
 
 .stat-value.large {
-  font-size: 2rem;
+  font-size: 1.8rem;
 }
 
 .stat-breakdown {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .breakdown-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.875rem;
-  padding: 0.25rem 0;
-  border-top: 1px solid #f0f0f0;
+  font-size: 0.85rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid #edf2f7;
 }
 
 .breakdown-item:first-child {
   border-top: none;
+  padding-top: 0;
 }
 
 .breakdown-label {
-  color: #666;
+  color: #64748b;
 }
 
 .breakdown-value {
-  color: #333;
-  font-weight: 500;
+  color: #1f2937;
+  font-weight: 600;
 }
 
-/* Charts Section */
 .charts-section {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 0.8rem;
 }
 
 .chart-card {
   background-color: #ffffff;
   border-radius: 8px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e0e0e0;
+  padding: 0.9rem;
+  border: 1px solid #dde5ee;
+  min-width: 0;
 }
 
 .chart-card.wide {
   grid-column: span 2;
 }
 
-/* Table Card */
 .table-card {
   background-color: #ffffff;
   border-radius: 8px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e0e0e0;
-  margin-bottom: 2rem;
+  padding: 0.9rem;
+  border: 1px solid #dde5ee;
+  margin-bottom: 0.9rem;
 }
 
 .table-container {
@@ -130,159 +154,96 @@
 .stats-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: 0.86rem;
 }
 
 .stats-table thead {
-  background-color: #f5f5f5;
+  background-color: #f8fafc;
 }
 
 .stats-table th {
   text-align: left;
-  padding: 0.75rem 1rem;
-  font-weight: 600;
-  color: #666;
+  padding: 0.65rem 0.8rem;
+  font-weight: 700;
+  color: #64748b;
   text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  border-bottom: 2px solid #e0e0e0;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid #e2e8f0;
 }
 
 .stats-table td {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #f0f0f0;
-  color: #333;
+  padding: 0.65rem 0.8rem;
+  border-bottom: 1px solid #edf2f7;
+  color: #1f2937;
 }
 
 .stats-table tbody tr:hover {
-  background-color: #f8f9fa;
+  background-color: #f8fbff;
 }
 
 .tool-name {
   font-family: 'Courier New', monospace;
-  font-weight: 500;
-  color: #1976d2;
+  font-weight: 600;
+  color: #1d4ed8;
 }
 
 .error-count {
-  color: #d32f2f;
-  font-weight: 600;
+  color: #dc2626;
+  font-weight: 700;
 }
 
 .loading-spinner {
   font-size: 1rem;
-  color: #999;
+  color: #64748b;
 }
 
-/* Responsive Design */
+.latency-high {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.latency-medium {
+  color: #ea580c;
+  font-weight: 600;
+}
+
 @media (max-width: 1200px) {
   .chart-card.wide {
     grid-column: span 1;
   }
 
   .charts-section {
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   }
 }
 
 @media (max-width: 768px) {
   .statistics-dashboard {
-    padding: 1rem;
+    padding: 0.9rem;
   }
 
-  .stats-grid {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-  }
-
+  .stats-grid,
   .charts-section {
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 0.75rem;
   }
 
   .dashboard-title {
-    font-size: 1.5rem;
-    margin-bottom: 1.5rem;
+    font-size: 1.35rem;
+    margin-bottom: 0.9rem;
   }
 
+  .metrics-section,
   .stat-card,
   .chart-card,
   .table-card {
-    padding: 1rem;
-  }
-}
-
-/* Dark Mode Support */
-@media (prefers-color-scheme: dark) {
-  .statistics-dashboard {
-    background-color: #121212;
+    padding: 0.75rem;
   }
 
-  .dashboard-title {
-    color: #e0e0e0;
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
   }
-
-  .stat-card,
-  .chart-card,
-  .table-card {
-    background-color: #1a1a1a;
-    border-color: #444;
-  }
-
-  .card-title {
-    color: #999;
-  }
-
-  .stat-value {
-    color: #64b5f6;
-  }
-
-  .breakdown-label {
-    color: #999;
-  }
-
-  .breakdown-value {
-    color: #e0e0e0;
-  }
-
-  .breakdown-item {
-    border-top-color: #333;
-  }
-
-  .stats-table thead {
-    background-color: #2a2a2a;
-  }
-
-  .stats-table th {
-    color: #999;
-    border-bottom-color: #444;
-  }
-
-  .stats-table td {
-    color: #e0e0e0;
-    border-bottom-color: #333;
-  }
-
-  .stats-table tbody tr:hover {
-    background-color: #2a2a2a;
-  }
-
-  .tool-name {
-    color: #64b5f6;
-  }
-
-  .error-count {
-    color: #ef5350;
-  }
-}
-
-/* Tool Latency Color Coding */
-.latency-high {
-  color: #ef4444; /* Red for slow tools (>10s) */
-  font-weight: 600;
-}
-
-.latency-medium {
-  color: #f97316; /* Orange for medium tools (5-10s) */
-  font-weight: 500;
 }

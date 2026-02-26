@@ -8,8 +8,9 @@ and computed statistics for Claude Code sessions.
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,9 @@ from fastapi.staticfiles import StaticFiles
 
 from claude_vis.api.config import get_settings
 from claude_vis.api.models import (
+    AnalyticsDistributionResponse,
+    AnalyticsOverviewResponse,
+    AnalyticsTimeseriesResponse,
     ErrorResponse,
     SessionDetailResponse,
     SessionListResponse,
@@ -28,6 +32,15 @@ from claude_vis.api.service import SessionService
 
 # Initialize session service
 session_service: SessionService | None = None
+_date_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+AnalyticsDimension = Literal[
+    "bottleneck",
+    "project",
+    "branch",
+    "automation_band",
+    "tool",
+    "session_token_share",
+]
 
 
 @asynccontextmanager
@@ -65,6 +78,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _normalize_date_range(
+    start_date: str | None,
+    end_date: str | None,
+    *,
+    default_last_days: int | None = None,
+) -> tuple[str | None, str | None]:
+    """Validate and normalize date range query parameters."""
+    if default_last_days is not None and not start_date and not end_date:
+        end = date.today()
+        start = end - timedelta(days=max(default_last_days - 1, 0))
+        start_date = start.isoformat()
+        end_date = end.isoformat()
+
+    if start_date is not None and not _date_re.match(start_date):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid start_date format: '{start_date}'. Expected YYYY-MM-DD.",
+        )
+    if end_date is not None and not _date_re.match(end_date):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid end_date format: '{end_date}'. Expected YYYY-MM-DD.",
+        )
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="start_date must be on or before end_date.",
+        )
+
+    return start_date, end_date
 
 
 @app.get("/api", tags=["Root"])
@@ -152,23 +197,7 @@ async def list_sessions(
     if page_size < 1 or page_size > 200:
         raise HTTPException(status_code=400, detail="Page size must be between 1 and 200")
 
-    # Validate date format (ISO 8601 date: YYYY-MM-DD)
-    _date_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-    if start_date is not None and not _date_re.match(start_date):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid start_date format: '{start_date}'. Expected YYYY-MM-DD.",
-        )
-    if end_date is not None and not _date_re.match(end_date):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid end_date format: '{end_date}'. Expected YYYY-MM-DD.",
-        )
-    if start_date and end_date and start_date > end_date:
-        raise HTTPException(
-            status_code=400,
-            detail="start_date must be on or before end_date.",
-        )
+    start_date, end_date = _normalize_date_range(start_date, end_date)
 
     try:
         sessions, total_count = await session_service.list_sessions(
@@ -278,6 +307,116 @@ async def get_session_statistics(session_id: str, response: Response) -> Session
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get statistics for session {session_id}: {str(e)}",
+        ) from e
+
+
+@app.get(
+    "/api/analytics/overview",
+    response_model=AnalyticsOverviewResponse,
+    tags=["Analytics"],
+    summary="Get cross-session overview metrics",
+    description="Aggregated analytics across sessions for a selected date range.",
+)
+async def get_analytics_overview(
+    response: Response,
+    start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
+) -> AnalyticsOverviewResponse:
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    start_date, end_date = _normalize_date_range(
+        start_date, end_date, default_last_days=7
+    )
+    assert start_date is not None and end_date is not None
+
+    try:
+        result = await session_service.get_analytics_overview(start_date, end_date)
+        response.headers["Cache-Control"] = "public, max-age=60"
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to compute analytics overview: {str(e)}"
+        ) from e
+
+
+@app.get(
+    "/api/analytics/distributions",
+    response_model=AnalyticsDistributionResponse,
+    tags=["Analytics"],
+    summary="Get distribution metrics across sessions",
+    description="Returns percentage breakdowns for bottlenecks, projects, tools, etc.",
+)
+async def get_analytics_distributions(
+    response: Response,
+    dimension: AnalyticsDimension = Query(
+        default="bottleneck",
+        description=(
+            "Distribution dimension: bottleneck|project|branch|automation_band|tool|"
+            "session_token_share"
+        ),
+    ),
+    start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
+) -> AnalyticsDistributionResponse:
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    start_date, end_date = _normalize_date_range(
+        start_date, end_date, default_last_days=7
+    )
+    assert start_date is not None and end_date is not None
+
+    try:
+        result = await session_service.get_analytics_distribution(
+            dimension, start_date, end_date
+        )
+        response.headers["Cache-Control"] = "public, max-age=60"
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to compute distribution: {str(e)}"
+        ) from e
+
+
+@app.get(
+    "/api/analytics/timeseries",
+    response_model=AnalyticsTimeseriesResponse,
+    tags=["Analytics"],
+    summary="Get time-series metrics across sessions",
+    description="Returns day/week aggregated metrics for session activity trends.",
+)
+async def get_analytics_timeseries(
+    response: Response,
+    interval: Literal["day", "week"] = Query(default="day"),
+    start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
+) -> AnalyticsTimeseriesResponse:
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    start_date, end_date = _normalize_date_range(
+        start_date, end_date, default_last_days=7
+    )
+    assert start_date is not None and end_date is not None
+
+    try:
+        result = await session_service.get_analytics_timeseries(
+            start_date, end_date, interval
+        )
+        response.headers["Cache-Control"] = "public, max-age=60"
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to compute timeseries: {str(e)}"
         ) from e
 
 

@@ -6,16 +6,40 @@ back to on-the-fly parsing when the database is empty.
 """
 
 import asyncio
+import json
 import sqlite3
+from collections import defaultdict
+from datetime import date, datetime
 from pathlib import Path
+from statistics import mean
+from typing import Any, Literal, cast
 
-from claude_vis.api.models import SessionSummary
+from claude_vis.api.models import (
+    AnalyticsBucket,
+    AnalyticsDistributionResponse,
+    AnalyticsOverviewResponse,
+    AnalyticsTimeseriesPoint,
+    AnalyticsTimeseriesResponse,
+    ProjectAggregate,
+    SessionSummary,
+    ToolAggregate,
+)
 from claude_vis.db.connection import get_connection
 from claude_vis.db.repository import SessionRepository
 from claude_vis.db.sync import SyncEngine
 from claude_vis.models import Session, SessionStatistics
 from claude_vis.parsers import SessionParseError, parse_session_directory, parse_session_file
 from claude_vis.parsers.claude_code import ClaudeCodeParser
+
+AnalyticsDimension = Literal[
+    "bottleneck",
+    "project",
+    "branch",
+    "automation_band",
+    "tool",
+    "session_token_share",
+]
+AnalyticsInterval = Literal["day", "week"]
 
 
 class SessionService:
@@ -256,6 +280,545 @@ class SessionService:
         if session is not None:
             return session.statistics
         return None
+
+    async def get_analytics_overview(
+        self, start_date: str, end_date: str
+    ) -> AnalyticsOverviewResponse:
+        """Compute cross-session overview metrics for a date range."""
+        rows = self._get_analytics_rows(start_date, end_date)
+        total_sessions = len(rows)
+
+        if total_sessions == 0:
+            return AnalyticsOverviewResponse(
+                start_date=start_date,
+                end_date=end_date,
+                total_sessions=0,
+                total_messages=0,
+                total_tokens=0,
+                total_tool_calls=0,
+                total_input_tokens=0,
+                total_output_tokens=0,
+                total_cache_read_tokens=0,
+                total_cache_creation_tokens=0,
+                avg_automation_ratio=0.0,
+                avg_session_duration_seconds=0.0,
+                model_time_seconds=0.0,
+                tool_time_seconds=0.0,
+                user_time_seconds=0.0,
+                inactive_time_seconds=0.0,
+                model_timeout_count=0,
+                bottleneck_distribution=[],
+                top_projects=[],
+                top_tools=[],
+            )
+
+        total_messages = sum(int(row.get("total_messages") or 0) for row in rows)
+        total_tokens = sum(int(row.get("total_tokens") or 0) for row in rows)
+        total_tool_calls = sum(int(row.get("total_tool_calls") or 0) for row in rows)
+
+        automation_values = [
+            float(row["automation_ratio"])
+            for row in rows
+            if row.get("automation_ratio") is not None
+        ]
+        duration_values = [
+            float(row["duration_seconds"])
+            for row in rows
+            if row.get("duration_seconds") is not None
+        ]
+
+        bottleneck_counter: dict[str, int] = {"Model": 0, "Tool": 0, "User": 0, "Unknown": 0}
+        project_acc: dict[str, dict[str, float | int | str]] = {}
+
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_cache_read_tokens = 0
+        total_cache_creation_tokens = 0
+        model_time_seconds = 0.0
+        tool_time_seconds = 0.0
+        user_time_seconds = 0.0
+        inactive_time_seconds = 0.0
+        model_timeout_count = 0
+
+        tool_acc: dict[str, dict[str, float | int | set[str]]] = defaultdict(
+            lambda: {
+                "total_calls": 0,
+                "sessions_using_tool": set(),
+                "error_count": 0,
+                "latency_total": 0.0,
+                "latency_count": 0,
+            }
+        )
+
+        for row in rows:
+            bottleneck = (row.get("bottleneck") or "Unknown").strip().title()
+            if bottleneck not in bottleneck_counter:
+                bottleneck = "Unknown"
+            bottleneck_counter[bottleneck] += 1
+
+            project_path = row.get("project_path") or ""
+            if project_path not in project_acc:
+                project_name = Path(project_path).name if project_path else "(unknown)"
+                project_acc[project_path] = {
+                    "project_name": project_name,
+                    "sessions": 0,
+                    "total_tokens": 0,
+                    "total_messages": 0,
+                }
+            project_acc[project_path]["sessions"] = int(project_acc[project_path]["sessions"]) + 1
+            project_acc[project_path]["total_tokens"] = int(project_acc[project_path]["total_tokens"]) + int(
+                row.get("total_tokens") or 0
+            )
+            project_acc[project_path]["total_messages"] = int(project_acc[project_path]["total_messages"]) + int(
+                row.get("total_messages") or 0
+            )
+
+            stats = row.get("statistics") or {}
+            total_input_tokens += int(stats.get("total_input_tokens") or 0)
+            total_output_tokens += int(stats.get("total_output_tokens") or 0)
+            total_cache_read_tokens += int(stats.get("cache_read_tokens") or 0)
+            total_cache_creation_tokens += int(stats.get("cache_creation_tokens") or 0)
+
+            time_breakdown = stats.get("time_breakdown") or {}
+            model_time_seconds += float(time_breakdown.get("total_model_time_seconds") or 0.0)
+            tool_time_seconds += float(time_breakdown.get("total_tool_time_seconds") or 0.0)
+            user_time_seconds += float(time_breakdown.get("total_user_time_seconds") or 0.0)
+            inactive_time_seconds += float(time_breakdown.get("total_inactive_time_seconds") or 0.0)
+            model_timeout_count += int(time_breakdown.get("model_timeout_count") or 0)
+
+            for tool in stats.get("tool_calls") or []:
+                tool_name = str(tool.get("tool_name") or "").strip()
+                if not tool_name:
+                    continue
+                bucket = tool_acc[tool_name]
+                bucket["total_calls"] = int(bucket["total_calls"]) + int(tool.get("count") or 0)
+                bucket["error_count"] = int(bucket["error_count"]) + int(tool.get("error_count") or 0)
+                bucket["latency_total"] = float(bucket["latency_total"]) + float(
+                    tool.get("total_latency_seconds") or 0.0
+                )
+                bucket["latency_count"] = int(bucket["latency_count"]) + int(tool.get("count") or 0)
+                cast_set = bucket["sessions_using_tool"]
+                if isinstance(cast_set, set):
+                    cast_set.add(str(row.get("session_id")))
+
+        bottleneck_distribution = [
+            AnalyticsBucket(
+                key=key.lower(),
+                label=key,
+                count=count,
+                value=float(count),
+                percent=(count / total_sessions * 100.0) if total_sessions else 0.0,
+            )
+            for key, count in bottleneck_counter.items()
+            if count > 0
+        ]
+        bottleneck_distribution.sort(key=lambda item: item.count, reverse=True)
+
+        top_projects: list[ProjectAggregate] = []
+        for project_path, agg in project_acc.items():
+            project_tokens = int(agg["total_tokens"])
+            project_sessions = int(agg["sessions"])
+            top_projects.append(
+                ProjectAggregate(
+                    project_path=project_path,
+                    project_name=str(agg["project_name"]),
+                    sessions=project_sessions,
+                    total_tokens=project_tokens,
+                    total_messages=int(agg["total_messages"]),
+                    percent_sessions=(project_sessions / total_sessions * 100.0),
+                    percent_tokens=(project_tokens / total_tokens * 100.0) if total_tokens else 0.0,
+                )
+            )
+        top_projects.sort(key=lambda item: (item.sessions, item.total_tokens), reverse=True)
+        top_projects = top_projects[:10]
+
+        total_tool_call_volume = sum(int(v["total_calls"]) for v in tool_acc.values())
+        top_tools: list[ToolAggregate] = []
+        for tool_name, agg in tool_acc.items():
+            sessions_using_tool = (
+                len(agg["sessions_using_tool"])
+                if isinstance(agg["sessions_using_tool"], set)
+                else 0
+            )
+            call_count = int(agg["total_calls"])
+            latency_count = int(agg["latency_count"])
+            avg_latency = float(agg["latency_total"]) / latency_count if latency_count else 0.0
+            top_tools.append(
+                ToolAggregate(
+                    tool_name=tool_name,
+                    total_calls=call_count,
+                    sessions_using_tool=sessions_using_tool,
+                    error_count=int(agg["error_count"]),
+                    avg_latency_seconds=avg_latency,
+                    percent_of_tool_calls=(
+                        call_count / total_tool_call_volume * 100.0
+                        if total_tool_call_volume
+                        else 0.0
+                    ),
+                )
+            )
+        top_tools.sort(key=lambda item: item.total_calls, reverse=True)
+        top_tools = top_tools[:15]
+
+        return AnalyticsOverviewResponse(
+            start_date=start_date,
+            end_date=end_date,
+            total_sessions=total_sessions,
+            total_messages=total_messages,
+            total_tokens=total_tokens,
+            total_tool_calls=total_tool_calls,
+            total_input_tokens=total_input_tokens,
+            total_output_tokens=total_output_tokens,
+            total_cache_read_tokens=total_cache_read_tokens,
+            total_cache_creation_tokens=total_cache_creation_tokens,
+            avg_automation_ratio=mean(automation_values) if automation_values else 0.0,
+            avg_session_duration_seconds=mean(duration_values) if duration_values else 0.0,
+            model_time_seconds=model_time_seconds,
+            tool_time_seconds=tool_time_seconds,
+            user_time_seconds=user_time_seconds,
+            inactive_time_seconds=inactive_time_seconds,
+            model_timeout_count=model_timeout_count,
+            bottleneck_distribution=bottleneck_distribution,
+            top_projects=top_projects,
+            top_tools=top_tools,
+        )
+
+    async def get_analytics_distribution(
+        self, dimension: str, start_date: str, end_date: str
+    ) -> AnalyticsDistributionResponse:
+        """Compute a distribution breakdown for one dimension."""
+        rows = self._get_analytics_rows(start_date, end_date)
+        buckets: list[AnalyticsBucket] = []
+        total_value = 0.0
+
+        if dimension == "bottleneck":
+            counter: dict[str, int] = defaultdict(int)
+            for row in rows:
+                key = (row.get("bottleneck") or "Unknown").strip().title()
+                counter[key] += 1
+            total_value = float(sum(counter.values()))
+            buckets = [
+                AnalyticsBucket(
+                    key=k.lower(),
+                    label=k,
+                    count=v,
+                    value=float(v),
+                    percent=(v / total_value * 100.0) if total_value else 0.0,
+                )
+                for k, v in counter.items()
+            ]
+        elif dimension == "project":
+            counter: dict[str, int] = defaultdict(int)
+            for row in rows:
+                key = row.get("project_path") or "(unknown)"
+                counter[key] += 1
+            total_value = float(sum(counter.values()))
+            buckets = [
+                AnalyticsBucket(
+                    key=k,
+                    label=Path(k).name if k != "(unknown)" else k,
+                    count=v,
+                    value=float(v),
+                    percent=(v / total_value * 100.0) if total_value else 0.0,
+                )
+                for k, v in counter.items()
+            ]
+        elif dimension == "branch":
+            counter: dict[str, int] = defaultdict(int)
+            for row in rows:
+                key = row.get("git_branch") or "(none)"
+                counter[key] += 1
+            total_value = float(sum(counter.values()))
+            buckets = [
+                AnalyticsBucket(
+                    key=k,
+                    label=k,
+                    count=v,
+                    value=float(v),
+                    percent=(v / total_value * 100.0) if total_value else 0.0,
+                )
+                for k, v in counter.items()
+            ]
+        elif dimension == "automation_band":
+            bands: dict[str, int] = {"0-1": 0, "1-3": 0, "3-5": 0, "5+": 0}
+            for row in rows:
+                ratio = float(row.get("automation_ratio") or 0.0)
+                if ratio < 1:
+                    bands["0-1"] += 1
+                elif ratio < 3:
+                    bands["1-3"] += 1
+                elif ratio < 5:
+                    bands["3-5"] += 1
+                else:
+                    bands["5+"] += 1
+            total_value = float(sum(bands.values()))
+            buckets = [
+                AnalyticsBucket(
+                    key=k,
+                    label=k,
+                    count=v,
+                    value=float(v),
+                    percent=(v / total_value * 100.0) if total_value else 0.0,
+                )
+                for k, v in bands.items()
+                if v > 0
+            ]
+        elif dimension == "tool":
+            tool_counter: dict[str, dict[str, int]] = defaultdict(
+                lambda: {"calls": 0, "sessions": 0}
+            )
+            for row in rows:
+                stats = row.get("statistics") or {}
+                seen_in_session: set[str] = set()
+                for tool in stats.get("tool_calls") or []:
+                    tool_name = str(tool.get("tool_name") or "").strip()
+                    if not tool_name:
+                        continue
+                    tool_counter[tool_name]["calls"] += int(tool.get("count") or 0)
+                    if tool_name not in seen_in_session:
+                        tool_counter[tool_name]["sessions"] += 1
+                        seen_in_session.add(tool_name)
+            total_value = float(sum(v["calls"] for v in tool_counter.values()))
+            buckets = [
+                AnalyticsBucket(
+                    key=tool_name,
+                    label=tool_name,
+                    count=vals["sessions"],
+                    value=float(vals["calls"]),
+                    percent=(vals["calls"] / total_value * 100.0) if total_value else 0.0,
+                )
+                for tool_name, vals in tool_counter.items()
+            ]
+        elif dimension == "session_token_share":
+            total_value = float(sum(int(r.get("total_tokens") or 0) for r in rows))
+            buckets = []
+            for row in rows:
+                token_value = int(row.get("total_tokens") or 0)
+                label = str(row.get("session_id") or "")[:8]
+                buckets.append(
+                    AnalyticsBucket(
+                        key=str(row.get("session_id") or ""),
+                        label=label,
+                        count=1,
+                        value=float(token_value),
+                        percent=(token_value / total_value * 100.0) if total_value else 0.0,
+                    )
+                )
+        else:
+            raise ValueError(f"Unsupported distribution dimension: {dimension}")
+
+        buckets.sort(key=lambda b: b.value, reverse=True)
+        if dimension in {"tool", "session_token_share"}:
+            buckets = buckets[:20]
+
+        return AnalyticsDistributionResponse(
+            dimension=cast(AnalyticsDimension, dimension),
+            start_date=start_date,
+            end_date=end_date,
+            total=total_value,
+            buckets=buckets,
+        )
+
+    async def get_analytics_timeseries(
+        self, start_date: str, end_date: str, interval: str = "day"
+    ) -> AnalyticsTimeseriesResponse:
+        """Compute time-series aggregates across sessions."""
+        rows = self._get_analytics_rows(start_date, end_date)
+        buckets: dict[str, dict[str, float]] = {}
+
+        for row in rows:
+            created = self._parse_created_date(row.get("created_at"))
+            if created is None:
+                continue
+
+            if interval == "week":
+                iso_year, iso_week, _ = created.isocalendar()
+                period = f"{iso_year}-W{iso_week:02d}"
+            else:
+                period = created.isoformat()
+
+            if period not in buckets:
+                buckets[period] = {
+                    "sessions": 0.0,
+                    "tokens": 0.0,
+                    "tool_calls": 0.0,
+                    "automation_sum": 0.0,
+                    "automation_count": 0.0,
+                    "duration_sum": 0.0,
+                    "duration_count": 0.0,
+                }
+
+            bucket = buckets[period]
+            bucket["sessions"] += 1.0
+            bucket["tokens"] += float(row.get("total_tokens") or 0)
+            bucket["tool_calls"] += float(row.get("total_tool_calls") or 0)
+
+            if row.get("automation_ratio") is not None:
+                bucket["automation_sum"] += float(row["automation_ratio"])
+                bucket["automation_count"] += 1.0
+            if row.get("duration_seconds") is not None:
+                bucket["duration_sum"] += float(row["duration_seconds"])
+                bucket["duration_count"] += 1.0
+
+        points: list[AnalyticsTimeseriesPoint] = []
+        for period in sorted(buckets.keys()):
+            data = buckets[period]
+            points.append(
+                AnalyticsTimeseriesPoint(
+                    period=period,
+                    sessions=int(data["sessions"]),
+                    tokens=int(data["tokens"]),
+                    tool_calls=int(data["tool_calls"]),
+                    avg_automation_ratio=(
+                        data["automation_sum"] / data["automation_count"]
+                        if data["automation_count"]
+                        else 0.0
+                    ),
+                    avg_duration_seconds=(
+                        data["duration_sum"] / data["duration_count"]
+                        if data["duration_count"]
+                        else 0.0
+                    ),
+                )
+            )
+
+        return AnalyticsTimeseriesResponse(
+            interval=cast(AnalyticsInterval, interval),
+            start_date=start_date,
+            end_date=end_date,
+            points=points,
+        )
+
+    def _get_analytics_rows(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return normalized rows for cross-session analytics."""
+        if self._repo is not None and self._repo.count_sessions() > 0:
+            rows = self._repo.list_statistics_for_analytics(
+                start_date=start_date, end_date=end_date
+            )
+            normalized: list[dict[str, Any]] = []
+            for row in rows:
+                stats = {}
+                raw_stats = row["statistics_json"]
+                if raw_stats:
+                    try:
+                        stats = json.loads(raw_stats)
+                    except json.JSONDecodeError:
+                        stats = {}
+                normalized.append(
+                    {
+                        "session_id": row["session_id"],
+                        "project_path": row["project_path"] or "",
+                        "git_branch": row["git_branch"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "total_messages": row["total_messages"] or 0,
+                        "total_tokens": row["total_tokens"] or 0,
+                        "total_tool_calls": row["total_tool_calls"] or 0,
+                        "duration_seconds": row["duration_seconds"],
+                        "bottleneck": row["bottleneck"],
+                        "automation_ratio": row["automation_ratio"],
+                        "statistics": stats,
+                    }
+                )
+            return normalized
+
+        # In-memory fallback
+        rows: list[dict[str, Any]] = []
+        for session in self._sessions.values():
+            created_at = session.metadata.created_at.isoformat()
+            if not self._is_within_date_range(created_at, start_date, end_date):
+                continue
+            rows.append(
+                {
+                    "session_id": session.metadata.session_id,
+                    "project_path": session.metadata.project_path,
+                    "git_branch": session.metadata.git_branch,
+                    "created_at": created_at,
+                    "updated_at": (
+                        session.metadata.updated_at.isoformat()
+                        if session.metadata.updated_at
+                        else None
+                    ),
+                    "total_messages": session.metadata.total_messages,
+                    "total_tokens": session.metadata.total_tokens,
+                    "total_tool_calls": (
+                        session.statistics.total_tool_calls if session.statistics else 0
+                    ),
+                    "duration_seconds": (
+                        session.statistics.session_duration_seconds
+                        if session.statistics
+                        else None
+                    ),
+                    "bottleneck": (
+                        self._derive_bottleneck(session.statistics)
+                        if session.statistics
+                        else None
+                    ),
+                    "automation_ratio": (
+                        self._derive_automation_ratio(session.statistics)
+                        if session.statistics
+                        else None
+                    ),
+                    "statistics": (
+                        session.statistics.model_dump()
+                        if session.statistics
+                        else {}
+                    ),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _derive_bottleneck(statistics: SessionStatistics) -> str | None:
+        if not statistics.time_breakdown:
+            return None
+        tbd = statistics.time_breakdown
+        categories = [
+            ("Model", tbd.model_time_percent),
+            ("Tool", tbd.tool_time_percent),
+            ("User", tbd.user_time_percent),
+        ]
+        return max(categories, key=lambda x: x[1])[0]
+
+    @staticmethod
+    def _derive_automation_ratio(statistics: SessionStatistics) -> float | None:
+        tbd = statistics.time_breakdown
+        if not tbd or tbd.user_interaction_count <= 0:
+            return None
+        return round(statistics.total_tool_calls / tbd.user_interaction_count, 2)
+
+    @staticmethod
+    def _parse_created_date(created_at: Any) -> date | None:
+        if created_at is None:
+            return None
+        text = str(created_at).strip()
+        if not text:
+            return None
+        try:
+            if len(text) >= 10:
+                return datetime.fromisoformat(text[:10]).date()
+        except ValueError:
+            return None
+        return None
+
+    @classmethod
+    def _is_within_date_range(
+        cls, created_at: str, start_date: str | None, end_date: str | None
+    ) -> bool:
+        created = cls._parse_created_date(created_at)
+        if created is None:
+            return False
+        if start_date:
+            start = datetime.fromisoformat(start_date).date()
+            if created < start:
+                return False
+        if end_date:
+            end = datetime.fromisoformat(end_date).date()
+            if created > end:
+                return False
+        return True
 
     def get_sync_status(self) -> dict:
         """Return sync status info for the /api/sync/status endpoint."""

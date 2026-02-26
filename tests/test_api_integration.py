@@ -5,6 +5,7 @@ Tests cover API endpoints, service layer integration, and error handling
 with test client for realistic request/response testing.
 """
 
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -204,6 +205,86 @@ class TestSessionStatisticsAPI:
             "/api/sessions/non-existent-session-id/statistics"
         )
         assert response.status_code == 404
+
+
+class TestAnalyticsAPI:
+    """Tests for cross-session analytics endpoints."""
+
+    def test_analytics_overview_default_range(self, test_client: TestClient) -> None:
+        """Default overview request should apply a 7-day window."""
+        response = test_client.get("/api/analytics/overview")
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert "start_date" in payload
+        assert "end_date" in payload
+        assert "total_sessions" in payload
+        assert "total_tokens" in payload
+        assert "bottleneck_distribution" in payload
+
+        start = date.fromisoformat(payload["start_date"])
+        end = date.fromisoformat(payload["end_date"])
+        assert end - start == timedelta(days=6)
+
+    def test_analytics_overview_with_explicit_range(
+        self, test_client: TestClient
+    ) -> None:
+        """Overview should include fixture data when range covers fixture timestamps."""
+        response = test_client.get(
+            "/api/analytics/overview?start_date=2026-02-01&end_date=2026-02-10"
+        )
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert payload["total_sessions"] >= 1
+        assert payload["total_messages"] >= 1
+        assert payload["total_tokens"] >= 1
+
+    def test_analytics_distribution_tool(
+        self, test_client: TestClient
+    ) -> None:
+        """Tool distribution endpoint should return bucketed results."""
+        response = test_client.get(
+            "/api/analytics/distributions?dimension=tool&start_date=2026-02-01&end_date=2026-02-10"
+        )
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert payload["dimension"] == "tool"
+        assert "buckets" in payload
+        assert isinstance(payload["buckets"], list)
+
+    def test_analytics_timeseries_weekly(
+        self, test_client: TestClient
+    ) -> None:
+        """Timeseries endpoint should support week aggregation."""
+        response = test_client.get(
+            "/api/analytics/timeseries?interval=week&start_date=2026-02-01&end_date=2026-02-10"
+        )
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert payload["interval"] == "week"
+        assert "points" in payload
+        assert isinstance(payload["points"], list)
+
+    def test_analytics_invalid_date_range(
+        self, test_client: TestClient
+    ) -> None:
+        """Invalid date range should return HTTP 400."""
+        response = test_client.get(
+            "/api/analytics/overview?start_date=2026-02-10&end_date=2026-02-01"
+        )
+        assert response.status_code == 400
+
+    def test_analytics_invalid_dimension(
+        self, test_client: TestClient
+    ) -> None:
+        """Invalid distribution dimension should return HTTP 422."""
+        response = test_client.get(
+            "/api/analytics/distributions?dimension=invalid_dimension"
+        )
+        assert response.status_code == 422
 
 
 class TestSessionServiceIntegration:

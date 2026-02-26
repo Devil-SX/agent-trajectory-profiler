@@ -1,0 +1,412 @@
+import { useMemo, useState } from 'react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  useAnalyticsDistributionQuery,
+  useAnalyticsOverviewQuery,
+  useAnalyticsTimeseriesQuery,
+} from '../hooks/useSessionsQuery';
+import type { AnalyticsBucket } from '../types/session';
+import './CrossSessionOverview.css';
+
+type RangePreset = '7d' | '30d' | '90d' | 'custom';
+
+interface DateWindow {
+  startDate: string | null;
+  endDate: string | null;
+}
+
+const DISTRIBUTION_COLORS = ['#2563eb', '#0891b2', '#ea580c', '#dc2626', '#16a34a', '#7c3aed'];
+
+function toIsoDate(value: Date): string {
+  const adjusted = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
+  return adjusted.toISOString().slice(0, 10);
+}
+
+function buildPresetRange(days: number): DateWindow {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - (days - 1));
+  return {
+    startDate: toIsoDate(start),
+    endDate: toIsoDate(end),
+  };
+}
+
+function formatNumber(value: number): string {
+  return value.toLocaleString();
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '0s';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return `${Math.floor(seconds)}s`;
+}
+
+function formatPercent(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+function getLeadingBucket(buckets: AnalyticsBucket[]): string {
+  if (buckets.length === 0) {
+    return 'No data';
+  }
+  const [top] = buckets;
+  return `${top.label} (${top.percent.toFixed(1)}%)`;
+}
+
+export function CrossSessionOverview() {
+  const [preset, setPreset] = useState<RangePreset>('7d');
+  const [customRange, setCustomRange] = useState<DateWindow>({
+    startDate: null,
+    endDate: null,
+  });
+
+  const activeRange = useMemo<DateWindow>(() => {
+    if (preset === '30d') {
+      return buildPresetRange(30);
+    }
+    if (preset === '90d') {
+      return buildPresetRange(90);
+    }
+    if (preset === 'custom') {
+      return customRange;
+    }
+    return buildPresetRange(7);
+  }, [customRange, preset]);
+
+  const interval = preset === '90d' ? 'week' : 'day';
+
+  const { data: overview, isLoading: overviewLoading, error: overviewError } =
+    useAnalyticsOverviewQuery(activeRange.startDate, activeRange.endDate);
+
+  const { data: automationDistribution, isLoading: automationLoading, error: automationError } =
+    useAnalyticsDistributionQuery('automation_band', activeRange.startDate, activeRange.endDate);
+
+  const { data: sessionShareDistribution, isLoading: shareLoading, error: shareError } =
+    useAnalyticsDistributionQuery('session_token_share', activeRange.startDate, activeRange.endDate);
+
+  const { data: timeseries, isLoading: timeseriesLoading, error: timeseriesError } =
+    useAnalyticsTimeseriesQuery(interval, activeRange.startDate, activeRange.endDate);
+
+  const isLoading = overviewLoading || automationLoading || shareLoading || timeseriesLoading;
+  const errorMessage =
+    overviewError?.message ||
+    automationError?.message ||
+    shareError?.message ||
+    timeseriesError?.message ||
+    null;
+
+  const topSessionShare = useMemo(() => {
+    if (!sessionShareDistribution) return [];
+    return sessionShareDistribution.buckets.slice(0, 8);
+  }, [sessionShareDistribution]);
+
+  if (isLoading) {
+    return (
+      <section className="cross-session-overview loading" aria-live="polite">
+        <div className="cross-session-skeleton">Loading cross-session analytics...</div>
+      </section>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <section className="cross-session-overview error">
+        <h3>Cross-session overview</h3>
+        <p>{errorMessage}</p>
+      </section>
+    );
+  }
+
+  if (!overview || !automationDistribution || !timeseries) {
+    return null;
+  }
+
+  const topProjects = overview.top_projects.slice(0, 8);
+  const topTools = overview.top_tools.slice(0, 8);
+
+  return (
+    <section className="cross-session-overview" aria-label="Cross session overview">
+      <div className="cross-session-header">
+        <div>
+          <h3>Cross-session overview</h3>
+          <p>Aggregate health signals across all sessions in the selected window.</p>
+        </div>
+
+        <div className="cross-session-controls">
+          <div className="preset-buttons" role="tablist" aria-label="Time window presets">
+            <button
+              type="button"
+              className={preset === '7d' ? 'active' : ''}
+              onClick={() => setPreset('7d')}
+            >
+              7 days
+            </button>
+            <button
+              type="button"
+              className={preset === '30d' ? 'active' : ''}
+              onClick={() => setPreset('30d')}
+            >
+              30 days
+            </button>
+            <button
+              type="button"
+              className={preset === '90d' ? 'active' : ''}
+              onClick={() => setPreset('90d')}
+            >
+              90 days
+            </button>
+            <button
+              type="button"
+              className={preset === 'custom' ? 'active' : ''}
+              onClick={() => setPreset('custom')}
+            >
+              Custom
+            </button>
+          </div>
+
+          {preset === 'custom' && (
+            <div className="custom-range-inputs">
+              <label>
+                Start
+                <input
+                  type="date"
+                  value={customRange.startDate ?? ''}
+                  onChange={(event) =>
+                    setCustomRange((prev) => ({
+                      ...prev,
+                      startDate: event.target.value || null,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                End
+                <input
+                  type="date"
+                  value={customRange.endDate ?? ''}
+                  onChange={(event) =>
+                    setCustomRange((prev) => ({
+                      ...prev,
+                      endDate: event.target.value || null,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="kpi-grid">
+        <article className="kpi-card">
+          <h4>Total sessions</h4>
+          <div className="kpi-value">{formatNumber(overview.total_sessions)}</div>
+          <p>Primary bottleneck: {getLeadingBucket(overview.bottleneck_distribution)}</p>
+        </article>
+
+        <article className="kpi-card">
+          <h4>Automation efficiency</h4>
+          <div className="kpi-value">{overview.avg_automation_ratio.toFixed(2)}x</div>
+          <p>Avg session duration: {formatDuration(overview.avg_session_duration_seconds)}</p>
+        </article>
+
+        <article className="kpi-card">
+          <h4>Token volume</h4>
+          <div className="kpi-value">{formatNumber(overview.total_tokens)}</div>
+          <p>
+            Input/Output: {formatNumber(overview.total_input_tokens)} /{' '}
+            {formatNumber(overview.total_output_tokens)}
+          </p>
+        </article>
+
+        <article className="kpi-card">
+          <h4>Tool execution</h4>
+          <div className="kpi-value">{formatNumber(overview.total_tool_calls)}</div>
+          <p>Model timeouts: {formatNumber(overview.model_timeout_count)}</p>
+        </article>
+      </div>
+
+      <div className="overview-grid two-columns">
+        <section className="overview-card">
+          <h4>Session throughput trend</h4>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={timeseries.points}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" />
+              <YAxis yAxisId="left" />
+              <YAxis yAxisId="right" orientation="right" />
+              <Tooltip formatter={(value) => formatNumber(Number(value))} />
+              <Legend />
+              <Area
+                yAxisId="left"
+                type="monotone"
+                dataKey="sessions"
+                stroke="#2563eb"
+                fill="#bfdbfe"
+                name="Sessions"
+              />
+              <Area
+                yAxisId="right"
+                type="monotone"
+                dataKey="tokens"
+                stroke="#ea580c"
+                fill="#fed7aa"
+                name="Tokens"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </section>
+
+        <section className="overview-card">
+          <h4>Bottleneck distribution</h4>
+          {overview.bottleneck_distribution.length === 0 ? (
+            <p className="empty-hint">No bottleneck data in this range.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={overview.bottleneck_distribution}
+                  dataKey="count"
+                  nameKey="label"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={95}
+                  label={({ name, percent }) =>
+                    `${name || 'Unknown'}: ${formatPercent((percent || 0) * 100)}`
+                  }
+                >
+                  {overview.bottleneck_distribution.map((entry, index) => (
+                    <Cell key={entry.key} fill={DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => formatNumber(Number(value))} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </section>
+      </div>
+
+      <div className="overview-grid two-columns">
+        <section className="overview-card">
+          <h4>Automation bands</h4>
+          {automationDistribution.buckets.length === 0 ? (
+            <p className="empty-hint">No automation data in this range.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={automationDistribution.buckets}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <Tooltip formatter={(value) => formatNumber(Number(value))} />
+                <Legend />
+                <Bar dataKey="count" fill="#2563eb" name="Sessions" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </section>
+
+        <section className="overview-card">
+          <h4>Top tools by call volume</h4>
+          {topTools.length === 0 ? (
+            <p className="empty-hint">No tool data in this range.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table className="compact-table">
+                <thead>
+                  <tr>
+                    <th>Tool</th>
+                    <th>Calls</th>
+                    <th>Errors</th>
+                    <th>Avg latency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topTools.map((tool) => (
+                    <tr key={tool.tool_name}>
+                      <td>{tool.tool_name}</td>
+                      <td>{formatNumber(tool.total_calls)}</td>
+                      <td>{formatNumber(tool.error_count)}</td>
+                      <td>{tool.avg_latency_seconds.toFixed(2)}s</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="overview-grid two-columns">
+        <section className="overview-card">
+          <h4>Top projects</h4>
+          {topProjects.length === 0 ? (
+            <p className="empty-hint">No project data in this range.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table className="compact-table">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Sessions</th>
+                    <th>Token share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topProjects.map((project) => (
+                    <tr key={project.project_path || project.project_name}>
+                      <td>{project.project_name}</td>
+                      <td>{formatNumber(project.sessions)}</td>
+                      <td>{formatPercent(project.percent_tokens)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="overview-card">
+          <h4>Top sessions by token share</h4>
+          {topSessionShare.length === 0 ? (
+            <p className="empty-hint">No token-share data in this range.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={topSessionShare}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <Tooltip formatter={(value) => formatNumber(Number(value))} />
+                <Legend />
+                <Bar dataKey="percent" fill="#0f766e" name="Token share %" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}

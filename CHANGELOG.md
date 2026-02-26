@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-02-26
+
+> **Code Stats** | Total: 44,586 lines | Delta: +11,705 (-1,920) = **+9,785 net** | Change: **+28.8%** vs v0.3.0
+
+### Added
+
+- Cross-session analytics API endpoints: `GET /api/analytics/overview`, `/api/analytics/distributions`, and `/api/analytics/timeseries` with default last-7-days range normalization.
+- New analytics response schemas and service aggregation logic for bottleneck distribution, project/tool rollups, and time-series trends.
+- Frontend cross-session overview panel in Advanced Analytics with range presets (7/30/90/custom), KPI cards, distribution charts, trend charts, and top project/tool/session-share tables.
+- Frontend API client and React Query hooks for cross-session analytics (`fetchAnalyticsOverview`, `fetchAnalyticsDistribution`, `fetchAnalyticsTimeseries` and matching hooks/query keys).
+- Integration tests for analytics endpoints covering default date window behavior, explicit range queries, weekly interval, and invalid parameter handling.
+
+### Changed
+
+- Reorganized single-session metrics into user-oriented dimensions: Automation & Interaction, Tool Execution, Time & Stability, and Resource Consumption.
+- Refactored session browser interaction model: comparison session pick/clear controls, automatic selection recovery after filtering, and improved state messaging.
+- Updated session list virtualization to use responsive container-measured height instead of fixed list height.
+- Improved global frontend layout and scrolling behavior by removing rigid viewport locks and nested overflow constraints that could truncate content.
+- Improved session card readability and accessibility with semantic button interaction and dual relative/absolute timestamp display.
+- Expanded `.gitignore` to ignore local generated artifacts (`.sisyphus/`, Playwright test outputs).
+
+### Fixed
+
+- Metrics/statistics page viewport clipping and missing-scroll scenarios on smaller screens and constrained desktop windows.
+- Multi-panel frontend overflow behavior that could hide portions of analytics content.
+
 ## [0.5.0] - 2026-02-26
 
 > **Code Stats** | Total: 43,421 lines | Delta: +9,864 (-1,467) = **+8,397 net** | Change: **+24.6%** vs v0.3.0

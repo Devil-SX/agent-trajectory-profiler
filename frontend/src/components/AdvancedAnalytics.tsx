@@ -38,6 +38,7 @@ import {
 import type { ExportConfig } from '../types/analytics';
 
 import { MetricComparison } from './MetricComparison';
+import { CrossSessionOverview } from './CrossSessionOverview';
 import './AdvancedAnalytics.css';
 
 interface AdvancedAnalyticsProps {
@@ -156,30 +157,27 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
   }));
 
   // Compute time-based bottleneck if time_breakdown is available
-  const allBottlenecks = useMemo(() => {
-    const bottlenecks = [...(analytics?.performanceBottlenecks || [])];
-    const tb = statsData?.statistics?.time_breakdown;
-    if (tb) {
-      const categories = [
-        { name: 'Model', percent: tb.model_time_percent },
-        { name: 'Tool execution', percent: tb.tool_time_percent },
-        { name: 'User', percent: tb.user_time_percent },
-      ];
-      const highest = categories.reduce((a, b) => (a.percent > b.percent ? a : b));
-      if (highest.percent > 60) {
-        bottlenecks.unshift({
-          type: 'long_duration' as const,
-          severity: highest.percent > 80 ? 'high' as const : 'medium' as const,
-          description: `${highest.name} dominates session time (${highest.percent.toFixed(1)}%)`,
-          affectedComponent: 'Session time distribution',
-          impactMetrics: {},
-          recommendation: `Investigate why ${highest.name.toLowerCase()} time is disproportionately high`,
-          relatedMessages: [],
-        });
-      }
+  const allBottlenecks = [...(analytics?.performanceBottlenecks || [])];
+  const tb = statsData?.statistics?.time_breakdown;
+  if (tb) {
+    const categories = [
+      { name: 'Model', percent: tb.model_time_percent },
+      { name: 'Tool execution', percent: tb.tool_time_percent },
+      { name: 'User', percent: tb.user_time_percent },
+    ];
+    const highest = categories.reduce((a, b) => (a.percent > b.percent ? a : b));
+    if (highest.percent > 60) {
+      allBottlenecks.unshift({
+        type: 'long_duration' as const,
+        severity: highest.percent > 80 ? 'high' as const : 'medium' as const,
+        description: `${highest.name} dominates session time (${highest.percent.toFixed(1)}%)`,
+        affectedComponent: 'Session time distribution',
+        impactMetrics: {},
+        recommendation: `Investigate why ${highest.name.toLowerCase()} time is disproportionately high`,
+        relatedMessages: [],
+      });
     }
-    return bottlenecks;
-  }, [analytics, statsData]);
+  }
 
   const formatNumber = (num: number): string => num.toLocaleString();
 
@@ -201,6 +199,8 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
           </button>
         </div>
       </div>
+
+      <CrossSessionOverview />
 
       {/* Visual Metrics Comparison */}
       {comparisonSessionId && comparisonStatsData && (
