@@ -1,7 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import './App.css';
-import { SessionSelector } from './components/SessionSelector';
+import { SessionBrowser } from './components/SessionBrowser';
 
 // Lazy load heavy components for code splitting
 const MessageTimeline = lazy(() => import('./components/MessageTimeline').then(m => ({ default: m.MessageTimeline })));
@@ -67,7 +67,7 @@ function App() {
         <h1>Claude Code Session Visualizer</h1>
       </header>
       <main>
-        <SessionSelector
+        <SessionBrowser
           onSessionChange={handleSessionChange}
           onComparisonSessionChange={activeView === 'analytics' ? handleComparisonSessionChange : undefined}
           selectedSessionId={selectedSessionId}

@@ -25,7 +25,8 @@ def register_parser(parser_cls: type[TrajectoryParser]) -> type[TrajectoryParser
     """
     # Instantiate temporarily to read the ecosystem name
     name = parser_cls.__dict__.get("ecosystem_name")
-    if name is None:
+    # If it's a property, not a string, or None, we need to instantiate
+    if name is None or isinstance(name, property) or not isinstance(name, str):
         # Property-based — create a throwaway instance would be heavy,
         # so require ecosystem_name to also be overridable via class-level string
         instance = object.__new__(parser_cls)

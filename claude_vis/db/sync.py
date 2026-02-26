@@ -150,6 +150,7 @@ class SyncEngine:
                 total_tool_calls=stats.total_tool_calls if stats else 0,
                 bottleneck=bottleneck,
                 automation_ratio=automation_ratio,
+                version=meta.version,
             )
 
             if stats:

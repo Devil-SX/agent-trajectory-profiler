@@ -82,7 +82,7 @@ def check_and_build_frontend() -> bool:
 
 
 @click.group()
-@click.version_option(version="0.4.0", prog_name="claude-vis")
+@click.version_option(version="0.5.0", prog_name="claude-vis")
 def main() -> None:
     """Claude Code Session Visualizer CLI."""
     pass
@@ -164,10 +164,27 @@ def serve(
     # Import here to avoid loading uvicorn when not needed
     import os
     import signal
+    import socket
 
     import uvicorn
 
     from claude_vis.api.config import get_settings
+
+    def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+        """Check if a port is already in use."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, port))
+                return False
+            except OSError:
+                return True
+
+    def find_available_port(start_port: int, host: str = "127.0.0.1", max_tries: int = 10) -> int | None:
+        """Find an available port starting from start_port."""
+        for port in range(start_port, start_port + max_tries):
+            if not is_port_in_use(port, host):
+                return port
+        return None
 
     # Auto-check and build frontend if needed
     if not check_and_build_frontend():
@@ -189,9 +206,30 @@ def serve(
 
     # Set host, port, and other configs
     server_host = host or settings.api_host
-    server_port = port or settings.api_port
+    requested_port = port or settings.api_port
     server_reload = reload or settings.api_reload
     server_log_level = log_level or settings.log_level.lower()
+
+    # Check if requested port is in use
+    if is_port_in_use(requested_port, server_host):
+        if port is not None:
+            # User explicitly specified a port, don't auto-change it
+            click.echo(f"Error: Port {requested_port} is already in use.", err=True)
+            click.echo("Please specify a different port with --port option.", err=True)
+            sys.exit(1)
+        else:
+            # Try to find an alternative port
+            click.echo(f"Warning: Default port {requested_port} is already in use.", err=True)
+            alternative_port = find_available_port(requested_port + 1, server_host)
+            if alternative_port is None:
+                click.echo("Error: Could not find an available port.", err=True)
+                click.echo("Please stop other services or specify a custom port.", err=True)
+                sys.exit(1)
+            click.echo(f"Using alternative port: {alternative_port}", err=True)
+            click.echo()
+            server_port = alternative_port
+    else:
+        server_port = requested_port
 
     # Print startup information
     click.echo("=" * 60)
@@ -291,6 +329,18 @@ def _print_session_stats(stats: "SessionStatistics", session_id: str = "") -> No
     default="2",
     help="Output detail level for --human: 1=summary, 2=standard, 3=detailed",
 )
+@click.option(
+    "--inactivity-threshold",
+    type=float,
+    default=None,
+    help="Seconds of gap to classify as inactive (default: 1800)",
+)
+@click.option(
+    "--model-timeout",
+    type=float,
+    default=None,
+    help="Seconds of model inference gap to count as timeout (default: 600)",
+)
 def parse(
     file: Path | None,
     session: Path | None,
@@ -298,6 +348,8 @@ def parse(
     compact: bool,
     human: bool,
     level: str,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
 ) -> None:
     """
     Parse Claude Code session data and output JSON.
@@ -331,6 +383,13 @@ def parse(
         click.echo("Error: --file and --session are mutually exclusive.", err=True)
         sys.exit(1)
 
+    # Build keyword args for threshold params
+    parse_kwargs: dict[str, float] = {}
+    if inactivity_threshold is not None:
+        parse_kwargs["inactivity_threshold"] = inactivity_threshold
+    if model_timeout is not None:
+        parse_kwargs["model_timeout_threshold"] = model_timeout
+
     try:
         sessions_list: list[tuple[str, object]] = []  # (session_id, session_obj)
 
@@ -338,7 +397,7 @@ def parse(
             # Mode 1: single file
             file = file.expanduser().resolve()
             click.echo(f"Parsing file: {file}", err=True)
-            session_obj = parse_session_file(file)
+            session_obj = parse_session_file(file, **parse_kwargs)
             sessions_list = [(session_obj.metadata.session_id, session_obj)]
             json_data = session_obj.model_dump(mode="json")
             click.echo(
@@ -349,7 +408,7 @@ def parse(
             # Mode 2: session directory
             session = session.expanduser().resolve()
             click.echo(f"Parsing session directory: {session}", err=True)
-            parsed_data = parse_session_directory(session)
+            parsed_data = parse_session_directory(session, **parse_kwargs)
             sessions_list = [
                 (s.metadata.session_id, s) for s in parsed_data.sessions
             ]
@@ -364,7 +423,7 @@ def parse(
             path = Path.home() / ".claude" / "projects"
             path = path.expanduser().resolve()
             click.echo(f"Parsing sessions from: {path}", err=True)
-            parsed_data = parse_session_directory(path)
+            parsed_data = parse_session_directory(path, **parse_kwargs)
             sessions_list = [
                 (s.metadata.session_id, s) for s in parsed_data.sessions
             ]
@@ -427,11 +486,25 @@ def parse(
     default=None,
     help="SQLite database path (default: ~/.claude-vis/profiler.db)",
 )
+@click.option(
+    "--inactivity-threshold",
+    type=float,
+    default=None,
+    help="Seconds of gap to classify as inactive (default: 1800)",
+)
+@click.option(
+    "--model-timeout",
+    type=float,
+    default=None,
+    help="Seconds of model inference gap to count as timeout (default: 600)",
+)
 def sync(
     path: Path | None,
     ecosystem: str,
     force: bool,
     db_path: Path | None,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
 ) -> None:
     """
     Incrementally scan and parse agent trajectory files into the database.
@@ -464,6 +537,12 @@ def sync(
     except KeyError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+    # Apply threshold overrides if provided
+    if inactivity_threshold is not None:
+        parser.inactivity_threshold = inactivity_threshold  # type: ignore[attr-defined]
+    if model_timeout is not None:
+        parser.model_timeout_threshold = model_timeout  # type: ignore[attr-defined]
 
     conn = get_connection(db_path)
     repo = SessionRepository(conn)
@@ -515,12 +594,24 @@ def sync(
     default=None,
     help="SQLite database path (default: ~/.claude-vis/profiler.db)",
 )
+@click.option(
+    "--start-date",
+    default=None,
+    help="Filter sessions created on or after this date (YYYY-MM-DD)",
+)
+@click.option(
+    "--end-date",
+    default=None,
+    help="Filter sessions created on or before this date (YYYY-MM-DD)",
+)
 def stats(
     session_id: str | None,
     level: str,
     sort_by: str,
     limit: int,
     db_path: Path | None,
+    start_date: str | None,
+    end_date: str | None,
 ) -> None:
     """
     Query session statistics from the database.
@@ -540,9 +631,27 @@ def stats(
     \b
         # Sort by token usage
         claude-vis stats --sort-by total_tokens --limit 10
+
+    \b
+        # Filter by date range
+        claude-vis stats --start-date 2026-02-01 --end-date 2026-02-25
     """
+    import re
+
     from claude_vis.db.connection import get_connection
     from claude_vis.db.repository import SessionRepository
+
+    # Validate date formats
+    _date_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    if start_date is not None and not _date_re.match(start_date):
+        click.echo(f"Error: Invalid --start-date format: '{start_date}'. Expected YYYY-MM-DD.", err=True)
+        sys.exit(1)
+    if end_date is not None and not _date_re.match(end_date):
+        click.echo(f"Error: Invalid --end-date format: '{end_date}'. Expected YYYY-MM-DD.", err=True)
+        sys.exit(1)
+    if start_date and end_date and start_date > end_date:
+        click.echo("Error: --start-date must be on or before --end-date.", err=True)
+        sys.exit(1)
 
     conn = get_connection(db_path, create=False)
     repo = SessionRepository(conn)
@@ -557,9 +666,15 @@ def stats(
             sys.exit(1)
         click.echo(format_session_stats(statistics, session_id, level=output_level))
     else:
-        rows = repo.list_sessions(sort_by=sort_by, sort_order="DESC", limit=limit)
+        rows = repo.list_sessions(
+            sort_by=sort_by, sort_order="DESC", limit=limit,
+            start_date=start_date, end_date=end_date,
+        )
         if not rows:
-            click.echo("No sessions in database. Run 'claude-vis sync' first.", err=True)
+            if start_date or end_date:
+                click.echo("No sessions found for the specified date range.", err=True)
+            else:
+                click.echo("No sessions in database. Run 'claude-vis sync' first.", err=True)
             conn.close()
             sys.exit(1)
 

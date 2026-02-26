@@ -3,7 +3,7 @@
  *
  * Tests cover:
  * - Home page screenshot
- * - Session selection interactions
+ * - Session card interactions
  * - Timeline with messages
  * - Sidebar statistics visualization
  * - Mobile viewport screenshots
@@ -13,12 +13,13 @@ import { test, expect } from '@playwright/test';
 import { setupMockApi } from './fixtures/mockServer';
 
 test.describe('Home Page', () => {
-  test('should display home page with session selector', async ({ page }) => {
+  test('should display home page with session browser', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
 
-    // Wait for sessions to load
-    await page.waitForSelector('#session-select', { state: 'visible' });
+    // Wait for SessionBrowser to load
+    await page.waitForSelector('.session-browser:not(.loading)', { timeout: 5000 });
+    await page.waitForSelector('.session-card', { state: 'visible' });
     await expect(page.locator('h1')).toContainText('Claude Code Session Visualizer');
 
     // Take screenshot of home page
@@ -38,10 +39,9 @@ test.describe('Home Page', () => {
     const loadingPromise = page.goto('/');
 
     // Try to capture loading state
-    await page.waitForSelector('#session-select', { state: 'visible', timeout: 500 }).catch(() => {});
-    const loadingText = await page.locator('#session-select option').first().textContent();
+    const isLoading = await page.locator('.session-browser.loading').isVisible().catch(() => false);
 
-    if (loadingText?.includes('Loading')) {
+    if (isLoading) {
       await page.screenshot({
         path: 'tests/screenshots/02-loading-state.png',
       });
@@ -61,7 +61,7 @@ test.describe('Home Page', () => {
     });
 
     await page.goto('/');
-    await page.waitForSelector('.no-session, .empty');
+    await page.waitForSelector('.session-browser.empty, .no-session, .empty', { timeout: 3000 });
 
     await page.screenshot({
       path: 'tests/screenshots/03-no-sessions.png',
@@ -75,12 +75,13 @@ test.describe('Session Selection', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    // Wait for session to be selected
-    await page.waitForSelector('#session-select');
+    // Wait for first session card to be selected
+    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
     await page.waitForSelector('.message-timeline, .session-content', { timeout: 5000 });
 
-    const selectedValue = await page.locator('#session-select').inputValue();
-    expect(selectedValue).toBe('test-session-001');
+    // Verify first card is selected
+    const firstCard = page.locator('.session-card').first();
+    await expect(firstCard).toHaveClass(/session-card--selected/);
 
     await page.screenshot({
       path: 'tests/screenshots/04-first-session-selected.png',
@@ -88,13 +89,13 @@ test.describe('Session Selection', () => {
     });
   });
 
-  test('should change sessions when dropdown is changed', async ({ page }) => {
+  test('should change sessions when clicking a card', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
 
     // Wait for first session to load
-    await page.waitForSelector('#session-select');
-    await page.waitForTimeout(1000);
+    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
+    await page.waitForTimeout(500);
 
     // Take screenshot before change
     await page.screenshot({
@@ -102,28 +103,31 @@ test.describe('Session Selection', () => {
       fullPage: true,
     });
 
-    // Attempt to change to second session
-    // Note: Due to React state management, the selection may not visually change immediately
-    await page.selectOption('#session-select', 'test-session-002');
-    await page.waitForTimeout(1500);
+    // Click second session card
+    const secondCard = page.locator('.session-card').nth(1);
+    await secondCard.click();
+    await page.waitForTimeout(1000);
 
-    // Take screenshot after attempting change (visual test - no assertion)
+    // Verify second card is now selected
+    await expect(secondCard).toHaveClass(/session-card--selected/);
+
+    // Take screenshot after change
     await page.screenshot({
       path: 'tests/screenshots/06-after-session-change.png',
       fullPage: true,
     });
 
-    // Verify the option exists
-    const options = await page.locator('#session-select option').count();
-    expect(options).toBeGreaterThan(1);
+    // Verify multiple cards exist
+    const cardCount = await page.locator('.session-card').count();
+    expect(cardCount).toBeGreaterThan(1);
   });
 
   test('should display session info', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('.session-info');
-    await expect(page.locator('.session-count')).toContainText('2 sessions available');
+    await page.waitForSelector('.session-count', { timeout: 5000 });
+    await expect(page.locator('.session-count')).toContainText('2 sessions');
 
     await page.screenshot({
       path: 'tests/screenshots/07-session-info.png',
@@ -187,7 +191,7 @@ test.describe('Statistics View', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
     await page.waitForTimeout(500);
 
     // Click statistics tab
@@ -204,7 +208,7 @@ test.describe('Statistics View', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
     await page.waitForTimeout(500);
 
     // Click statistics tab
@@ -234,7 +238,7 @@ test.describe('Advanced Analytics View', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
     await page.waitForTimeout(500);
 
     // Click advanced analytics tab
@@ -251,7 +255,7 @@ test.describe('Advanced Analytics View', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
     await page.waitForTimeout(500);
 
     // Click advanced analytics tab
@@ -300,7 +304,7 @@ test.describe('Tab Navigation', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
     await page.waitForTimeout(500);
 
     // Verify Timeline tab is active by default
@@ -335,7 +339,7 @@ test.describe('Mobile View', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card', { timeout: 5000 });
     await page.waitForTimeout(500);
 
     await page.screenshot({
@@ -395,7 +399,7 @@ test.describe('Mobile View', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card', { timeout: 5000 });
     await page.waitForTimeout(500);
 
     await page.click('button:has-text("Statistics")');
@@ -411,7 +415,7 @@ test.describe('Mobile View', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card', { timeout: 5000 });
     await page.waitForTimeout(500);
 
     await page.click('button:has-text("Advanced Analytics")');
@@ -427,29 +431,34 @@ test.describe('Mobile View', () => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('#session-select');
+    await page.waitForSelector('.session-card', { timeout: 5000 });
     await page.waitForTimeout(500);
 
-    // Open dropdown
-    await page.click('#session-select');
+    // Click first card
+    const firstCard = page.locator('.session-card').first();
+    await firstCard.click();
     await page.waitForTimeout(200);
 
     await page.screenshot({
-      path: 'tests/screenshots/mobile-07-session-dropdown.png',
+      path: 'tests/screenshots/mobile-07-session-selected.png',
       fullPage: true,
     });
 
-    // Attempt to select second session (visual test - no assertion)
-    await page.selectOption('#session-select', 'test-session-002');
-    await page.waitForTimeout(1500);
+    // Click second session card
+    const secondCard = page.locator('.session-card').nth(1);
+    await secondCard.click();
+    await page.waitForTimeout(1000);
+
+    // Verify second card is selected
+    await expect(secondCard).toHaveClass(/session-card--selected/);
 
     await page.screenshot({
       path: 'tests/screenshots/mobile-08-session-changed.png',
       fullPage: true,
     });
 
-    // Verify multiple options exist
-    const options = await page.locator('#session-select option').count();
-    expect(options).toBeGreaterThan(1);
+    // Verify multiple cards exist
+    const cardCount = await page.locator('.session-card').count();
+    expect(cardCount).toBeGreaterThan(1);
   });
 });

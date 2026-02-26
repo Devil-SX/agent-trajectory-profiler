@@ -1,0 +1,238 @@
+.metric-comparison-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  padding: 20px;
+}
+
+/* Individual metric card */
+.comparison-metric {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.comparison-metric:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Highlight metric card when difference is large */
+.comparison-metric--highlight {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  border-width: 2px;
+}
+
+.comparison-metric--highlight:hover {
+  background: #fef3c7;
+  border-color: #d97706;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+}
+
+/* Metric title */
+.comparison-metric__title {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid #f3f4f6;
+  padding-bottom: 8px;
+}
+
+/* Metric content wrapper */
+.comparison-metric__content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* Individual comparison columns */
+.comparison-column {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.comparison-column--a {
+  border-left: 3px solid #3b82f6;
+}
+
+.comparison-column--b {
+  border-left: 3px solid #10b981;
+}
+
+.comparison-column__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+}
+
+.comparison-column__value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+/* Bottleneck badge styling */
+.comparison-bottleneck-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  text-align: center;
+  max-width: 100%;
+  word-break: break-word;
+}
+
+/* Difference indicator */
+.comparison-metric__diff {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f59e0b;
+  background: #fef3c7;
+  padding: 8px 12px;
+  border-radius: 4px;
+  text-align: center;
+  margin-top: 8px;
+  border-left: 3px solid #f59e0b;
+}
+
+/* Empty state */
+.metric-comparison__empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background: #f9fafb;
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 40px 20px;
+}
+
+.metric-comparison__empty p {
+  margin: 0;
+  font-size: 14px;
+  color: #6b7280;
+  text-align: center;
+}
+
+/* Responsive design */
+@media (max-width: 1024px) {
+  .metric-comparison-container {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .comparison-metric {
+    padding: 14px;
+  }
+
+  .comparison-metric__title {
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  .comparison-column__value {
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 768px) {
+  .metric-comparison-container {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .comparison-metric {
+    padding: 12px;
+  }
+
+  .comparison-metric__content {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .comparison-column {
+    padding: 10px;
+  }
+
+  .comparison-column__label {
+    font-size: 10px;
+  }
+
+  .comparison-column__value {
+    font-size: 14px;
+  }
+
+  .comparison-metric__title {
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+
+  .comparison-bottleneck-badge {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  .comparison-metric__diff {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .metric-comparison-container {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .comparison-metric {
+    padding: 10px;
+  }
+
+  .comparison-metric__content {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .comparison-column {
+    padding: 8px;
+  }
+
+  .comparison-column__label {
+    font-size: 9px;
+  }
+
+  .comparison-column__value {
+    font-size: 13px;
+  }
+
+  .comparison-metric__title {
+    font-size: 11px;
+    margin-bottom: 8px;
+  }
+}

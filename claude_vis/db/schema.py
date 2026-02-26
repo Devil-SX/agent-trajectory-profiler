@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     duration_seconds REAL,
     total_tool_calls INTEGER,
     bottleneck       TEXT,
-    automation_ratio REAL
+    automation_ratio REAL,
+    version          TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS session_statistics (
@@ -36,9 +37,10 @@ CREATE TABLE IF NOT EXISTS session_statistics (
     computed_at     TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);
-CREATE INDEX IF NOT EXISTS idx_sessions_parsed_at  ON sessions(parsed_at);
-CREATE INDEX IF NOT EXISTS idx_tracked_files_path  ON tracked_files(file_path);
+CREATE INDEX IF NOT EXISTS idx_sessions_created_at  ON sessions(created_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_updated_at  ON sessions(updated_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_parsed_at   ON sessions(parsed_at);
+CREATE INDEX IF NOT EXISTS idx_tracked_files_path   ON tracked_files(file_path);
 """
 
 

@@ -233,6 +233,8 @@ class TimeBreakdown(BaseModel):
     inactivity_threshold_seconds: float = 1800.0
     user_interaction_count: int = 0
     interactions_per_hour: float = 0.0
+    model_timeout_count: int = 0
+    model_timeout_threshold_seconds: float = 600.0
 
 
 class TokenBreakdown(BaseModel):

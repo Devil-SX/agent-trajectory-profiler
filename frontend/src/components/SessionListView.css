@@ -1,0 +1,37 @@
+/**
+ * SessionListView styles
+ * - Virtual list container
+ * - Empty state styling
+ * - Item wrapper with spacing
+ */
+
+.session-list-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.session-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background-color: #f9fafb;
+  border: 2px dashed #d1d5db;
+  border-radius: 0.5rem;
+  padding: 2rem;
+}
+
+.session-list-empty p {
+  color: #6b7280;
+  font-size: 1rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.session-list-item {
+  padding: 0.75rem;
+  box-sizing: border-box;
+}

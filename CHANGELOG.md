@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-02-26
+
+> **Code Stats** | Total: 43,421 lines | Delta: +9,864 (-1,467) = **+8,397 net** | Change: **+24.6%** vs v0.3.0
+
+### Added
+
+- **Configurable inactivity threshold**: `--inactivity-threshold` CLI option on `parse` and `sync` commands (default 1800s). Also configurable via `CLAUDE_VIS_INACTIVITY_THRESHOLD` env var and API settings.
+- **Model inference timeout detection**: flag gaps before assistant messages exceeding a threshold (default 600s) as model timeouts. New `model_timeout_count` and `model_timeout_threshold_seconds` fields on `TimeBreakdown`. CLI option `--model-timeout` on `parse` and `sync`.
+- **Session Browser UI** replacing dropdown selection with virtualized session cards, search, sort, bottleneck filter, and date-range filtering controls.
+- New dashboard components: `BashCommandTable`, `BottleneckInsight`, `TimeBreakdownChart`, and `MetricComparison`.
+- `GET /api/sessions` now supports `start_date` / `end_date` filtering with format validation.
+- DB migration script `claude_vis/db/migrations/add_version_column.py` and persisted `version` field in session summaries.
+- `docs/output-levels.md` documenting `--human --level 1/2/3` output format with examples
+- `docs/port-handling.md` documenting backend/frontend port conflict behavior and troubleshooting
+- Features section with Mermaid data-flow diagram in both READMEs
+- Model timeout display in `--human` output (Time Breakdown section, shown when count > 0)
+- Tests for custom inactivity threshold and model timeout detection (`test_statistics.py`)
+- New Playwright suites for session browser, card interactions, filtering, date range, loading flow, and tab navigation.
+
+### Changed
+
+- Split bilingual `README.md` into `README.md` (English) + `README.zh.md` (Chinese) with hyperlink switcher
+- Split `docs/claude-jsonl-format.md` into English + Chinese (`docs/claude-jsonl-format.zh.md`) with hyperlink switcher
+- Updated CLAUDE.md Project Index with split file references and output-levels doc
+- Replaced `SessionSelector` with `SessionBrowser` in the frontend app shell.
+- `ClaudeCodeParser.__init__` now accepts `inactivity_threshold` and `model_timeout_threshold` params
+- `calculate_session_statistics()`, `parse_session_file()`, `parse_session_directory()` accept threshold keyword args
+- `SessionService` threads thresholds from API settings to parser
+- Backend `serve` command now auto-finds an available port when default port is occupied; explicit `--port` remains strict.
+- Frontend Vite dev server configured for non-strict port fallback during development.
+
 ## [0.4.0] - 2026-02-24
 
 ### Added

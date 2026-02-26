@@ -32,10 +32,14 @@ class SessionService:
         session_path: Path,
         single_session: str | None = None,
         db_path: Path | None = None,
+        inactivity_threshold: float = 1800.0,
+        model_timeout_threshold: float = 600.0,
     ) -> None:
         self.session_path = session_path
         self.single_session = single_session
         self._db_path = db_path
+        self._inactivity_threshold = inactivity_threshold
+        self._model_timeout_threshold = model_timeout_threshold
         self._conn: sqlite3.Connection | None = None
         self._repo: SessionRepository | None = None
         self._sessions: dict[str, Session] = {}
@@ -69,7 +73,10 @@ class SessionService:
         if self._repo is None:
             return
 
-        parser = ClaudeCodeParser()
+        parser = ClaudeCodeParser(
+            inactivity_threshold=self._inactivity_threshold,
+            model_timeout_threshold=self._model_timeout_threshold,
+        )
         engine = SyncEngine(self._repo, parser)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, engine.sync, self.session_path)
@@ -78,9 +85,15 @@ class SessionService:
         """Legacy fallback: load all sessions into memory."""
         try:
             loop = asyncio.get_event_loop()
-            parsed_data = await loop.run_in_executor(
-                None, parse_session_directory, self.session_path
+            import functools
+
+            _parse_dir = functools.partial(
+                parse_session_directory,
+                self.session_path,
+                inactivity_threshold=self._inactivity_threshold,
+                model_timeout_threshold=self._model_timeout_threshold,
             )
+            parsed_data = await loop.run_in_executor(None, _parse_dir)
             all_sessions = {
                 session.metadata.session_id: session for session in parsed_data.sessions
             }
@@ -108,6 +121,8 @@ class SessionService:
         page_size: int = 50,
         sort_by: str = "created_at",
         sort_order: str = "DESC",
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> tuple[list[SessionSummary], int]:
         """
         Get list of all available sessions with pagination.
@@ -115,18 +130,25 @@ class SessionService:
         Reads from DB when available, otherwise from in-memory cache.
         """
         if self._repo is not None and self._repo.count_sessions() > 0:
-            return self._list_from_db(page, page_size, sort_by, sort_order)
-        return self._list_from_memory(page, page_size)
+            return self._list_from_db(page, page_size, sort_by, sort_order, start_date, end_date)
+        return self._list_from_memory(page, page_size, start_date, end_date)
 
     def _list_from_db(
-        self, page: int, page_size: int, sort_by: str, sort_order: str
+        self,
+        page: int,
+        page_size: int,
+        sort_by: str,
+        sort_order: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> tuple[list[SessionSummary], int]:
         assert self._repo is not None
-        total_count = self._repo.count_sessions()
+        total_count = self._repo.count_sessions(start_date=start_date, end_date=end_date)
         offset = (page - 1) * page_size
         rows = self._repo.list_sessions(
             sort_by=sort_by, sort_order=sort_order,
             limit=page_size, offset=offset,
+            start_date=start_date, end_date=end_date,
         )
         summaries = []
         for row in rows:
@@ -139,6 +161,7 @@ class SessionService:
                     total_messages=row["total_messages"] or 0,
                     total_tokens=row["total_tokens"] or 0,
                     git_branch=row["git_branch"],
+                    version=row["version"] or "",
                     parsed_at=row["parsed_at"],
                     duration_seconds=row["duration_seconds"],
                     bottleneck=row["bottleneck"],
@@ -148,10 +171,26 @@ class SessionService:
         return summaries, total_count
 
     def _list_from_memory(
-        self, page: int, page_size: int
+        self,
+        page: int,
+        page_size: int,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> tuple[list[SessionSummary], int]:
         summaries = []
         for session in self._sessions.values():
+            # Apply date filtering on in-memory sessions
+            created = str(session.metadata.created_at) if session.metadata.created_at else ""
+            if start_date and created < start_date:
+                continue
+            if end_date:
+                from datetime import datetime, timedelta
+
+                end_dt = datetime.fromisoformat(end_date)
+                next_day = (end_dt + timedelta(days=1)).isoformat()[:10]
+                if created >= next_day:
+                    continue
+
             summary = SessionSummary(
                 session_id=session.metadata.session_id,
                 project_path=session.metadata.project_path,
@@ -185,10 +224,16 @@ class SessionService:
             file_path = self._repo.get_file_path_for_session(session_id)
             if file_path is not None and file_path.exists():
                 try:
-                    loop = asyncio.get_event_loop()
-                    session = await loop.run_in_executor(
-                        None, parse_session_file, file_path
+                    import functools
+
+                    _parse_file = functools.partial(
+                        parse_session_file,
+                        file_path,
+                        inactivity_threshold=self._inactivity_threshold,
+                        model_timeout_threshold=self._model_timeout_threshold,
                     )
+                    loop = asyncio.get_event_loop()
+                    session = await loop.run_in_executor(None, _parse_file)
                     return session
                 except SessionParseError:
                     return None

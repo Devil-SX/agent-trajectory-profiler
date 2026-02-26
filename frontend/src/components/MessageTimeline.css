@@ -71,7 +71,7 @@
 
 .messages-container {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: scroll;
   padding: 1rem;
   scroll-behavior: smooth;
 }

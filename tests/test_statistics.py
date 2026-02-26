@@ -627,3 +627,171 @@ class TestIntegrationWithParseSessionFile:
         assert len(session.subagent_sessions) == 2
         assert session.statistics is not None
         assert session.statistics.subagent_count == 2
+
+
+class TestConfigurableThresholds:
+    """Tests for configurable inactivity threshold and model timeout detection."""
+
+    @pytest.fixture
+    def messages_with_large_gaps(self, temp_session_dir: Path) -> Path:
+        """Create a session file with large time gaps to test thresholds."""
+        messages = [
+            {
+                "type": "user",
+                "sessionId": "test-thresholds",
+                "uuid": "msg-1",
+                "timestamp": "2026-02-03T10:00:00.000Z",
+                "message": {"role": "user", "content": "Start task"},
+            },
+            {
+                "type": "assistant",
+                "sessionId": "test-thresholds",
+                "uuid": "msg-2",
+                "timestamp": "2026-02-03T10:08:00.000Z",  # 8 min gap (model time)
+                "message": {
+                    "role": "assistant",
+                    "content": "Working on it...",
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            },
+            {
+                "type": "user",
+                "sessionId": "test-thresholds",
+                "uuid": "msg-3",
+                "timestamp": "2026-02-03T10:20:00.000Z",  # 12 min gap (user time)
+                "message": {"role": "user", "content": "Continue please"},
+            },
+            {
+                "type": "assistant",
+                "sessionId": "test-thresholds",
+                "uuid": "msg-4",
+                "timestamp": "2026-02-03T10:35:00.000Z",  # 15 min gap (model time)
+                "message": {
+                    "role": "assistant",
+                    "content": "Done!",
+                    "usage": {"input_tokens": 80, "output_tokens": 40},
+                },
+            },
+            {
+                "type": "user",
+                "sessionId": "test-thresholds",
+                "uuid": "msg-5",
+                "timestamp": "2026-02-03T11:30:00.000Z",  # 55 min gap (inactive w/ default)
+                "message": {"role": "user", "content": "Back now"},
+            },
+            {
+                "type": "assistant",
+                "sessionId": "test-thresholds",
+                "uuid": "msg-6",
+                "timestamp": "2026-02-03T11:32:00.000Z",  # 2 min gap (model time)
+                "message": {
+                    "role": "assistant",
+                    "content": "Welcome back!",
+                    "usage": {"input_tokens": 60, "output_tokens": 30},
+                },
+            },
+        ]
+        file_path = temp_session_dir / "test-thresholds.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for msg in messages:
+                f.write(json.dumps(msg) + "\n")
+        return file_path
+
+    def test_default_inactivity_threshold(self, messages_with_large_gaps: Path) -> None:
+        """Test that 55-min gap is classified as inactive with default 1800s threshold."""
+        from claude_vis.parsers.session_parser import parse_jsonl_file
+
+        messages = parse_jsonl_file(messages_with_large_gaps)
+        stats = calculate_session_statistics(messages)
+
+        assert stats.time_breakdown is not None
+        tbd = stats.time_breakdown
+        # 55 min gap should be inactive (> 30 min default)
+        assert tbd.total_inactive_time_seconds > 0
+        assert tbd.inactivity_threshold_seconds == 1800.0
+
+    def test_custom_inactivity_threshold_lower(self, messages_with_large_gaps: Path) -> None:
+        """Test with a 600s (10 min) threshold: 12-min and 15-min gaps become inactive too."""
+        from claude_vis.parsers.session_parser import parse_jsonl_file
+
+        messages = parse_jsonl_file(messages_with_large_gaps)
+        stats_default = calculate_session_statistics(messages)
+        stats_custom = calculate_session_statistics(messages, inactivity_threshold=600.0)
+
+        assert stats_custom.time_breakdown is not None
+        assert stats_default.time_breakdown is not None
+        # With 600s threshold, more time should be classified as inactive
+        assert (
+            stats_custom.time_breakdown.total_inactive_time_seconds
+            > stats_default.time_breakdown.total_inactive_time_seconds
+        )
+        assert stats_custom.time_breakdown.inactivity_threshold_seconds == 600.0
+
+    def test_custom_inactivity_threshold_higher(self, messages_with_large_gaps: Path) -> None:
+        """Test with a 7200s (2 hour) threshold: 55-min gap is no longer inactive."""
+        from claude_vis.parsers.session_parser import parse_jsonl_file
+
+        messages = parse_jsonl_file(messages_with_large_gaps)
+        stats = calculate_session_statistics(messages, inactivity_threshold=7200.0)
+
+        assert stats.time_breakdown is not None
+        # 55 min gap (3300s) should NOT be inactive with 7200s threshold
+        assert stats.time_breakdown.total_inactive_time_seconds == 0.0
+        assert stats.time_breakdown.inactivity_threshold_seconds == 7200.0
+
+    def test_model_timeout_detection_default(self, messages_with_large_gaps: Path) -> None:
+        """Test model timeout detection with default 600s threshold."""
+        from claude_vis.parsers.session_parser import parse_jsonl_file
+
+        messages = parse_jsonl_file(messages_with_large_gaps)
+        stats = calculate_session_statistics(messages)
+
+        assert stats.time_breakdown is not None
+        tbd = stats.time_breakdown
+        # 8 min (480s) and 15 min (900s) are model gaps; only 15 min > 600s default
+        # 2 min (120s) is also model but < 600s
+        assert tbd.model_timeout_count == 1
+        assert tbd.model_timeout_threshold_seconds == 600.0
+
+    def test_model_timeout_detection_custom_threshold(
+        self, messages_with_large_gaps: Path
+    ) -> None:
+        """Test model timeout detection with a custom 300s (5 min) threshold."""
+        from claude_vis.parsers.session_parser import parse_jsonl_file
+
+        messages = parse_jsonl_file(messages_with_large_gaps)
+        stats = calculate_session_statistics(messages, model_timeout_threshold=300.0)
+
+        assert stats.time_breakdown is not None
+        tbd = stats.time_breakdown
+        # 8 min (480s) and 15 min (900s) are model gaps; both > 300s
+        # 2 min (120s) is model but < 300s
+        assert tbd.model_timeout_count == 2
+        assert tbd.model_timeout_threshold_seconds == 300.0
+
+    def test_no_model_timeout_with_high_threshold(
+        self, messages_with_large_gaps: Path
+    ) -> None:
+        """Test that high threshold produces zero timeouts."""
+        from claude_vis.parsers.session_parser import parse_jsonl_file
+
+        messages = parse_jsonl_file(messages_with_large_gaps)
+        stats = calculate_session_statistics(messages, model_timeout_threshold=3600.0)
+
+        assert stats.time_breakdown is not None
+        assert stats.time_breakdown.model_timeout_count == 0
+
+    def test_parse_session_file_with_thresholds(
+        self, messages_with_large_gaps: Path
+    ) -> None:
+        """Test that parse_session_file passes thresholds correctly."""
+        session = parse_session_file(
+            messages_with_large_gaps,
+            inactivity_threshold=600.0,
+            model_timeout_threshold=300.0,
+        )
+
+        assert session.statistics is not None
+        assert session.statistics.time_breakdown is not None
+        assert session.statistics.time_breakdown.inactivity_threshold_seconds == 600.0
+        assert session.statistics.time_breakdown.model_timeout_threshold_seconds == 300.0

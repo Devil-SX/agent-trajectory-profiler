@@ -233,6 +233,11 @@ def _format_standard(stats: SessionStatistics, session_id: str) -> str:
         ]
         bottleneck = max(categories, key=lambda x: x[1])
         lines.append(f"    Bottleneck: {bottleneck[0]} ({bottleneck[1]:.1f}% of active time)")
+        if tbd.model_timeout_count > 0:
+            lines.append(
+                f"    Model Timeouts: {tbd.model_timeout_count} "
+                f"(gaps > {_format_duration(tbd.model_timeout_threshold_seconds)})"
+            )
         lines.append(f"    Interactions: {tbd.user_interaction_count}  ({tbd.interactions_per_hour:.1f}/hour)")
 
     # Duration

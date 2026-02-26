@@ -338,7 +338,12 @@ def extract_subagent_sessions(messages: list[MessageRecord]) -> list[SubagentSes
     return subagent_sessions
 
 
-def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatistics:
+def calculate_session_statistics(
+    messages: list[MessageRecord],
+    *,
+    inactivity_threshold: float = 1800.0,
+    model_timeout_threshold: float = 600.0,
+) -> SessionStatistics:
     """
     Calculate comprehensive statistics for a session.
 
@@ -388,13 +393,13 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
     # Time attribution accumulators
     # Gaps exceeding the inactivity threshold are classified as "inactive"
     # (user closed app, sleeping, AFK) rather than model/tool/user time.
-    inactivity_threshold = 1800.0  # 30 minutes
     total_model_time = 0.0
     total_tool_time = 0.0
     total_user_time = 0.0
     total_inactive_time = 0.0
     # Count genuine user interactions (user messages that are NOT tool_results)
     user_interaction_count = 0
+    model_timeout_count = 0
     prev_timestamp: datetime | None = None
 
     for msg in messages:
@@ -426,6 +431,8 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
                 elif msg.is_assistant_message:
                     # Gap before assistant message -> model inference time
                     total_model_time += gap
+                    if gap > model_timeout_threshold:
+                        model_timeout_count += 1
                 elif msg.is_user_message and _has_tool_result_content(msg):
                     # Gap before user message with tool_result -> tool execution time
                     total_tool_time += gap
@@ -630,6 +637,8 @@ def calculate_session_statistics(messages: list[MessageRecord]) -> SessionStatis
             inactivity_threshold_seconds=inactivity_threshold,
             user_interaction_count=user_interaction_count,
             interactions_per_hour=interactions_per_hour,
+            model_timeout_count=model_timeout_count,
+            model_timeout_threshold_seconds=model_timeout_threshold,
         )
 
     # Build TokenBreakdown
@@ -738,12 +747,19 @@ def extract_compact_events(file_path: Path) -> list[CompactEvent]:
     return events
 
 
-def parse_session_file(file_path: Path) -> Session:
+def parse_session_file(
+    file_path: Path,
+    *,
+    inactivity_threshold: float = 1800.0,
+    model_timeout_threshold: float = 600.0,
+) -> Session:
     """
     Parse a single session file into a Session object.
 
     Args:
         file_path: Path to the .jsonl session file
+        inactivity_threshold: Seconds of gap to classify as inactive.
+        model_timeout_threshold: Seconds of model gap to count as timeout.
 
     Returns:
         Session object with complete data including subagent sessions
@@ -767,7 +783,11 @@ def parse_session_file(file_path: Path) -> Session:
     subagent_sessions = extract_subagent_sessions(messages)
 
     # Calculate statistics
-    statistics = calculate_session_statistics(messages)
+    statistics = calculate_session_statistics(
+        messages,
+        inactivity_threshold=inactivity_threshold,
+        model_timeout_threshold=model_timeout_threshold,
+    )
 
     # Extract compact events from raw JSONL (these aren't in MessageRecord)
     compact_events = extract_compact_events(file_path)
@@ -818,12 +838,19 @@ def find_session_files(directory: Path) -> list[Path]:
     return sorted(session_files)
 
 
-def parse_session_directory(directory: Path) -> ParsedSessionData:
+def parse_session_directory(
+    directory: Path,
+    *,
+    inactivity_threshold: float = 1800.0,
+    model_timeout_threshold: float = 600.0,
+) -> ParsedSessionData:
     """
     Parse all session files in a directory.
 
     Args:
         directory: Path to the session directory
+        inactivity_threshold: Seconds of gap to classify as inactive.
+        model_timeout_threshold: Seconds of model gap to count as timeout.
 
     Returns:
         ParsedSessionData object containing all sessions
@@ -841,7 +868,11 @@ def parse_session_directory(directory: Path) -> ParsedSessionData:
 
     for file_path in session_files:
         try:
-            session = parse_session_file(file_path)
+            session = parse_session_file(
+                file_path,
+                inactivity_threshold=inactivity_threshold,
+                model_timeout_threshold=model_timeout_threshold,
+            )
             sessions.append(session)
         except SessionParseError as e:
             errors.append(f"{file_path.name}: {e}")
@@ -873,6 +904,14 @@ class ClaudeCodeParser(TrajectoryParser):
     Wraps the module-level functions into the TrajectoryParser ABC interface.
     """
 
+    def __init__(
+        self,
+        inactivity_threshold: float = 1800.0,
+        model_timeout_threshold: float = 600.0,
+    ) -> None:
+        self.inactivity_threshold = inactivity_threshold
+        self.model_timeout_threshold = model_timeout_threshold
+
     @property
     def ecosystem_name(self) -> str:
         return "claude_code"
@@ -886,7 +925,11 @@ class ClaudeCodeParser(TrajectoryParser):
         return extract_session_metadata(messages, session_id, file_path)
 
     def calculate_statistics(self, messages: list[MessageRecord]) -> SessionStatistics:
-        return calculate_session_statistics(messages)
+        return calculate_session_statistics(
+            messages,
+            inactivity_threshold=self.inactivity_threshold,
+            model_timeout_threshold=self.model_timeout_threshold,
+        )
 
     def find_session_files(self, directory: Path) -> list[Path]:
         return find_session_files(directory)
@@ -898,5 +941,9 @@ class ClaudeCodeParser(TrajectoryParser):
 
     def parse_session(self, file_path: Path) -> Session:
         """Override to include compact event extraction."""
-        session = parse_session_file(file_path)
+        session = parse_session_file(
+            file_path,
+            inactivity_threshold=self.inactivity_threshold,
+            model_timeout_threshold=self.model_timeout_threshold,
+        )
         return session

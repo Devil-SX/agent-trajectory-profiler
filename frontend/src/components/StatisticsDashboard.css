@@ -2,7 +2,8 @@
   padding: 2rem;
   background-color: #f8f9fa;
   min-height: 100%;
-  overflow-y: auto;
+  max-height: calc(100vh - 200px);
+  overflow-y: scroll;
 }
 
 .statistics-dashboard.empty,
@@ -273,4 +274,15 @@
   .error-count {
     color: #ef5350;
   }
+}
+
+/* Tool Latency Color Coding */
+.latency-high {
+  color: #ef4444; /* Red for slow tools (>10s) */
+  font-weight: 600;
+}
+
+.latency-medium {
+  color: #f97316; /* Orange for medium tools (5-10s) */
+  font-weight: 500;
 }

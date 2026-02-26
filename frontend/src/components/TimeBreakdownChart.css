@@ -1,0 +1,128 @@
+.time-breakdown-chart {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.time-breakdown-chart.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: #6b7280;
+}
+
+.time-breakdown-chart .chart-header {
+  margin-bottom: 20px;
+}
+
+.time-breakdown-chart .chart-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.time-breakdown-chart .chart-header .subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.time-breakdown-chart .charts-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.time-breakdown-chart .bar-chart-section {
+  width: 100%;
+}
+
+.time-breakdown-chart .pie-chart-section {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.time-breakdown-chart .time-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+}
+
+.time-breakdown-chart .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #374151;
+}
+
+.time-breakdown-chart .legend-color {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.time-breakdown-chart .pie-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.time-breakdown-chart .custom-tooltip {
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 10px;
+  color: #fff;
+}
+
+.time-breakdown-chart .custom-tooltip .label {
+  margin: 0 0 4px 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.time-breakdown-chart .custom-tooltip .value {
+  margin: 0 0 2px 0;
+  font-size: 16px;
+}
+
+.time-breakdown-chart .custom-tooltip .percent {
+  margin: 0;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* Responsive */
+@media (min-width: 768px) {
+  .time-breakdown-chart .charts-container {
+    flex-direction: row;
+  }
+
+  .time-breakdown-chart .bar-chart-section {
+    flex: 2;
+  }
+
+  .time-breakdown-chart .pie-chart-section {
+    flex: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .time-breakdown-chart {
+    padding: 16px;
+  }
+
+  .time-breakdown-chart .time-legend {
+    flex-direction: column;
+    gap: 8px;
+  }
+}

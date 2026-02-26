@@ -199,6 +199,8 @@ export interface TimeBreakdown {
   inactivity_threshold_seconds: number;
   user_interaction_count: number;
   interactions_per_hour: number;
+  model_timeout_count: number;
+  model_timeout_threshold_seconds: number;
 }
 
 export interface TokenBreakdown {

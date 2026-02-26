@@ -1,0 +1,111 @@
+.bottleneck-insight {
+  background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+}
+
+.bottleneck-insight .bottleneck-header {
+  margin-bottom: 16px;
+}
+
+.bottleneck-insight .bottleneck-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #fff;
+  border: 2px solid;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.bottleneck-insight .bottleneck-icon {
+  font-size: 18px;
+}
+
+.bottleneck-insight .bottleneck-label {
+  color: #1f2937;
+}
+
+.bottleneck-insight .bottleneck-percentage {
+  font-size: 16px;
+  margin-left: 4px;
+}
+
+.bottleneck-insight .bottleneck-content {
+  padding-left: 8px;
+}
+
+.bottleneck-insight .bottleneck-title {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.bottleneck-insight .bottleneck-suggestion {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.5;
+  padding: 12px;
+  background: #f3f4f6;
+  border-left: 3px solid #9ca3af;
+  border-radius: 4px;
+}
+
+.bottleneck-insight .bottleneck-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.bottleneck-insight .metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.bottleneck-insight .metric.warning {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.bottleneck-insight .metric-label {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.bottleneck-insight .metric-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.bottleneck-insight .metric.warning .metric-value {
+  color: #d97706;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .bottleneck-insight {
+    padding: 16px;
+  }
+
+  .bottleneck-insight .bottleneck-badge {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .bottleneck-insight .bottleneck-metrics {
+    flex-direction: column;
+    gap: 8px;
+  }
+}

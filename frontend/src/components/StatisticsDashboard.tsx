@@ -28,6 +28,9 @@ import {
 } from 'recharts';
 import { useSessionStatisticsQuery } from '../hooks/useSessionsQuery';
 import type { SessionStatistics } from '../types/session';
+import { TimeBreakdownChart } from './TimeBreakdownChart';
+import { BottleneckInsight } from './BottleneckInsight';
+import { BashCommandTable } from './BashCommandTable';
 import './StatisticsDashboard.css';
 
 interface StatisticsDashboardProps {
@@ -153,6 +156,11 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
   return (
     <div className="statistics-dashboard">
       <h2 className="dashboard-title">Session Statistics</h2>
+
+      {/* Bottleneck Insight */}
+      {statistics.time_breakdown && (
+        <BottleneckInsight timeBreakdown={statistics.time_breakdown} />
+      )}
 
       {/* Token Usage Cards */}
       <div className="stats-grid">
@@ -391,43 +399,9 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
           </div>
         )}
 
-        {/* Time Breakdown Pie Chart (active time only, excludes inactive gaps) */}
+        {/* Time Breakdown Chart */}
         {statistics.time_breakdown && (
-          <div className="chart-card">
-            <h3 className="card-title">
-              Active Time Breakdown
-              {statistics.time_breakdown.total_inactive_time_seconds > 0 && (
-                <span style={{ fontSize: '0.75em', fontWeight: 'normal', color: '#666', marginLeft: '8px' }}>
-                  (excl. {formatDuration(statistics.time_breakdown.total_inactive_time_seconds)} inactive)
-                </span>
-              )}
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={[
-                    { name: 'Model', value: statistics.time_breakdown.total_model_time_seconds },
-                    { name: 'Tool', value: statistics.time_breakdown.total_tool_time_seconds },
-                    { name: 'User', value: statistics.time_breakdown.total_user_time_seconds },
-                  ]}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) =>
-                    `${name}: ${percent ? (percent * 100).toFixed(1) : 0}%`
-                  }
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  <Cell fill="#1976d2" />
-                  <Cell fill="#f57c00" />
-                  <Cell fill="#388e3c" />
-                </Pie>
-                <Tooltip formatter={(value) => formatDuration(value as number)} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <TimeBreakdownChart timeBreakdown={statistics.time_breakdown} />
         )}
       </div>
 
@@ -453,7 +427,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                     <td className="tool-name">{tool.tool_name}</td>
                     <td>{formatNumber(tool.count)}</td>
                     <td>{formatNumber(tool.total_tokens)}</td>
-                    <td>{tool.avg_latency_seconds > 0 ? tool.avg_latency_seconds.toFixed(2) + 's' : '--'}</td>
+                    <td className={tool.avg_latency_seconds > 10 ? 'latency-high' : tool.avg_latency_seconds > 5 ? 'latency-medium' : ''}>{tool.avg_latency_seconds > 0 ? tool.avg_latency_seconds.toFixed(2) + 's' : '--'}</td>
                     <td>{formatNumber(tool.success_count)}</td>
                     <td className={tool.error_count > 0 ? 'error-count' : ''}>
                       {formatNumber(tool.error_count)}
@@ -464,6 +438,11 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Bash Command Statistics */}
+      {statistics.bash_breakdown && statistics.bash_breakdown.command_stats.length > 0 && (
+        <BashCommandTable bashBreakdown={statistics.bash_breakdown} />
       )}
     </div>
   );

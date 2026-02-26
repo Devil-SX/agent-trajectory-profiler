@@ -14,10 +14,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Index
 
-- [README.md](README.md) — User guide, installation, usage (EN/CN)
+- [README.md](README.md) — User guide, installation, usage (English)
+- [README.zh.md](README.zh.md) — User guide, installation, usage (Chinese)
 - [ARCHITECTURE.md](ARCHITECTURE.md) — Code map, module descriptions, parser design
 - [CHANGELOG.md](CHANGELOG.md) — Version history (Keep a Changelog)
-- [docs/claude-jsonl-format.md](docs/claude-jsonl-format.md) — Claude Code JSONL format spec
+- [docs/claude-jsonl-format.md](docs/claude-jsonl-format.md) — Claude Code JSONL format spec (English)
+- [docs/claude-jsonl-format.zh.md](docs/claude-jsonl-format.zh.md) — Claude Code JSONL format spec (Chinese)
+- [docs/output-levels.md](docs/output-levels.md) — Output detail levels guide (L1/L2/L3)
 
 ## Commands
 
@@ -26,10 +29,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync && ./install.sh
 
 # Run dev server (backend + auto-built frontend)
-claude-vis serve --reload
+claude-vis serve --reload                    # Auto-finds available port if 8000 is taken
+claude-vis serve --reload --port 8080        # Use specific port (fails if taken)
 
 # Frontend dev (separate terminal)
-cd frontend && npm install && npm run dev
+cd frontend && npm install && npm run dev    # Auto-finds available port if 5173 is taken
 
 # CLI usage
 claude-vis parse --file session.jsonl --human            # Human-readable stats
@@ -71,3 +75,4 @@ cd frontend && npm run format    # Prettier
 - MCP tools named `mcp__<server>__<method>` are grouped into `<server> (MCP)` for aggregated statistics
 - Parser logic lives in `parsers/claude_code.py`; `session_parser.py` is a backward-compatibility shim
 - SQLite DB at `~/.claude-vis/profiler.db` (WAL mode); system falls back to in-memory when DB unavailable
+- **VS Code Tasks**: When adding new commands or changing server startup, update `.vscode/tasks.json` to keep IDE launch configurations in sync

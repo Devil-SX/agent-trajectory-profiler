@@ -88,6 +88,7 @@ class SessionRepository:
         total_tool_calls: int,
         bottleneck: str | None,
         automation_ratio: float | None,
+        version: str = "",
     ) -> None:
         """Insert or update a session summary row."""
         now = datetime.now(timezone.utc).isoformat()
@@ -97,8 +98,8 @@ class SessionRepository:
                 session_id, file_id, ecosystem, project_path, git_branch,
                 created_at, updated_at, total_messages, total_tokens,
                 parsed_at, duration_seconds, total_tool_calls,
-                bottleneck, automation_ratio
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                bottleneck, automation_ratio, version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id) DO UPDATE SET
                 file_id          = excluded.file_id,
                 ecosystem        = excluded.ecosystem,
@@ -112,13 +113,14 @@ class SessionRepository:
                 duration_seconds = excluded.duration_seconds,
                 total_tool_calls = excluded.total_tool_calls,
                 bottleneck       = excluded.bottleneck,
-                automation_ratio = excluded.automation_ratio
+                automation_ratio = excluded.automation_ratio,
+                version          = excluded.version
             """,
             (
                 session_id, file_id, ecosystem, project_path, git_branch,
                 created_at, updated_at, total_messages, total_tokens,
                 now, duration_seconds, total_tool_calls,
-                bottleneck, automation_ratio,
+                bottleneck, automation_ratio, version,
             ),
         )
         self._conn.commit()
@@ -137,15 +139,19 @@ class SessionRepository:
         sort_order: str = "DESC",
         limit: int = 200,
         offset: int = 0,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> list[sqlite3.Row]:
         """
-        List session summaries with sorting and pagination.
+        List session summaries with sorting, pagination, and optional date filtering.
 
         Args:
             sort_by: Column to sort by. Must be one of the allowed columns.
             sort_order: 'ASC' or 'DESC'.
             limit: Maximum rows to return.
             offset: Number of rows to skip.
+            start_date: Include sessions created on or after this date (YYYY-MM-DD).
+            end_date: Include sessions created on or before this date (YYYY-MM-DD).
         """
         allowed_sort = {
             "created_at", "parsed_at", "total_tokens",
@@ -156,16 +162,50 @@ class SessionRepository:
         if sort_order.upper() not in ("ASC", "DESC"):
             sort_order = "DESC"
 
+        where_clauses, params = self._build_date_filter(start_date, end_date)
+        where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
+
+        params.extend([limit, offset])
         cur = self._conn.execute(
-            f"SELECT * FROM sessions ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?",
-            (limit, offset),
+            f"SELECT * FROM sessions {where_sql}ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?",
+            params,
         )
         return cur.fetchall()
 
-    def count_sessions(self) -> int:
-        """Return total number of sessions."""
-        cur = self._conn.execute("SELECT COUNT(*) FROM sessions")
+    def count_sessions(self, start_date: str | None = None, end_date: str | None = None) -> int:
+        """Return total number of sessions, optionally filtered by date range."""
+        where_clauses, params = self._build_date_filter(start_date, end_date)
+        where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
+
+        cur = self._conn.execute(f"SELECT COUNT(*) FROM sessions {where_sql}", params)
         return cur.fetchone()[0]
+
+    @staticmethod
+    def _build_date_filter(
+        start_date: str | None, end_date: str | None
+    ) -> tuple[list[str], list[str]]:
+        """Build WHERE clause fragments for date filtering on created_at.
+
+        Returns (clauses, params) for parameterized queries.
+        Raises ValueError if date strings are not valid ISO format (YYYY-MM-DD).
+        """
+        from datetime import timedelta
+
+        clauses: list[str] = []
+        params: list[str] = []
+
+        if start_date:
+            datetime.fromisoformat(start_date)  # Validate format
+            clauses.append("created_at >= ?")
+            params.append(start_date)
+
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date)  # Validate format
+            next_day = (end_dt + timedelta(days=1)).isoformat()[:10]
+            clauses.append("created_at < ?")
+            params.append(next_day)
+
+        return clauses, params
 
     def delete_session(self, session_id: str) -> None:
         """Delete a session and its statistics."""

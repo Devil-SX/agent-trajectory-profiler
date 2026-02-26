@@ -36,6 +36,8 @@ import {
   downloadFiles,
 } from '../utils/exportData';
 import type { ExportConfig } from '../types/analytics';
+
+import { MetricComparison } from './MetricComparison';
 import './AdvancedAnalytics.css';
 
 interface AdvancedAnalyticsProps {
@@ -200,6 +202,17 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
         </div>
       </div>
 
+      {/* Visual Metrics Comparison */}
+      {comparisonSessionId && comparisonStatsData && (
+        <MetricComparison
+          sessionAId={sessionId || ''}
+          sessionBId={comparisonSessionId}
+          statisticsA={statsData?.statistics || null}
+          statisticsB={comparisonStatsData.statistics}
+        />
+      )}
+
+      {/* Session Comparison Insights */}
       {/* Session Comparison */}
       {comparison && (
         <div className="comparison-section">

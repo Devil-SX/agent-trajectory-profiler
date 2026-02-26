@@ -5,12 +5,13 @@ Provides REST API endpoints to access session data, detailed information,
 and computed statistics for Claude Code sessions.
 """
 
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -38,6 +39,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         session_path=settings.session_path,
         single_session=settings.single_session,
         db_path=settings.db_path,
+        inactivity_threshold=settings.inactivity_threshold,
+        model_timeout_threshold=settings.model_timeout_threshold,
     )
     await session_service.initialize()
     yield
@@ -121,13 +124,21 @@ async def health_check() -> dict[str, Any]:
     summary="List all sessions",
     description="Get a list of all available Claude Code sessions with basic metadata",
 )
-async def list_sessions(response: Response, page: int = 1, page_size: int = 50) -> SessionListResponse:
+async def list_sessions(
+    response: Response,
+    page: int = 1,
+    page_size: int = 50,
+    start_date: str | None = Query(default=None, description="Filter sessions created on or after this date (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="Filter sessions created on or before this date (YYYY-MM-DD)"),
+) -> SessionListResponse:
     """
-    List all available sessions with pagination.
+    List all available sessions with pagination and optional date filtering.
 
     Args:
         page: Page number (1-indexed, default: 1)
         page_size: Number of items per page (default: 50, max: 200)
+        start_date: Include sessions on or after this date (YYYY-MM-DD)
+        end_date: Include sessions on or before this date (YYYY-MM-DD)
 
     Returns:
         SessionListResponse: List of sessions with metadata and pagination info
@@ -141,12 +152,35 @@ async def list_sessions(response: Response, page: int = 1, page_size: int = 50) 
     if page_size < 1 or page_size > 200:
         raise HTTPException(status_code=400, detail="Page size must be between 1 and 200")
 
-    try:
-        sessions, total_count = await session_service.list_sessions(page, page_size)
-        total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
+    # Validate date format (ISO 8601 date: YYYY-MM-DD)
+    _date_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    if start_date is not None and not _date_re.match(start_date):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid start_date format: '{start_date}'. Expected YYYY-MM-DD.",
+        )
+    if end_date is not None and not _date_re.match(end_date):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid end_date format: '{end_date}'. Expected YYYY-MM-DD.",
+        )
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="start_date must be on or before end_date.",
+        )
 
-        # Add caching headers - cache for 5 minutes
-        response.headers["Cache-Control"] = "public, max-age=300"
+    try:
+        sessions, total_count = await session_service.list_sessions(
+            page, page_size, start_date=start_date, end_date=end_date,
+        )
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+
+        # Reduce cache duration when date filters are applied
+        if start_date or end_date:
+            response.headers["Cache-Control"] = "public, max-age=60"
+        else:
+            response.headers["Cache-Control"] = "public, max-age=300"
 
         return SessionListResponse(
             sessions=sessions,
@@ -155,6 +189,8 @@ async def list_sessions(response: Response, page: int = 1, page_size: int = 50) 
             page_size=page_size,
             total_pages=total_pages,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to list sessions: {str(e)}"

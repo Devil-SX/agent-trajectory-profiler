@@ -1,0 +1,137 @@
+.bash-command-table {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.bash-command-table.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+  color: #6b7280;
+}
+
+.bash-command-table .table-header {
+  margin-bottom: 16px;
+}
+
+.bash-command-table .table-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.bash-command-table .table-summary {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.bash-command-table .table-container {
+  overflow-x: auto;
+}
+
+.bash-command-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.bash-command-table thead {
+  background: #f9fafb;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.bash-command-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.bash-command-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.bash-command-table th.sortable:hover {
+  background: #f3f4f6;
+}
+
+.bash-command-table th.right,
+.bash-command-table td.right {
+  text-align: right;
+}
+
+.bash-command-table tbody tr {
+  border-bottom: 1px solid #e5e7eb;
+  transition: background 0.2s;
+}
+
+.bash-command-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+.bash-command-table tbody tr.slow-command {
+  background: #fffbeb;
+}
+
+.bash-command-table tbody tr.slow-command:hover {
+  background: #fef3c7;
+}
+
+.bash-command-table td {
+  padding: 12px;
+  color: #1f2937;
+}
+
+.bash-command-table .command-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bash-command-table .command-name code {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #1f2937;
+}
+
+.bash-command-table .slow-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #fbbf24;
+  color: #78350f;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .bash-command-table {
+    padding: 16px;
+  }
+
+  .bash-command-table table {
+    font-size: 12px;
+  }
+
+  .bash-command-table th,
+  .bash-command-table td {
+    padding: 8px;
+  }
+
+  .bash-command-table .command-name {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}

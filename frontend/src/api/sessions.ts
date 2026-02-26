@@ -127,22 +127,35 @@ async function fetchWithRetry(
 }
 
 /**
- * Fetch all available sessions from the API with pagination support.
+ * Fetch all available sessions from the API with pagination and optional date filtering.
  *
  * @param page - Page number (1-indexed, default: 1)
  * @param pageSize - Number of items per page (default: 50)
+ * @param startDate - Filter sessions updated after this date (ISO 8601: YYYY-MM-DD)
+ * @param endDate - Filter sessions updated before this date (ISO 8601: YYYY-MM-DD)
  * @returns Promise resolving to session list response
  * @throws APIError if the API request fails
  */
 export async function fetchSessions(
   page: number = 1,
-  pageSize: number = 50
+  pageSize: number = 50,
+  startDate: string | null = null,
+  endDate: string | null = null
 ): Promise<SessionListResponse> {
   try {
     const params = new URLSearchParams({
       page: page.toString(),
       page_size: pageSize.toString(),
     });
+
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+
     const response = await fetchWithRetry(`${API_BASE_URL}/api/sessions?${params}`);
     return response.json();
   } catch (error) {

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
         description="Path to SQLite database",
     )
 
+    # Parser thresholds
+    inactivity_threshold: float = 1800.0
+    model_timeout_threshold: float = 600.0
+
     # API configuration
     api_host: str = "0.0.0.0"
     api_port: int = 8000

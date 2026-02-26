@@ -1,10 +1,36 @@
-[English](#agent-trajectory-profiler) | [中文](#agent-trajectory-profiler-中文)
+[English](README.md) | [中文](README.zh.md)
 
 # Agent Trajectory Profiler
 
 Visualize and analyze Claude Code agent sessions — run as a **web dashboard**, use **headless CLI** for batch processing, or invoke **AI-powered analysis** for actionable insights.
 
 Parses `.jsonl` session files from `~/.claude/projects/`, computes analytics (message stats, tool usage, token consumption, time attribution, subagent tracking), and presents them through an interactive React frontend, structured JSON output, or AI-generated Markdown reports.
+
+## Features
+
+- **Multi-mode CLI** — `serve` / `parse` / `sync` / `stats` / `analyze`
+- **Three output detail levels** — L1 one-liner, L2 standard, L3 full detail
+- **Time attribution** — model inference / tool execution / user idle / inactive
+- **Bottleneck detection** — identifies dominant time category
+- **Automation ratio** — tool calls per human interaction
+- **Configurable thresholds** — inactivity cutoff, model timeout detection
+- **Bash command breakdown** — per-command count, latency, output size
+- **MCP tool grouping** — aggregate multi-tool MCP servers
+- **Subagent tracking** — nested agent session analysis
+- **Auto-compact detection** — context window compaction events
+- **SQLite persistence** — incremental sync with mtime-based change detection
+- **Interactive web dashboard** — React frontend with charts and timeline
+- **AI analysis reports** — Claude-powered Markdown insights
+
+```mermaid
+graph LR
+    A[".jsonl Files"] --> B["Parser"]
+    B --> C["SQLite DB"]
+    B --> D["CLI Output"]
+    C --> E["Web Dashboard"]
+    C --> F["stats Command"]
+    B --> G["AI Analysis"]
+```
 
 ## Installation
 
@@ -207,217 +233,5 @@ uv run mypy .
 ```
 
 ## License
-
-MIT
-
----
-
-# Agent Trajectory Profiler 中文
-
-可视化与分析 Claude Code 智能体会话 —— 支持 **Web 仪表盘**、**无头 CLI** 批量处理，以及 **AI 驱动分析** 生成可操作的洞察报告。
-
-解析 `~/.claude/projects/` 下的 `.jsonl` 会话文件，计算分析指标（消息统计、工具使用、Token 消耗、时间归因、子智能体追踪），通过交互式 React 前端、结构化 JSON 输出或 AI 生成的 Markdown 报告呈现结果。
-
-## 安装
-
-### 前置条件
-
-- Python 3.10+
-- [UV](https://github.com/astral-sh/uv) 包管理器
-- Node.js 18+（仅 Web 仪表盘需要）
-
-### 全局安装
-
-```bash
-git clone https://github.com/Devil-SX/agent-trajectory-profiler.git
-cd agent-trajectory-profiler
-uv sync
-./install.sh
-```
-
-安装后可在任意目录使用 `claude-vis` 命令。
-
-卸载：
-```bash
-./uninstall.sh
-```
-
-### 本地安装（不注册全局命令）
-
-```bash
-git clone https://github.com/Devil-SX/agent-trajectory-profiler.git
-cd agent-trajectory-profiler
-uv sync
-```
-
-以下命令中将 `claude-vis` 替换为 `uv run claude-vis`。
-
-## 使用方式
-
-### 模式一：Web 仪表盘 (`serve`)
-
-启动 Web 服务器，提供交互式可视化界面。
-
-```bash
-claude-vis serve
-```
-
-在 `http://localhost:8000` 打开，包含：
-- 会话列表（支持搜索和排序）
-- 消息时间线（用户/助手对话流）
-- 子智能体可视化（含状态指示器）
-- 统计仪表盘：消息计数、工具使用图表、Token 消耗、时间热力图
-- 响应式布局（桌面/平板/手机）
-
-**选项：**
-
-```bash
-claude-vis serve --port 8080                    # 自定义端口
-claude-vis serve --path /path/to/sessions       # 自定义会话目录
-claude-vis serve --single-session abc123        # 仅加载单个会话
-claude-vis serve --reload --log-level debug     # 开发模式（热重载）
-```
-
-首次运行时自动构建前端（需要 Node.js）。API 文档见 `/docs`。
-
-### 模式二：无头 CLI (`parse`)
-
-解析会话数据并输出结构化 JSON —— 无需服务器或浏览器。
-
-```bash
-claude-vis parse
-```
-
-读取 `~/.claude/projects/` 下所有 `.jsonl` 文件，将 JSON 输出到标准输出。
-
-**选项：**
-
-```bash
-claude-vis parse --file session.jsonl --human      # 人类可读的统计信息
-claude-vis parse --file session.jsonl               # JSON 输出到 stdout
-claude-vis parse --output sessions.json             # 写入文件
-claude-vis parse --compact | jq '.sessions[0]'      # 管道传递给 jq
-```
-
-`--level` 标志控制详细程度：`1` = 单行摘要，`2` = 标准（默认），`3` = 详细。
-
-```bash
-claude-vis parse --file session.jsonl --human --level 1    # 每个会话一行摘要
-claude-vis parse --file session.jsonl --human --level 3    # 所有工具、所有 bash 命令、紧凑事件
-```
-
-适用场景：
-- 脚本和自动化流水线
-- 批量处理多个会话
-- 导出数据供外部分析工具使用
-- CI/CD 集成
-
-### 模式三：增量同步 (`sync`)
-
-扫描会话目录，通过 mtime + size 检测新增/变化的文件，解析后持久化到 SQLite 数据库 (`~/.claude-vis/profiler.db`)。
-
-```bash
-claude-vis sync                                        # 扫描默认目录
-claude-vis sync --path ~/.claude/projects/my-proj/     # 指定目录
-claude-vis sync --force                                # 强制全量重新解析
-```
-
-### 模式四：数据库统计 (`stats`)
-
-从 SQLite 数据库查询会话统计信息，无需重新解析。
-
-```bash
-claude-vis stats --level 1                            # 所有会话的单行摘要
-claude-vis stats --session-id abc123 --level 3        # 单个会话的完整详情
-claude-vis stats --sort-by total_tokens --limit 10    # 按 Token 用量排序的前 10 个
-```
-
-### 模式五：AI 分析 (`analyze`)
-
-调用 Claude 阅读原始轨迹，生成包含瓶颈分析、自动化程度评级和改进建议的 Markdown 报告。
-
-```bash
-claude-vis analyze --file session.jsonl
-```
-
-需要 `claude` CLI 在 PATH 中。
-
-**选项：**
-
-```bash
-claude-vis analyze --file session.jsonl --lang cn          # 中文报告
-claude-vis analyze --file session.jsonl --model sonnet     # 指定模型
-claude-vis analyze --file session.jsonl -o report.md       # 自定义输出路径
-```
-
-默认输出到 `output/<session_id>_analysis.md`。
-
-## 架构
-
-详见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
-
-## API 端点
-
-`serve` 模式下可用：
-
-| 端点 | 说明 |
-|---|---|
-| `GET /api/sessions` | 会话列表 |
-| `GET /api/sessions/{id}` | 会话详情（含消息和子智能体） |
-| `GET /api/sessions/{id}/statistics` | 会话的计算分析指标 |
-| `GET /api/sync/status` | 同步数据库状态 |
-| `GET /health` | 健康检查 |
-| `GET /docs` | 交互式 Swagger UI |
-
-## 分析方法论
-
-### 时间归因
-
-通过分析连续消息之间的间隔来分解会话时间：
-- **模型时间** — 助手消息前的间隔（推理延迟）
-- **工具时间** — 包含 `tool_result` 的用户消息前的间隔（工具执行）
-- **用户时间** — 不含工具结果的用户消息前的间隔（人类思考/输入）
-- **非活跃时间** — 超过 30 分钟的任何间隔（应用关闭、离开、休息）
-
-百分比仅基于*活跃时间*计算（排除非活跃间隔）。
-
-### 瓶颈分析
-
-活跃时间占比最大的类别被报告为瓶颈：
-- **模型** — 推理是主要耗时；考虑使用更小的模型或优化提示词
-- **工具** — 工具执行占主导；检查慢速文件读取、网络调用或重型 bash 命令
-- **用户** — 人类响应时间占主导；智能体在等待你
-
-### 自动化比率
-
-`tool_calls / user_interactions` — 衡量智能体每次人类交互执行多少次工具调用。比率越高表示自主运行程度越高。
-
-### 输出级别
-
-| 级别 | 名称 | 说明 |
-|------|------|------|
-| 1 | 摘要 | 单行：`session_id \| 时长 \| tokens \| 瓶颈 \| 自动化` |
-| 2 | 标准 | 消息、Token、热门工具、时间分解、时长（`--human` 默认） |
-| 3 | 详细 | 标准级基础上加全部工具、全部 bash 命令、紧凑事件 |
-
-## 开发
-
-```bash
-# 后端热重载
-claude-vis serve --reload --log-level debug
-
-# 前端开发服务器（另开终端）
-cd frontend && npm run dev
-
-# 运行测试
-uv run pytest
-
-# 代码检查与格式化
-uv run ruff check .
-uv run black .
-uv run mypy .
-```
-
-## 许可证
 
 MIT
