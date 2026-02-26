@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Compact session table mode in session browser with row-based selection, ecosystem column, and dense cross-session scan layout.
 - Active-time analytics enhancements: explicit `active_time_ratio` in session time breakdown and cross-session overview API payloads.
 - Trajectory file-size and character analytics (`character_breakdown`) for per-session statistics and cross-session aggregates.
+- User-efficiency yield ratios for tokens/chars (`user_yield_ratio_tokens`, `user_yield_ratio_chars`) with cross-session mean/median/p90 aggregates.
 
 ### Changed
 
@@ -35,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session browser supports explicit card/table mode toggle while reusing existing search/sort/date filters and selection behavior in both views.
 - Time breakdown visualization now presents Model/Tool/User metric cards, excludes inactive time from pie-chart denominator, and displays active-time ratio directly.
 - Resource views now surface trajectory bytes and mixed-language character metrics (CJK/Latin plus user/model/tool attribution) in both session and cross-session dashboards.
+- Automation panels now expose per-session and aggregated token/char yield ratios to measure output efficiency per unit of user input.
 
 ## [0.6.0] - 2026-02-26
 

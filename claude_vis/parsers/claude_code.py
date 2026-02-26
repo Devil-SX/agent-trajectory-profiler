@@ -822,6 +822,15 @@ def calculate_session_statistics(
             command_stats=sorted_cmds,
         )
 
+    tool_token_total = sum(int(tool_stats[name]["tokens"]) for name in tool_stats)
+    user_yield_ratio_tokens = None
+    if total_input_tokens > 0:
+        user_yield_ratio_tokens = (total_output_tokens + tool_token_total) / total_input_tokens
+
+    user_yield_ratio_chars = None
+    if user_chars > 0:
+        user_yield_ratio_chars = (model_chars + tool_chars) / user_chars
+
     return SessionStatistics(
         message_count=len(messages),
         user_message_count=user_count,
@@ -844,6 +853,8 @@ def calculate_session_statistics(
             whitespace_chars=whitespace_chars,
             other_chars=other_chars,
         ),
+        user_yield_ratio_tokens=user_yield_ratio_tokens,
+        user_yield_ratio_chars=user_yield_ratio_chars,
         tool_calls=tool_call_list,
         tool_groups=tool_group_list,
         total_tool_calls=sum(int(tool_stats[t]["count"]) for t in tool_stats),

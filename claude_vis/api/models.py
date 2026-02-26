@@ -139,6 +139,12 @@ class AnalyticsOverviewResponse(BaseModel):
     total_cjk_chars: int
     total_latin_chars: int
     total_other_chars: int
+    yield_ratio_tokens_mean: float
+    yield_ratio_tokens_median: float
+    yield_ratio_tokens_p90: float
+    yield_ratio_chars_mean: float
+    yield_ratio_chars_median: float
+    yield_ratio_chars_p90: float
     avg_automation_ratio: float
     avg_session_duration_seconds: float
     model_time_seconds: float

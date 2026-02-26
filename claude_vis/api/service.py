@@ -8,11 +8,12 @@ back to on-the-fly parsing when the database is empty.
 import asyncio
 import functools
 import json
+import math
 import sqlite3
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
 from typing import Any, Literal, cast
 
 from claude_vis.api.models import (
@@ -380,6 +381,12 @@ class SessionService:
                 total_cjk_chars=0,
                 total_latin_chars=0,
                 total_other_chars=0,
+                yield_ratio_tokens_mean=0.0,
+                yield_ratio_tokens_median=0.0,
+                yield_ratio_tokens_p90=0.0,
+                yield_ratio_chars_mean=0.0,
+                yield_ratio_chars_median=0.0,
+                yield_ratio_chars_p90=0.0,
                 avg_automation_ratio=0.0,
                 avg_session_duration_seconds=0.0,
                 model_time_seconds=0.0,
@@ -428,6 +435,8 @@ class SessionService:
         user_time_seconds = 0.0
         inactive_time_seconds = 0.0
         model_timeout_count = 0
+        token_yield_ratios: list[float] = []
+        char_yield_ratios: list[float] = []
 
         tool_acc: dict[str, dict[str, float | int | set[str]]] = defaultdict(
             lambda: {
@@ -477,6 +486,30 @@ class SessionService:
             total_cjk_chars += int(char_stats.get("cjk_chars") or 0)
             total_latin_chars += int(char_stats.get("latin_chars") or 0)
             total_other_chars += int(char_stats.get("other_chars") or 0)
+
+            token_ratio = stats.get("user_yield_ratio_tokens")
+            if token_ratio is None:
+                denom_tokens = int(stats.get("total_input_tokens") or 0)
+                if denom_tokens > 0:
+                    output_tokens = int(stats.get("total_output_tokens") or 0)
+                    tool_tokens = sum(
+                        int(tool.get("total_tokens") or 0)
+                        for tool in (stats.get("tool_calls") or [])
+                    )
+                    token_ratio = (output_tokens + tool_tokens) / denom_tokens
+            if token_ratio is not None:
+                token_yield_ratios.append(float(token_ratio))
+
+            char_ratio = stats.get("user_yield_ratio_chars")
+            if char_ratio is None:
+                denom_chars = int(char_stats.get("user_chars") or 0)
+                if denom_chars > 0:
+                    output_chars = int(char_stats.get("model_chars") or 0) + int(
+                        char_stats.get("tool_chars") or 0
+                    )
+                    char_ratio = output_chars / denom_chars
+            if char_ratio is not None:
+                char_yield_ratios.append(float(char_ratio))
 
             time_breakdown = stats.get("time_breakdown") or {}
             model_time_seconds += float(time_breakdown.get("total_model_time_seconds") or 0.0)
@@ -562,6 +595,17 @@ class SessionService:
         total_active_time = model_time_seconds + tool_time_seconds + user_time_seconds
         total_span_time = total_active_time + inactive_time_seconds
         active_time_ratio = total_active_time / total_span_time if total_span_time > 0 else 0.0
+        token_p90 = 0.0
+        if token_yield_ratios:
+            sorted_token_ratios = sorted(token_yield_ratios)
+            idx = max(0, math.ceil(0.9 * len(sorted_token_ratios)) - 1)
+            token_p90 = sorted_token_ratios[idx]
+
+        chars_p90 = 0.0
+        if char_yield_ratios:
+            sorted_char_ratios = sorted(char_yield_ratios)
+            idx = max(0, math.ceil(0.9 * len(sorted_char_ratios)) - 1)
+            chars_p90 = sorted_char_ratios[idx]
 
         return AnalyticsOverviewResponse(
             start_date=start_date,
@@ -582,6 +626,12 @@ class SessionService:
             total_cjk_chars=total_cjk_chars,
             total_latin_chars=total_latin_chars,
             total_other_chars=total_other_chars,
+            yield_ratio_tokens_mean=mean(token_yield_ratios) if token_yield_ratios else 0.0,
+            yield_ratio_tokens_median=median(token_yield_ratios) if token_yield_ratios else 0.0,
+            yield_ratio_tokens_p90=token_p90,
+            yield_ratio_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
+            yield_ratio_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
+            yield_ratio_chars_p90=chars_p90,
             avg_automation_ratio=mean(automation_values) if automation_values else 0.0,
             avg_session_duration_seconds=mean(duration_values) if duration_values else 0.0,
             model_time_seconds=model_time_seconds,

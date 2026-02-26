@@ -232,6 +232,20 @@ export function CrossSessionOverview() {
           <h4>Automation efficiency</h4>
           <div className="kpi-value">{overview.avg_automation_ratio.toFixed(2)}x</div>
           <p>Active ratio: {formatPercent(overview.active_time_ratio * 100)}</p>
+          <p>
+            Token yield (mean/median/p90): {overview.yield_ratio_tokens_mean.toFixed(2)}x /
+            {' '}
+            {overview.yield_ratio_tokens_median.toFixed(2)}x /
+            {' '}
+            {overview.yield_ratio_tokens_p90.toFixed(2)}x
+          </p>
+          <p>
+            Char yield (mean/median/p90): {overview.yield_ratio_chars_mean.toFixed(2)}x /
+            {' '}
+            {overview.yield_ratio_chars_median.toFixed(2)}x /
+            {' '}
+            {overview.yield_ratio_chars_p90.toFixed(2)}x
+          </p>
         </article>
 
         <article className="kpi-card">

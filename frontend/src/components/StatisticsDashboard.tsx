@@ -155,6 +155,12 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
   const automationRatio = interactions > 0
     ? statistics.total_tool_calls / interactions
     : null;
+  const tokenYieldRatio = typeof statistics.user_yield_ratio_tokens === 'number'
+    ? statistics.user_yield_ratio_tokens
+    : null;
+  const charYieldRatio = typeof statistics.user_yield_ratio_chars === 'number'
+    ? statistics.user_yield_ratio_chars
+    : null;
 
   const withCalls = statistics.tool_calls.filter((item) => item.count > 0);
   const weightedLatency = withCalls.reduce(
@@ -257,6 +263,21 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
               <div className="breakdown-item">
                 <span className="breakdown-label">Agent types</span>
                 <span className="breakdown-value">{Object.keys(statistics.subagent_sessions).length}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="stat-card">
+            <h4 className="card-title">User Yield Ratio</h4>
+            <div className="stat-value large">
+              {tokenYieldRatio !== null ? `${tokenYieldRatio.toFixed(2)}x` : 'N/A'}
+            </div>
+            <div className="stat-breakdown">
+              <div className="breakdown-item">
+                <span className="breakdown-label">Chars output/input</span>
+                <span className="breakdown-value">
+                  {charYieldRatio !== null ? `${charYieldRatio.toFixed(2)}x` : 'N/A'}
+                </span>
               </div>
             </div>
           </div>

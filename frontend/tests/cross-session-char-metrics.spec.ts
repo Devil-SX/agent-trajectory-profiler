@@ -32,6 +32,12 @@ test.describe('@full Cross Session Char Metrics', () => {
           total_cjk_chars: 90000,
           total_latin_chars: 330000,
           total_other_chars: 30000,
+          yield_ratio_tokens_mean: 2.4,
+          yield_ratio_tokens_median: 2.2,
+          yield_ratio_tokens_p90: 3.1,
+          yield_ratio_chars_mean: 3.5,
+          yield_ratio_chars_median: 3.3,
+          yield_ratio_chars_p90: 4.2,
           avg_automation_ratio: 2.5,
           avg_session_duration_seconds: 4200,
           model_time_seconds: 36000,
@@ -106,6 +112,12 @@ test.describe('@full Cross Session Char Metrics', () => {
     );
     await expect(page.locator('.kpi-card', { hasText: 'Token volume' })).toContainText(
       'Chars (CJK/Latin): 90,000 / 330,000'
+    );
+    await expect(page.locator('.kpi-card', { hasText: 'Automation efficiency' })).toContainText(
+      'Token yield (mean/median/p90): 2.40x / 2.20x / 3.10x'
+    );
+    await expect(page.locator('.kpi-card', { hasText: 'Automation efficiency' })).toContainText(
+      'Char yield (mean/median/p90): 3.50x / 3.30x / 4.20x'
     );
   });
 });

@@ -59,6 +59,7 @@ test.describe('@smoke Statistics Dashboard - Tool Errors', () => {
     await openStatisticsTab(page);
     await expect(page.locator('.dashboard-title')).toHaveText('Session Metrics');
     await expect(page.locator('.card-title', { hasText: 'Tool Error Timeline' })).toBeVisible();
+    await expect(page.locator('.card-title', { hasText: 'User Yield Ratio' })).toBeVisible();
     await expect(page.locator('.card-title', { hasText: 'Trajectory Size' })).toBeVisible();
     await expect(page.locator('.card-title', { hasText: 'Character Volume' })).toBeVisible();
 
