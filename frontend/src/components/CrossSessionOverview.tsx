@@ -275,6 +275,26 @@ export function CrossSessionOverview() {
             {' '}
             Model timeouts: {formatNumber(overview.model_timeout_count)}
           </p>
+          <p>
+            Model tok/s (mean/median/p90): {overview.avg_tokens_per_second_mean.toFixed(2)} /
+            {' '}
+            {overview.avg_tokens_per_second_median.toFixed(2)} /
+            {' '}
+            {overview.avg_tokens_per_second_p90.toFixed(2)}
+          </p>
+          <p>
+            Read/Output tok/s mean: {overview.read_tokens_per_second_mean.toFixed(2)}
+            {' / '}
+            {overview.output_tokens_per_second_mean.toFixed(2)}
+          </p>
+          <p>
+            Cache tok/s mean: {overview.cache_tokens_per_second_mean.toFixed(2)}
+            {' ('}
+            {overview.cache_read_tokens_per_second_mean.toFixed(2)}
+            {' / '}
+            {overview.cache_creation_tokens_per_second_mean.toFixed(2)}
+            {')'}
+          </p>
         </article>
       </div>
 

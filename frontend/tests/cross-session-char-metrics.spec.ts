@@ -38,6 +38,24 @@ test.describe('@full Cross Session Char Metrics', () => {
           yield_ratio_chars_mean: 3.5,
           yield_ratio_chars_median: 3.3,
           yield_ratio_chars_p90: 4.2,
+          avg_tokens_per_second_mean: 12.4,
+          avg_tokens_per_second_median: 11.8,
+          avg_tokens_per_second_p90: 15.9,
+          read_tokens_per_second_mean: 7.2,
+          read_tokens_per_second_median: 6.9,
+          read_tokens_per_second_p90: 9.4,
+          output_tokens_per_second_mean: 5.2,
+          output_tokens_per_second_median: 5.0,
+          output_tokens_per_second_p90: 6.5,
+          cache_tokens_per_second_mean: 1.6,
+          cache_tokens_per_second_median: 1.4,
+          cache_tokens_per_second_p90: 2.2,
+          cache_read_tokens_per_second_mean: 1.1,
+          cache_read_tokens_per_second_median: 1.0,
+          cache_read_tokens_per_second_p90: 1.5,
+          cache_creation_tokens_per_second_mean: 0.5,
+          cache_creation_tokens_per_second_median: 0.4,
+          cache_creation_tokens_per_second_p90: 0.7,
           avg_automation_ratio: 2.5,
           avg_session_duration_seconds: 4200,
           model_time_seconds: 36000,
@@ -118,6 +136,15 @@ test.describe('@full Cross Session Char Metrics', () => {
     );
     await expect(page.locator('.kpi-card', { hasText: 'Automation efficiency' })).toContainText(
       'Char yield (mean/median/p90): 3.50x / 3.30x / 4.20x'
+    );
+    await expect(page.locator('.kpi-card', { hasText: 'Tool execution' })).toContainText(
+      'Model tok/s (mean/median/p90): 12.40 / 11.80 / 15.90'
+    );
+    await expect(page.locator('.kpi-card', { hasText: 'Tool execution' })).toContainText(
+      'Read/Output tok/s mean: 7.20 / 5.20'
+    );
+    await expect(page.locator('.kpi-card', { hasText: 'Tool execution' })).toContainText(
+      'Cache tok/s mean: 1.60 (1.10 / 0.50)'
     );
   });
 });

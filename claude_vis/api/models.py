@@ -145,6 +145,24 @@ class AnalyticsOverviewResponse(BaseModel):
     yield_ratio_chars_mean: float
     yield_ratio_chars_median: float
     yield_ratio_chars_p90: float
+    avg_tokens_per_second_mean: float
+    avg_tokens_per_second_median: float
+    avg_tokens_per_second_p90: float
+    read_tokens_per_second_mean: float
+    read_tokens_per_second_median: float
+    read_tokens_per_second_p90: float
+    output_tokens_per_second_mean: float
+    output_tokens_per_second_median: float
+    output_tokens_per_second_p90: float
+    cache_tokens_per_second_mean: float
+    cache_tokens_per_second_median: float
+    cache_tokens_per_second_p90: float
+    cache_read_tokens_per_second_mean: float
+    cache_read_tokens_per_second_median: float
+    cache_read_tokens_per_second_p90: float
+    cache_creation_tokens_per_second_mean: float
+    cache_creation_tokens_per_second_median: float
+    cache_creation_tokens_per_second_p90: float
     avg_automation_ratio: float
     avg_session_duration_seconds: float
     model_time_seconds: float

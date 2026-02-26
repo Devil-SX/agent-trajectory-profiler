@@ -396,6 +396,12 @@ class SessionStatistics(BaseModel):
     character_breakdown: CharacterBreakdown = Field(default_factory=CharacterBreakdown)
     user_yield_ratio_tokens: float | None = None
     user_yield_ratio_chars: float | None = None
+    avg_tokens_per_second: float | None = None
+    read_tokens_per_second: float | None = None
+    output_tokens_per_second: float | None = None
+    cache_tokens_per_second: float | None = None
+    cache_read_tokens_per_second: float | None = None
+    cache_creation_tokens_per_second: float | None = None
 
     # Tool statistics
     tool_calls: list[ToolCallStatistics] = Field(default_factory=list)

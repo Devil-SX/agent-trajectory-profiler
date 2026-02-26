@@ -194,6 +194,12 @@ export const mockSessionStatistics: SessionStatisticsResponse = {
     },
     user_yield_ratio_tokens: 1.9,
     user_yield_ratio_chars: 3.0,
+    avg_tokens_per_second: 14.2,
+    read_tokens_per_second: 9.5,
+    output_tokens_per_second: 4.7,
+    cache_tokens_per_second: 2.3,
+    cache_read_tokens_per_second: 1.8,
+    cache_creation_tokens_per_second: 0.5,
     tool_calls: [
       {
         tool_name: 'Read',
