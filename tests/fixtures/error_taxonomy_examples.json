@@ -1,0 +1,74 @@
+[
+  {
+    "id": "perm-001",
+    "detail": "Permission denied while opening /root/.ssh/config",
+    "expected_category": "permission",
+    "expected_rule_id": "permission_denied"
+  },
+  {
+    "id": "file-001",
+    "detail": "ENOENT: no such file or directory, open '/tmp/missing.txt'",
+    "expected_category": "file_not_found",
+    "expected_rule_id": "file_not_found"
+  },
+  {
+    "id": "cmd-001",
+    "detail": "bash: rgx: command not found",
+    "expected_category": "command",
+    "expected_rule_id": "command_not_found"
+  },
+  {
+    "id": "timeout-001",
+    "detail": "operation timed out after 30000ms",
+    "expected_category": "timeout",
+    "expected_rule_id": "timeout"
+  },
+  {
+    "id": "rate-001",
+    "detail": "HTTP 429 Too Many Requests",
+    "expected_category": "rate_limit",
+    "expected_rule_id": "rate_limited"
+  },
+  {
+    "id": "network-001",
+    "detail": "dial tcp 127.0.0.1:443: connect: connection refused",
+    "expected_category": "network",
+    "expected_rule_id": "network"
+  },
+  {
+    "id": "auth-001",
+    "detail": "authentication failed: invalid api key",
+    "expected_category": "authentication",
+    "expected_rule_id": "auth"
+  },
+  {
+    "id": "patch-001",
+    "detail": "apply_patch verification failed: patch failed at line 42",
+    "expected_category": "patch",
+    "expected_rule_id": "patch_apply_failed"
+  },
+  {
+    "id": "parse-001",
+    "detail": "JSONDecodeError: invalid JSON payload",
+    "expected_category": "parsing",
+    "expected_rule_id": "parse_error"
+  },
+  {
+    "id": "test-001",
+    "detail": "AssertionError: expected 2 but got 1",
+    "expected_category": "test_failure",
+    "expected_rule_id": "test_failure"
+  },
+  {
+    "id": "unknown-001",
+    "detail": "unexpected widget explosion in custom plugin",
+    "expected_category": "uncategorized",
+    "expected_rule_id": null
+  },
+  {
+    "id": "unknown-002",
+    "detail": "",
+    "expected_category": "uncategorized",
+    "expected_rule_id": null
+  }
+]

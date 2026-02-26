@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Canonical conversion contract tests covering registry extension, source-to-canonical normalization, and canonical-to-message compatibility behavior.
 - New `CodexParser` with Codex rollout adapter for local files under `~/.codex/sessions/**/rollout-*.jsonl`.
 - Mixed-ecosystem API/session tests covering Codex fixture ingestion and `/api/sessions?ecosystem=` filtering.
+- Rule-based tool error taxonomy module (`claude_vis.parsers.error_taxonomy`) with versioned categories and `uncategorized` fallback for unmatched failures.
+- Session-level tool error timeline records (`timestamp`, `tool_name`, `category`, `matched_rule`, `preview`, `detail`) and per-category counters in `SessionStatistics`.
+- Regression fixtures/tests for taxonomy precision and fallback behavior (`tests/fixtures/error_taxonomy_examples.json`, `tests/test_error_taxonomy.py`).
+- Playwright smoke tests for tool error timeline rendering, expand/collapse details, and table scroll-container behavior on metrics dashboard.
 
 ### Changed
 
@@ -24,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - README (EN/CN) now includes explicit migration notes and deprecation path for `claude_vis` -> `agent_vis`.
 - Claude parser ingestion path now uses the canonical adapter pipeline (`JSONL -> CanonicalEvent -> MessageRecord`) without changing downstream statistics logic.
 - Session sync and service initialization now support mixed local roots (Claude + Codex), and session list responses now expose ecosystem metadata.
+- Statistics dashboard now includes taxonomy-aware tool error timeline table with category chips and expandable raw error detail rows.
 
 ## [0.6.0] - 2026-02-26
 

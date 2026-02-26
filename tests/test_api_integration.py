@@ -259,6 +259,12 @@ class TestSessionStatisticsAPI:
             assert "total_tool_calls" in stats
             assert "tool_calls" in stats
             assert isinstance(stats["tool_calls"], list)
+            assert "tool_error_records" in stats
+            assert isinstance(stats["tool_error_records"], list)
+            assert "tool_error_category_counts" in stats
+            assert isinstance(stats["tool_error_category_counts"], dict)
+            assert "error_taxonomy_version" in stats
+            assert isinstance(stats["error_taxonomy_version"], str)
 
     def test_get_statistics_not_found(self, test_client: TestClient) -> None:
         """Test getting statistics for non-existent session returns 404."""

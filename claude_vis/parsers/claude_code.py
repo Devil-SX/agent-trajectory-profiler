@@ -28,6 +28,7 @@ from claude_vis.models import (
     TimeBreakdown,
     TokenBreakdown,
     ToolCallStatistics,
+    ToolErrorRecord,
     ToolGroupStatistics,
 )
 from claude_vis.parsers.base import TrajectoryParser
@@ -38,6 +39,10 @@ from claude_vis.parsers.canonical import (
     get_adapter,
     parse_jsonl_to_canonical,
     register_adapter,
+)
+from claude_vis.parsers.error_taxonomy import (
+    ERROR_TAXONOMY_VERSION,
+    classify_tool_error,
 )
 
 # ---------------------------------------------------------------------------
@@ -200,6 +205,27 @@ def _has_tool_result_content(msg: MessageRecord) -> bool:
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 return True
     return False
+
+
+def _extract_tool_result_text(content: str | list[dict[str, Any]] | Any) -> str:
+    """Normalize tool_result content into plain text for taxonomy matching."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        pieces: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    pieces.append(text)
+                else:
+                    pieces.append(json.dumps(block, ensure_ascii=False))
+            else:
+                pieces.append(str(block))
+        return "\n".join(pieces)
+    if content is None:
+        return ""
+    return str(content)
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +412,8 @@ def calculate_session_statistics(
     tool_use_map: dict[str, tuple[str, datetime]] = {}
     # Track subagent sessions by agent_id to deduplicate
     subagent_sessions_map: dict[str, str] = {}
+    tool_error_records: list[ToolErrorRecord] = []
+    tool_error_category_counts: Counter[str] = Counter()
 
     # Bash breakdown accumulators
     bash_command_counts: Counter[str] = Counter()
@@ -511,6 +539,28 @@ def calculate_session_statistics(
                                 if tool_name in tool_stats:
                                     if is_error:
                                         tool_stats[tool_name]["error"] += 1
+                                        error_text = _extract_tool_result_text(
+                                            content_block.get("content", "")
+                                        )
+                                        classification = classify_tool_error(error_text)
+                                        tool_error_category_counts[
+                                            classification.category
+                                        ] += 1
+                                        preview = (
+                                            error_text.strip().replace("\n", " ")[:160]
+                                            if error_text.strip()
+                                            else "(empty error output)"
+                                        )
+                                        tool_error_records.append(
+                                            ToolErrorRecord(
+                                                timestamp=timestamp.isoformat(),
+                                                tool_name=tool_name,
+                                                category=classification.category,
+                                                matched_rule=classification.rule_id,
+                                                preview=preview,
+                                                detail=error_text,
+                                            )
+                                        )
                                     else:
                                         tool_stats[tool_name]["success"] += 1
 
@@ -705,6 +755,9 @@ def calculate_session_statistics(
         tool_calls=tool_call_list,
         tool_groups=tool_group_list,
         total_tool_calls=sum(int(tool_stats[t]["count"]) for t in tool_stats),
+        tool_error_records=tool_error_records,
+        tool_error_category_counts=dict(tool_error_category_counts),
+        error_taxonomy_version=ERROR_TAXONOMY_VERSION,
         subagent_count=len(subagent_sessions_list),
         subagent_sessions=subagent_type_counts,
         session_duration_seconds=duration_seconds,

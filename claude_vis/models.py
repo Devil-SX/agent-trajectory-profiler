@@ -259,6 +259,17 @@ class ToolCallStatistics(BaseModel):
     tool_group: str = ""
 
 
+class ToolErrorRecord(BaseModel):
+    """Detailed record for one failed tool execution."""
+
+    timestamp: str
+    tool_name: str
+    category: str
+    matched_rule: str | None = None
+    preview: str
+    detail: str
+
+
 class ToolGroupStatistics(BaseModel):
     """Aggregated statistics for a group of related tools (e.g., all MCP tools from one server)."""
 
@@ -371,6 +382,9 @@ class SessionStatistics(BaseModel):
     tool_calls: list[ToolCallStatistics] = Field(default_factory=list)
     tool_groups: list[ToolGroupStatistics] = Field(default_factory=list)
     total_tool_calls: int = 0
+    tool_error_records: list[ToolErrorRecord] = Field(default_factory=list)
+    tool_error_category_counts: dict[str, int] = Field(default_factory=dict)
+    error_taxonomy_version: str = "0.0.0"
 
     # Subagent statistics
     subagent_count: int = 0

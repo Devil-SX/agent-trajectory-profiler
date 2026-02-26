@@ -13,6 +13,7 @@ export const mockSessionList: SessionListResponse = {
   sessions: [
     {
       session_id: 'test-session-001',
+      ecosystem: 'claude_code',
       project_path: '/home/user/project',
       created_at: '2024-02-01T10:00:00Z',
       updated_at: '2024-02-01T11:30:00Z',
@@ -20,9 +21,14 @@ export const mockSessionList: SessionListResponse = {
       total_tokens: 15000,
       git_branch: 'main',
       version: '1.0.0',
+      parsed_at: null,
+      duration_seconds: 5400,
+      bottleneck: 'Model',
+      automation_ratio: 2.8,
     },
     {
       session_id: 'test-session-002',
+      ecosystem: 'claude_code',
       project_path: '/home/user/project',
       created_at: '2024-02-02T14:00:00Z',
       updated_at: '2024-02-02T15:45:00Z',
@@ -30,9 +36,16 @@ export const mockSessionList: SessionListResponse = {
       total_tokens: 25000,
       git_branch: 'feature/new-feature',
       version: '1.0.0',
+      parsed_at: null,
+      duration_seconds: 6300,
+      bottleneck: 'Tool',
+      automation_ratio: 3.2,
     },
   ],
   count: 2,
+  page: 1,
+  page_size: 200,
+  total_pages: 1,
 };
 
 const mockMessages: MessageRecord[] = [
@@ -174,6 +187,9 @@ export const mockSessionStatistics: SessionStatisticsResponse = {
         total_tokens: 3000,
         success_count: 14,
         error_count: 1,
+        total_latency_seconds: 18,
+        avg_latency_seconds: 1.2,
+        tool_group: 'Read',
       },
       {
         tool_name: 'Edit',
@@ -181,6 +197,9 @@ export const mockSessionStatistics: SessionStatisticsResponse = {
         total_tokens: 2000,
         success_count: 8,
         error_count: 0,
+        total_latency_seconds: 20,
+        avg_latency_seconds: 2.5,
+        tool_group: 'Edit',
       },
       {
         tool_name: 'Bash',
@@ -188,9 +207,16 @@ export const mockSessionStatistics: SessionStatisticsResponse = {
         total_tokens: 1500,
         success_count: 4,
         error_count: 1,
+        total_latency_seconds: 35,
+        avg_latency_seconds: 7,
+        tool_group: 'Bash',
       },
     ],
+    tool_groups: [],
     total_tool_calls: 28,
+    tool_error_records: [],
+    tool_error_category_counts: {},
+    error_taxonomy_version: '1.0.0',
     subagent_count: 2,
     subagent_sessions: {
       Explore: 1,

@@ -12,6 +12,10 @@ import pytest
 
 from claude_vis.models import SessionStatistics, ToolCallStatistics
 from claude_vis.parsers import parse_session_file
+from claude_vis.parsers.error_taxonomy import (
+    ERROR_TAXONOMY_VERSION,
+    UNCATEGORIZED_ERROR,
+)
 from claude_vis.parsers.session_parser import (
     calculate_session_statistics,
     extract_subagent_sessions,
@@ -339,6 +343,81 @@ class TestCalculateSessionStatistics:
         edit_tool = next((tc for tc in stats.tool_calls if tc.tool_name == "Edit"), None)
         assert edit_tool is not None
         assert edit_tool.total_tokens == 180
+
+    def test_tool_error_records_are_categorized(
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
+    ) -> None:
+        """Failed tool results should produce detailed taxonomy records."""
+        file_path = temp_session_dir / "test.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in sample_messages_with_tools:
+                f.write(json.dumps(data) + "\n")
+
+        messages = parse_jsonl_file(file_path)
+        stats = calculate_session_statistics(messages)
+
+        assert stats.error_taxonomy_version == ERROR_TAXONOMY_VERSION
+        assert len(stats.tool_error_records) == 1
+        first_error = stats.tool_error_records[0]
+        assert first_error.tool_name == "Edit"
+        assert first_error.category == "file_not_found"
+        assert first_error.matched_rule == "file_not_found"
+        assert "string not found" in first_error.detail
+        assert stats.tool_error_category_counts == {"file_not_found": 1}
+
+    def test_tool_error_records_fallback_to_uncategorized(
+        self, temp_session_dir: Path
+    ) -> None:
+        """Unknown error text should map to uncategorized bucket."""
+        file_path = temp_session_dir / "unknown-error.jsonl"
+        unknown_error_messages = [
+            {
+                "type": "assistant",
+                "sessionId": "session-unknown-error",
+                "uuid": "msg-1",
+                "timestamp": "2026-02-03T13:15:17.231Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tool-custom-1",
+                            "name": "CustomTool",
+                            "input": {"query": "data"},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "sessionId": "session-unknown-error",
+                "uuid": "msg-2",
+                "timestamp": "2026-02-03T13:15:18.231Z",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "tool-custom-1",
+                            "content": "mysterious widget meltdown in subsystem omega",
+                            "is_error": True,
+                        }
+                    ],
+                },
+            },
+        ]
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in unknown_error_messages:
+                f.write(json.dumps(data) + "\n")
+
+        messages = parse_jsonl_file(file_path)
+        stats = calculate_session_statistics(messages)
+
+        assert len(stats.tool_error_records) == 1
+        assert stats.tool_error_records[0].category == UNCATEGORIZED_ERROR
+        assert stats.tool_error_records[0].matched_rule is None
+        assert stats.tool_error_category_counts == {UNCATEGORIZED_ERROR: 1}
 
     def test_session_duration(
         self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
