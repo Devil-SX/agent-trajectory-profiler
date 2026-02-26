@@ -7,7 +7,7 @@
  * - User (human response time)
  * - Inactive (idle time >30min)
  *
- * Renders as horizontal stacked bar chart and optional pie chart.
+ * Renders as horizontal stacked bar chart and active-time-only pie chart.
  */
 
 import {
@@ -32,6 +32,17 @@ interface TimeBreakdownChartProps {
   showBarChart?: boolean;
 }
 
+interface PieTooltipData {
+  name: string;
+  value: number;
+  percent: number;
+}
+
+interface PieTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: PieTooltipData }>;
+}
+
 const COLORS = {
   model: '#ef4444',    // Red - high priority
   tool: '#f97316',     // Orange - medium priority
@@ -41,7 +52,7 @@ const COLORS = {
 
 const formatTime = (seconds: number): string => {
   if (seconds === 0) return '0s';
-  
+
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
@@ -53,6 +64,23 @@ const formatTime = (seconds: number): string => {
 
   return parts.join(' ');
 };
+
+function CustomPieTooltip({ active, payload }: PieTooltipProps) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const data = payload[0].payload;
+  return (
+    <div className="custom-tooltip">
+      <p className="label">{data.name}</p>
+      <p className="value">
+        <strong>{formatTime(data.value)}</strong>
+      </p>
+      <p className="percent">{data.percent.toFixed(1)}%</p>
+    </div>
+  );
+}
 
 export function TimeBreakdownChart({
   timeBreakdown,
@@ -66,6 +94,15 @@ export function TimeBreakdownChart({
       </div>
     );
   }
+
+  const totalSpanTime = timeBreakdown.total_active_time_seconds + timeBreakdown.total_inactive_time_seconds;
+  const computedActiveRatio = totalSpanTime > 0
+    ? timeBreakdown.total_active_time_seconds / totalSpanTime
+    : 0;
+  const activeTimeRatio = typeof timeBreakdown.active_time_ratio === 'number'
+    ? timeBreakdown.active_time_ratio
+    : computedActiveRatio;
+  const activeTimeRatioPercent = activeTimeRatio * 100;
 
   // Prepare data for stacked bar chart
   const barData = [
@@ -98,13 +135,28 @@ export function TimeBreakdownChart({
       percent: timeBreakdown.user_time_percent,
       color: COLORS.user,
     },
-    {
-      name: 'Inactive',
-      value: timeBreakdown.total_inactive_time_seconds,
-      percent: timeBreakdown.inactive_time_percent,
-      color: COLORS.inactive,
-    },
   ].filter((item) => item.value > 0); // Only show non-zero categories
+
+  const categoryCards = [
+    {
+      label: 'Model',
+      time: timeBreakdown.total_model_time_seconds,
+      percent: timeBreakdown.model_time_percent,
+      color: COLORS.model,
+    },
+    {
+      label: 'Tool',
+      time: timeBreakdown.total_tool_time_seconds,
+      percent: timeBreakdown.tool_time_percent,
+      color: COLORS.tool,
+    },
+    {
+      label: 'User',
+      time: timeBreakdown.total_user_time_seconds,
+      percent: timeBreakdown.user_time_percent,
+      color: COLORS.user,
+    },
+  ];
 
   const renderCustomLabel = ({
     cx,
@@ -122,7 +174,7 @@ export function TimeBreakdownChart({
     percent?: number;
   }) => {
     // Guard clause to handle undefined values from Recharts
-    if (cx === undefined || cy === undefined || midAngle === undefined || 
+    if (cx === undefined || cy === undefined || midAngle === undefined ||
         innerRadius === undefined || outerRadius === undefined || percent === undefined) {
       return null;
     }
@@ -148,30 +200,30 @@ export function TimeBreakdownChart({
     );
   };
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length > 0) {
-      const data = payload[0].payload;
-      return (
-        <div className="custom-tooltip">
-          <p className="label">{data.name}</p>
-          <p className="value">
-            <strong>{formatTime(data.value)}</strong>
-          </p>
-          <p className="percent">{data.percent.toFixed(1)}%</p>
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
     <div className="time-breakdown-chart">
       <div className="chart-header">
         <h3>Time Distribution</h3>
         <p className="subtitle">
-          Active: {formatTime(timeBreakdown.total_active_time_seconds)} | 
+          Active: {formatTime(timeBreakdown.total_active_time_seconds)} |
           Inactive: {formatTime(timeBreakdown.total_inactive_time_seconds)}
         </p>
+        <p className="subtitle active-ratio-text">
+          Active ratio: {activeTimeRatioPercent.toFixed(1)}%
+        </p>
+      </div>
+
+      <div className="time-category-grid">
+        {categoryCards.map((item) => (
+          <article key={item.label} className="time-category-card">
+            <h4>
+              <span className="legend-color" style={{ backgroundColor: item.color }}></span>
+              {item.label}
+            </h4>
+            <p className="time-value">{formatTime(item.time)}</p>
+            <p className="time-percent">{item.percent.toFixed(1)}% of active time</p>
+          </article>
+        ))}
       </div>
 
       <div className="charts-container">
@@ -228,6 +280,7 @@ export function TimeBreakdownChart({
 
         {showPieChart && pieData.length > 0 && (
           <div className="pie-chart-section">
+            <p className="pie-scope-note">Pie chart scope: active time only (Model/Tool/User).</p>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -244,9 +297,16 @@ export function TimeBreakdownChart({
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomPieTooltip />} />
               </PieChart>
             </ResponsiveContainer>
+            <div className="pie-scope-list" aria-label="Pie categories">
+              {pieData.map((entry) => (
+                <span key={entry.name} className="pie-scope-item">
+                  {entry.name}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>

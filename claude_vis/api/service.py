@@ -378,6 +378,7 @@ class SessionService:
                 tool_time_seconds=0.0,
                 user_time_seconds=0.0,
                 inactive_time_seconds=0.0,
+                active_time_ratio=0.0,
                 model_timeout_count=0,
                 bottleneck_distribution=[],
                 top_projects=[],
@@ -532,6 +533,10 @@ class SessionService:
         top_tools.sort(key=lambda item: item.total_calls, reverse=True)
         top_tools = top_tools[:15]
 
+        total_active_time = model_time_seconds + tool_time_seconds + user_time_seconds
+        total_span_time = total_active_time + inactive_time_seconds
+        active_time_ratio = total_active_time / total_span_time if total_span_time > 0 else 0.0
+
         return AnalyticsOverviewResponse(
             start_date=start_date,
             end_date=end_date,
@@ -549,6 +554,7 @@ class SessionService:
             tool_time_seconds=tool_time_seconds,
             user_time_seconds=user_time_seconds,
             inactive_time_seconds=inactive_time_seconds,
+            active_time_ratio=active_time_ratio,
             model_timeout_count=model_timeout_count,
             bottleneck_distribution=bottleneck_distribution,
             top_projects=top_projects,

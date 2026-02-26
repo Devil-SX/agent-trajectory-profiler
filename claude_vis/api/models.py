@@ -137,6 +137,7 @@ class AnalyticsOverviewResponse(BaseModel):
     tool_time_seconds: float
     user_time_seconds: float
     inactive_time_seconds: float
+    active_time_ratio: float
     model_timeout_count: int
     bottleneck_distribution: list[AnalyticsBucket]
     top_projects: list[ProjectAggregate]

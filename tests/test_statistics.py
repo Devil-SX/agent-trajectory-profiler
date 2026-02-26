@@ -788,6 +788,11 @@ class TestConfigurableThresholds:
         # 55 min gap should be inactive (> 30 min default)
         assert tbd.total_inactive_time_seconds > 0
         assert tbd.inactivity_threshold_seconds == 1800.0
+        total_span = tbd.total_active_time_seconds + tbd.total_inactive_time_seconds
+        assert total_span > 0
+        assert tbd.active_time_ratio == pytest.approx(
+            tbd.total_active_time_seconds / total_span, abs=1e-4
+        )
 
     def test_custom_inactivity_threshold_lower(self, messages_with_large_gaps: Path) -> None:
         """Test with a 600s (10 min) threshold: 12-min and 15-min gaps become inactive too."""
@@ -817,6 +822,7 @@ class TestConfigurableThresholds:
         # 55 min gap (3300s) should NOT be inactive with 7200s threshold
         assert stats.time_breakdown.total_inactive_time_seconds == 0.0
         assert stats.time_breakdown.inactivity_threshold_seconds == 7200.0
+        assert stats.time_breakdown.active_time_ratio == 1.0
 
     def test_model_timeout_detection_default(self, messages_with_large_gaps: Path) -> None:
         """Test model timeout detection with default 600s threshold."""

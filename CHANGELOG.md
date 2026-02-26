@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Regression fixtures/tests for taxonomy precision and fallback behavior (`tests/fixtures/error_taxonomy_examples.json`, `tests/test_error_taxonomy.py`).
 - Playwright smoke tests for tool error timeline rendering, expand/collapse details, and table scroll-container behavior on metrics dashboard.
 - Compact session table mode in session browser with row-based selection, ecosystem column, and dense cross-session scan layout.
+- Active-time analytics enhancements: explicit `active_time_ratio` in session time breakdown and cross-session overview API payloads.
 
 ### Changed
 
@@ -31,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session sync and service initialization now support mixed local roots (Claude + Codex), and session list responses now expose ecosystem metadata.
 - Statistics dashboard now includes taxonomy-aware tool error timeline table with category chips and expandable raw error detail rows.
 - Session browser supports explicit card/table mode toggle while reusing existing search/sort/date filters and selection behavior in both views.
+- Time breakdown visualization now presents Model/Tool/User metric cards, excludes inactive time from pie-chart denominator, and displays active-time ratio directly.
 
 ## [0.6.0] - 2026-02-26
 

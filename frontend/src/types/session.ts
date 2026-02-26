@@ -197,6 +197,7 @@ export interface TimeBreakdown {
   tool_time_percent: number;
   user_time_percent: number;
   inactive_time_percent: number;
+  active_time_ratio: number;
   inactivity_threshold_seconds: number;
   user_interaction_count: number;
   interactions_per_hour: number;
@@ -343,6 +344,7 @@ export interface AnalyticsOverviewResponse {
   tool_time_seconds: number;
   user_time_seconds: number;
   inactive_time_seconds: number;
+  active_time_ratio: number;
   model_timeout_count: number;
   bottleneck_distribution: AnalyticsBucket[];
   top_projects: ProjectAggregate[];
