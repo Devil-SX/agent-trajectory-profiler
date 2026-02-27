@@ -106,6 +106,8 @@ test.describe('Accessibility contracts', () => {
 
   test('@a11y statistics text contrast passes in light and dark themes', async ({ page }) => {
     await openWithTheme(page, 'light');
+    await page.waitForSelector('.session-table tbody tr[data-session-id]', { timeout: 5000 });
+    await page.locator('.session-table tbody tr[data-session-id]').first().click();
     await page.click('button.tab-button:has-text("Statistics")');
     await page.waitForSelector('.statistics-dashboard', { timeout: 5000 });
 
@@ -116,6 +118,9 @@ test.describe('Accessibility contracts', () => {
 
     await page.selectOption('#theme-mode-select', 'dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.getByRole('button', { name: 'Back to Overview' }).click();
+    await page.waitForSelector('.session-table tbody tr[data-session-id]', { timeout: 5000 });
+    await page.locator('.session-table tbody tr[data-session-id]').first().click();
     await page.click('button.tab-button:has-text("Statistics")');
     await page.waitForSelector('.statistics-dashboard', { timeout: 5000 });
 
@@ -123,5 +128,34 @@ test.describe('Accessibility contracts', () => {
     const darkNoteContrast = await readContrastRatio(page, '.section-header p');
     expect(darkTitleContrast).toBeGreaterThanOrEqual(4.5);
     expect(darkNoteContrast).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test('@a11y session table tags keep contrast and support keyboard row selection', async ({ page }) => {
+    await openWithTheme(page, 'light');
+    await page.waitForSelector('.session-table tbody tr[data-session-id]', { timeout: 5000 });
+
+    const lightEcosystemContrast = await readContrastRatio(page, '.session-tag--ecosystem-claude');
+    const lightBottleneckContrast = await readContrastRatio(page, '.session-tag--bottleneck-model');
+    const lightAutomationContrast = await readContrastRatio(page, '.session-tag--automation-medium');
+    expect(lightEcosystemContrast).toBeGreaterThanOrEqual(4.5);
+    expect(lightBottleneckContrast).toBeGreaterThanOrEqual(4.5);
+    expect(lightAutomationContrast).toBeGreaterThanOrEqual(4.5);
+
+    const firstRow = page.locator('.session-table tbody tr[data-session-id]').first();
+    await firstRow.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Session Detail' })).toHaveClass(/active/);
+
+    await page.getByRole('button', { name: 'Back to Overview' }).click();
+    await expect(page.locator('.session-table')).toBeVisible();
+
+    await page.selectOption('#theme-mode-select', 'dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    const darkEcosystemContrast = await readContrastRatio(page, '.session-tag--ecosystem-claude');
+    const darkBottleneckContrast = await readContrastRatio(page, '.session-tag--bottleneck-model');
+    const darkAutomationContrast = await readContrastRatio(page, '.session-tag--automation-medium');
+    expect(darkEcosystemContrast).toBeGreaterThanOrEqual(4.5);
+    expect(darkBottleneckContrast).toBeGreaterThanOrEqual(4.5);
+    expect(darkAutomationContrast).toBeGreaterThanOrEqual(4.5);
   });
 });

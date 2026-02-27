@@ -30,6 +30,55 @@ const ITEM_SIZE = 188; // SessionCard row height
 const MIN_LIST_HEIGHT = 260;
 const FALLBACK_LIST_HEIGHT = 520;
 
+function normalizeEcosystem(ecosystem: string | null | undefined): 'codex' | 'claude' | 'other' {
+  if (ecosystem === 'codex') {
+    return 'codex';
+  }
+  if (ecosystem === 'claude_code') {
+    return 'claude';
+  }
+  return 'other';
+}
+
+function ecosystemLabel(ecosystem: string | null | undefined): string {
+  if (ecosystem === 'codex') {
+    return 'Codex';
+  }
+  if (ecosystem === 'claude_code') {
+    return 'Claude Code';
+  }
+  return ecosystem || 'Unknown';
+}
+
+function normalizeBottleneck(value: string | null | undefined): 'model' | 'tool' | 'user' | 'unknown' {
+  const normalized = (value || '').trim().toLowerCase();
+  if (normalized === 'model') {
+    return 'model';
+  }
+  if (normalized === 'tool') {
+    return 'tool';
+  }
+  if (normalized === 'user') {
+    return 'user';
+  }
+  return 'unknown';
+}
+
+function getAutomationBand(
+  ratio: number | null | undefined
+): 'low' | 'medium' | 'high' | 'unknown' {
+  if (ratio === null || ratio === undefined) {
+    return 'unknown';
+  }
+  if (ratio < 1) {
+    return 'low';
+  }
+  if (ratio < 3) {
+    return 'medium';
+  }
+  return 'high';
+}
+
 export function SessionListView({
   sessions,
   selectedId,
@@ -140,11 +189,29 @@ export function SessionListView({
                         Copy
                       </button>
                     </td>
-                    <td>{session.ecosystem}</td>
+                    <td>
+                      <span
+                        className={`session-tag session-tag--ecosystem-${normalizeEcosystem(session.ecosystem)}`}
+                      >
+                        {ecosystemLabel(session.ecosystem)}
+                      </span>
+                    </td>
                     <td>{session.total_tokens.toLocaleString()}</td>
                     <td>{session.total_messages.toLocaleString()}</td>
-                    <td>{session.bottleneck ?? '--'}</td>
-                    <td>{automation}</td>
+                    <td>
+                      <span
+                        className={`session-tag session-tag--bottleneck-${normalizeBottleneck(session.bottleneck)}`}
+                      >
+                        {session.bottleneck ?? 'Unknown'}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={`session-tag session-tag--automation-${getAutomationBand(session.automation_ratio)}`}
+                      >
+                        {automation}
+                      </span>
+                    </td>
                   </tr>
                 );
               })}

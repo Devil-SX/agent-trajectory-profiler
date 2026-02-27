@@ -129,6 +129,21 @@ async function setupTableModeMockApi(page: Page): Promise<void> {
 }
 
 test.describe('@full Session Table Mode', () => {
+  test('@smoke defaults to table view and renders semantic tags', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.removeItem('agent-vis:session-browser:view-mode');
+    });
+
+    await setupTableModeMockApi(page);
+    await page.goto('/');
+
+    await expect(page.getByRole('button', { name: 'Table View' })).toHaveClass(/active/);
+    await expect(page.locator('.session-table')).toBeVisible();
+    await expect(page.locator('.session-tag--ecosystem-codex').first()).toBeVisible();
+    await expect(page.locator('.session-tag--bottleneck-tool').first()).toBeVisible();
+    await expect(page.locator('.session-tag--automation-high').first()).toBeVisible();
+  });
+
   test('should render compact table and select rows while preserving filters', async ({ page }) => {
     const requestedSessionDetails: string[] = [];
     page.on('request', (request) => {

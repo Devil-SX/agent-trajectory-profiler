@@ -123,3 +123,119 @@
 .session-table__copy-id:hover {
   background: #f8fafc;
 }
+
+.session-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.5rem;
+  padding: 0.08rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.session-tag--ecosystem-claude {
+  color: #1e3a8a;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.session-tag--ecosystem-codex {
+  color: #065f46;
+  border-color: #6ee7b7;
+  background: #d1fae5;
+}
+
+.session-tag--ecosystem-other {
+  color: #334155;
+  border-color: #94a3b8;
+  background: #e2e8f0;
+}
+
+.session-tag--bottleneck-model {
+  color: #1e3a8a;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.session-tag--bottleneck-tool {
+  color: #115e59;
+  border-color: #5eead4;
+  background: #ccfbf1;
+}
+
+.session-tag--bottleneck-user {
+  color: #9a3412;
+  border-color: #fdba74;
+  background: #ffedd5;
+}
+
+.session-tag--bottleneck-unknown {
+  color: #334155;
+  border-color: #94a3b8;
+  background: #e2e8f0;
+}
+
+.session-tag--automation-low {
+  color: #9a3412;
+  border-color: #fdba74;
+  background: #ffedd5;
+}
+
+.session-tag--automation-medium {
+  color: #1e3a8a;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.session-tag--automation-high {
+  color: #065f46;
+  border-color: #6ee7b7;
+  background: #d1fae5;
+}
+
+.session-tag--automation-unknown {
+  color: #334155;
+  border-color: #94a3b8;
+  background: #e2e8f0;
+}
+
+:root[data-theme='dark'] .session-tag--ecosystem-claude,
+:root[data-theme='dark'] .session-tag--bottleneck-model,
+:root[data-theme='dark'] .session-tag--automation-medium {
+  color: #dbeafe;
+  border-color: #60a5fa;
+  background: #1e3a8a;
+}
+
+:root[data-theme='dark'] .session-tag--ecosystem-codex,
+:root[data-theme='dark'] .session-tag--automation-high {
+  color: #dcfce7;
+  border-color: #34d399;
+  background: #065f46;
+}
+
+:root[data-theme='dark'] .session-tag--bottleneck-tool {
+  color: #ccfbf1;
+  border-color: #2dd4bf;
+  background: #134e4a;
+}
+
+:root[data-theme='dark'] .session-tag--bottleneck-user,
+:root[data-theme='dark'] .session-tag--automation-low {
+  color: #ffedd5;
+  border-color: #fb923c;
+  background: #9a3412;
+}
+
+:root[data-theme='dark'] .session-tag--ecosystem-other,
+:root[data-theme='dark'] .session-tag--bottleneck-unknown,
+:root[data-theme='dark'] .session-tag--automation-unknown {
+  color: #e2e8f0;
+  border-color: #94a3b8;
+  background: #334155;
+}

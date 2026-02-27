@@ -33,6 +33,8 @@ test.describe('Theme visual baselines', () => {
   test('@visual dark theme statistics baseline', async ({ page }) => {
     await openWithTheme(page, 'dark');
 
+    await page.waitForSelector('.session-table tbody tr[data-session-id]', { timeout: 5000 });
+    await page.locator('.session-table tbody tr[data-session-id]').first().click();
     await page.click('button.tab-button:has-text("Statistics")');
     await page.waitForSelector('.statistics-dashboard', { timeout: 5000 });
 
@@ -41,6 +43,17 @@ test.describe('Theme visual baselines', () => {
       caret: 'hide',
       scale: 'css',
       maxDiffPixelRatio: 0.02,
+    });
+  });
+
+  test('@visual dark theme session table tags baseline', async ({ page }) => {
+    await openWithTheme(page, 'dark');
+
+    await expect(page.locator('.session-browser')).toHaveScreenshot('theme-dark-session-browser.png', {
+      animations: 'disabled',
+      caret: 'hide',
+      scale: 'css',
+      maxDiffPixelRatio: 0.015,
     });
   });
 });
