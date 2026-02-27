@@ -5,6 +5,7 @@
 
 export interface SessionSummary {
   session_id: string;
+  ecosystem: string;
   project_path: string;
   created_at: string;
   updated_at: string | null;
@@ -233,6 +234,15 @@ export interface ToolGroupStatistics {
   tools: string[];
 }
 
+export interface ToolErrorRecord {
+  timestamp: string;
+  tool_name: string;
+  category: string;
+  matched_rule: string | null;
+  preview: string;
+  detail: string;
+}
+
 export interface CompactEvent {
   timestamp: string;
   trigger: string;
@@ -269,6 +279,9 @@ export interface SessionStatistics {
   tool_calls: ToolCallStatistics[];
   tool_groups: ToolGroupStatistics[];
   total_tool_calls: number;
+  tool_error_records: ToolErrorRecord[];
+  tool_error_category_counts: Record<string, number>;
+  error_taxonomy_version: string;
   subagent_count: number;
   subagent_sessions: Record<string, number>;
   session_duration_seconds: number | null;

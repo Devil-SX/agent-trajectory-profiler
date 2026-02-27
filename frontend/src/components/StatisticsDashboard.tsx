@@ -8,7 +8,7 @@
  * - Resource Consumption
  */
 
-import { useEffect } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   BarChart,
@@ -67,8 +67,17 @@ function formatDuration(seconds: number | null): string {
   return `${secs}s`;
 }
 
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
 export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
   const { data, isLoading, error: queryError } = useSessionStatisticsQuery(sessionId);
+  const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({});
 
   const statistics: SessionStatistics | null = data?.statistics || null;
   const loading = isLoading;
@@ -107,6 +116,17 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
   if (!statistics) {
     return null;
   }
+
+  const toolErrorRecords = statistics.tool_error_records || [];
+  const errorCategoryEntries = Object.entries(statistics.tool_error_category_counts || {})
+    .sort((a, b) => b[1] - a[1]);
+
+  const toggleErrorDetail = (key: string): void => {
+    setExpandedErrors((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   const interactions = statistics.time_breakdown?.user_interaction_count || 0;
   const automationRatio = interactions > 0
@@ -384,6 +404,78 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {toolErrorRecords.length > 0 && (
+          <div className="table-card">
+            <h4 className="card-title">Tool Error Timeline</h4>
+            <p className="error-taxonomy-note">
+              Taxonomy v{statistics.error_taxonomy_version} · Unknown patterns are tracked as
+              {' '}
+              <code>uncategorized</code>
+            </p>
+
+            {errorCategoryEntries.length > 0 && (
+              <div className="error-category-row">
+                {errorCategoryEntries.map(([category, count]) => (
+                  <span key={category} className="error-category-chip">
+                    <span className="error-category-name">{category}</span>
+                    <span className="error-category-count">{formatNumber(count)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="table-container">
+              <table className="stats-table error-timeline-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Tool</th>
+                    <th>Category</th>
+                    <th>Rule</th>
+                    <th>Preview</th>
+                    <th>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {toolErrorRecords.map((record, index) => {
+                    const rowKey = `${record.timestamp}-${record.tool_name}-${index}`;
+                    const isExpanded = expandedErrors[rowKey] === true;
+                    return (
+                      <Fragment key={rowKey}>
+                        <tr>
+                          <td>{formatTimestamp(record.timestamp)}</td>
+                          <td className="tool-name">{record.tool_name}</td>
+                          <td>
+                            <span className="error-category-badge">{record.category}</span>
+                          </td>
+                          <td>{record.matched_rule ?? '--'}</td>
+                          <td className="error-preview-cell">{record.preview}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="error-expand-button"
+                              onClick={() => toggleErrorDetail(rowKey)}
+                            >
+                              {isExpanded ? 'Collapse' : 'Expand'}
+                            </button>
+                          </td>
+                        </tr>
+                        isExpanded ? (
+                          <tr className="error-detail-row">
+                            <td colSpan={6}>
+                              <pre className="error-detail-text">{record.detail}</pre>
+                            </td>
+                          </tr>
+                        ) : null
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
