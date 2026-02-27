@@ -50,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Session statistics API payload now includes computed `average_tokens_per_message`, restoring full-stack round-trip compatibility.
+- Integration test settings patching now targets the API app module object directly, fixing Python 3.10 compatibility for API/full-stack test fixtures.
 
 ## [0.6.0] - 2026-02-26
 

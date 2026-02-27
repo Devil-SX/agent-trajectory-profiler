@@ -419,13 +419,16 @@ def test_client(
     test_settings: Settings, multi_session_directory: Path
 ) -> Generator[TestClient, None, None]:
     """Create a FastAPI test client with test settings."""
+    from importlib import import_module
     from unittest.mock import patch
+
+    api_app_module = import_module("claude_vis.api.app")
 
     # Patch get_settings at the module level so the lifespan picks it up.
     # dependency_overrides only works for FastAPI Depends(), not direct calls.
     get_settings.cache_clear()
 
-    with patch("claude_vis.api.app.get_settings", return_value=test_settings):
+    with patch.object(api_app_module, "get_settings", return_value=test_settings):
         with TestClient(app) as client:
             yield client
 

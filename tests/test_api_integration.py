@@ -130,8 +130,10 @@ class TestSessionListAPI:
         sample_codex_rollout_file: Path,
     ) -> None:
         """Sessions API should expose ecosystem field and support filtering."""
+        from importlib import import_module
         from unittest.mock import patch
 
+        api_app_module = import_module("claude_vis.api.app")
         _ = sample_codex_rollout_file  # Ensure Codex fixture file is created.
         settings = Settings(
             session_path=multi_session_directory,
@@ -146,7 +148,7 @@ class TestSessionListAPI:
 
         get_settings.cache_clear()
         try:
-            with patch("claude_vis.api.app.get_settings", return_value=settings):
+            with patch.object(api_app_module, "get_settings", return_value=settings):
                 with TestClient(app) as client:
                     response = client.get("/api/sessions")
                     assert response.status_code == 200
