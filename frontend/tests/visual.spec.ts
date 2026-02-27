@@ -233,16 +233,16 @@ test.describe('Statistics View', () => {
   });
 });
 
-test.describe('Advanced Analytics View', () => {
-  test('should display advanced analytics view', async ({ page }) => {
+test.describe('Cross-Session Analytics View', () => {
+  test('should display cross-session analytics view', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
 
     await page.waitForSelector('.session-card--selected', { timeout: 5000 });
     await page.waitForTimeout(500);
 
-    // Click advanced analytics tab
-    await page.click('button:has-text("Advanced Analytics")');
+    // Click cross-session analytics tab
+    await page.click('button:has-text("Cross-Session Analytics")');
     await page.waitForTimeout(1000);
 
     await page.screenshot({
@@ -258,8 +258,8 @@ test.describe('Advanced Analytics View', () => {
     await page.waitForSelector('.session-card--selected', { timeout: 5000 });
     await page.waitForTimeout(500);
 
-    // Click advanced analytics tab
-    await page.click('button:has-text("Advanced Analytics")');
+    // Click cross-session analytics tab
+    await page.click('button:has-text("Cross-Session Analytics")');
     await page.waitForTimeout(500);
 
     // Verify comparison selector is visible
@@ -315,10 +315,10 @@ test.describe('Tab Navigation', () => {
     await page.waitForTimeout(500);
     await expect(page.locator('button.tab-button.active')).toContainText('Statistics');
 
-    // Click Advanced Analytics tab
-    await page.click('button:has-text("Advanced Analytics")');
+    // Click Cross-Session Analytics tab
+    await page.click('button:has-text("Cross-Session Analytics")');
     await page.waitForTimeout(500);
-    await expect(page.locator('button.tab-button.active')).toContainText('Advanced Analytics');
+    await expect(page.locator('button.tab-button.active')).toContainText('Cross-Session Analytics');
 
     // Click back to Timeline
     await page.click('button:has-text("Timeline")');
@@ -418,7 +418,7 @@ test.describe('Mobile View', () => {
     await page.waitForSelector('.session-card', { timeout: 5000 });
     await page.waitForTimeout(500);
 
-    await page.click('button:has-text("Advanced Analytics")');
+    await page.click('button:has-text("Cross-Session Analytics")');
     await page.waitForTimeout(1000);
 
     await page.screenshot({

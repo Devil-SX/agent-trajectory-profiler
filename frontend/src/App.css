@@ -73,9 +73,17 @@
 .view-tabs {
   display: flex;
   gap: 0.5rem;
+  padding-bottom: 0;
+}
+
+.view-tabs--primary {
+  margin-bottom: 0.25rem;
+  border-bottom: 2px solid #d8e2f0;
+}
+
+.view-tabs--secondary {
   margin-bottom: 1rem;
   border-bottom: 2px solid #e0e0e0;
-  padding-bottom: 0;
 }
 
 .tab-button {

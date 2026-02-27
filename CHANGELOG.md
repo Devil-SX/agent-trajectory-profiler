@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session browser sync panel with manual trigger button, last sync timestamp, and Claude/Codex breakdown cards.
 - Playwright smoke coverage for sync panel rendering and manual sync trigger flow (`tests/sync-control.spec.ts`).
 - CI frontend jobs (`frontend-static-checks`, `frontend-e2e-smoke`) and `npm run test:e2e:smoke` script.
+- Playwright smoke coverage for IA refactor: cross-session access without session preselection, tab/session state persistence, and session list view preference persistence.
 
 ### Changed
 
@@ -46,6 +47,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session browser now renders sync controls across loading/error/empty/data states so sync remains accessible regardless list state.
 - Backend formatting baseline has been normalized with Black so CI format checks run consistently across Python versions.
 - `mypy` CI now applies targeted overrides for legacy high-debt modules and tests, keeping type checks active on maintained paths while avoiding unrelated blockers.
+- App navigation now separates `Session Detail` from `Cross-Session Analytics`, and cross-session analytics is available without requiring a selected session.
+- Session list default view is now `Table View` and persists user preference via local storage across reloads.
+- Frontend labels and E2E expectations now consistently use `Cross-Session Analytics` instead of `Advanced Analytics`.
 
 ### Fixed
 

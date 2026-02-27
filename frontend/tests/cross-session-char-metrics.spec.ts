@@ -122,7 +122,7 @@ test.describe('@full Cross Session Char Metrics', () => {
     });
 
     await page.goto('/');
-    await page.getByRole('button', { name: 'Advanced Analytics' }).click();
+    await page.getByRole('button', { name: 'Cross-Session Analytics' }).click();
     await page.waitForSelector('.cross-session-overview', { timeout: 10000 });
 
     await expect(page.locator('.kpi-card', { hasText: 'Token volume' })).toContainText(

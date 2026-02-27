@@ -33,6 +33,7 @@ interface SessionBrowserProps {
 }
 
 type SessionViewMode = 'cards' | 'table';
+const SESSION_VIEW_MODE_STORAGE_KEY = 'agent-vis:session-browser:view-mode';
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 
@@ -70,7 +71,16 @@ export function SessionBrowser({
   );
 
   const [isPickingComparison, setIsPickingComparison] = useState(false);
-  const [viewMode, setViewMode] = useState<SessionViewMode>('cards');
+  const [viewMode, setViewMode] = useState<SessionViewMode>(() => {
+    if (typeof window === 'undefined') {
+      return 'table';
+    }
+    const stored = window.localStorage.getItem(SESSION_VIEW_MODE_STORAGE_KEY);
+    if (stored === 'cards' || stored === 'table') {
+      return stored;
+    }
+    return 'table';
+  });
 
   // Filter and sort state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -94,6 +104,12 @@ export function SessionBrowser({
       toast.error(error);
     }
   }, [error]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SESSION_VIEW_MODE_STORAGE_KEY, viewMode);
+    }
+  }, [viewMode]);
 
   // Initialize selection on first load
   useEffect(() => {
