@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Playwright smoke coverage for sync panel rendering and manual sync trigger flow (`tests/sync-control.spec.ts`).
 - CI frontend jobs (`frontend-static-checks`, `frontend-e2e-smoke`) and `npm run test:e2e:smoke` script.
 - Playwright smoke coverage for IA refactor: cross-session access without session preselection, tab/session state persistence, and session list view preference persistence.
+- Playwright smoke coverage for readability upgrades: readable project rendering in session table and copy-to-clipboard behavior for session IDs.
 
 ### Changed
 
@@ -50,6 +51,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - App navigation now separates `Session Detail` from `Cross-Session Analytics`, and cross-session analytics is available without requiring a selected session.
 - Session list default view is now `Table View` and persists user preference via local storage across reloads.
 - Frontend labels and E2E expectations now consistently use `Cross-Session Analytics` instead of `Advanced Analytics`.
+- Session table now prioritizes human-readable project names and unified relative+absolute timestamp formatting, with session ID/hash downgraded to a compact copyable field.
+- Cross-session token-share chart now truncates long session labels for readability while preserving full values in tooltip context.
 
 ### Fixed
 

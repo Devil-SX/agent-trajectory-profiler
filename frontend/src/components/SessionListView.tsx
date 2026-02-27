@@ -10,6 +10,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { List } from 'react-window';
 import type { SessionSummary } from '../types/session';
+import {
+  formatAbsoluteTime,
+  formatRelativeWithAbsolute,
+  getProjectName,
+  truncateMiddle,
+} from '../utils/display';
 import { SessionCard } from './SessionCard';
 import './SessionListView.css';
 
@@ -51,6 +57,18 @@ export function SessionListView({
     return () => observer.disconnect();
   }, []);
 
+  const handleCopySessionId = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    sessionId: string
+  ) => {
+    event.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(sessionId);
+    } catch (error) {
+      console.error('Failed to copy session ID', error);
+    }
+  };
+
   // Empty state
   if (sessions.length === 0) {
     return (
@@ -69,10 +87,10 @@ export function SessionListView({
           <table className="session-table">
             <thead>
               <tr>
-                <th>Session</th>
-                <th>Ecosystem</th>
                 <th>Project</th>
                 <th>Updated</th>
+                <th>Session ID</th>
+                <th>Ecosystem</th>
                 <th>Tokens</th>
                 <th>Messages</th>
                 <th>Bottleneck</th>
@@ -85,6 +103,9 @@ export function SessionListView({
                 const automation = session.automation_ratio === null
                   ? '--'
                   : `${session.automation_ratio.toFixed(2)}x`;
+                const projectName = getProjectName(session.project_path);
+                const updatedLabel = formatRelativeWithAbsolute(updated);
+                const updatedAbsolute = formatAbsoluteTime(updated);
                 return (
                   <tr
                     key={session.session_id}
@@ -99,12 +120,27 @@ export function SessionListView({
                     }}
                     tabIndex={0}
                   >
-                    <td title={session.session_id}>
-                      <code>{session.session_id.slice(0, 12)}</code>
+                    <td className="session-table__project" title={session.project_path}>
+                      {projectName}
+                    </td>
+                    <td className="session-table__updated" title={updatedAbsolute}>
+                      {updatedLabel}
+                    </td>
+                    <td className="session-table__id" title={session.session_id}>
+                      <code>{truncateMiddle(session.session_id, 6, 4)}</code>
+                      <button
+                        type="button"
+                        className="session-table__copy-id"
+                        onClick={(event) => {
+                          void handleCopySessionId(event, session.session_id);
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        aria-label={`Copy full session ID ${session.session_id}`}
+                      >
+                        Copy
+                      </button>
                     </td>
                     <td>{session.ecosystem}</td>
-                    <td title={session.project_path}>{session.project_path}</td>
-                    <td>{new Date(updated).toLocaleString()}</td>
                     <td>{session.total_tokens.toLocaleString()}</td>
                     <td>{session.total_messages.toLocaleString()}</td>
                     <td>{session.bottleneck ?? '--'}</td>

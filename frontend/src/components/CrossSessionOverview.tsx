@@ -20,6 +20,7 @@ import {
   useAnalyticsTimeseriesQuery,
 } from '../hooks/useSessionsQuery';
 import type { AnalyticsBucket } from '../types/session';
+import { truncateMiddle } from '../utils/display';
 import './CrossSessionOverview.css';
 
 type RangePreset = '7d' | '30d' | '90d' | 'custom';
@@ -75,6 +76,10 @@ function getLeadingBucket(buckets: AnalyticsBucket[]): string {
   }
   const [top] = buckets;
   return `${top.label} (${top.percent.toFixed(1)}%)`;
+}
+
+function formatSessionShareLabel(label: string): string {
+  return truncateMiddle(label, 5, 4);
 }
 
 export function CrossSessionOverview() {
@@ -445,7 +450,7 @@ export function CrossSessionOverview() {
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={topSessionShare}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="label" />
+                <XAxis dataKey="label" tickFormatter={formatSessionShareLabel} />
                 <YAxis />
                 <Tooltip formatter={(value) => formatNumber(Number(value))} />
                 <Legend />

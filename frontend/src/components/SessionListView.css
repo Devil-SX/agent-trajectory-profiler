@@ -94,3 +94,32 @@
 .session-table tbody tr.selected td {
   border-bottom-color: #bfdbfe;
 }
+
+.session-table__project {
+  font-weight: 600;
+}
+
+.session-table__updated {
+  max-width: 240px;
+}
+
+.session-table__id {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.session-table__copy-id {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0.22rem 0.4rem;
+  cursor: pointer;
+}
+
+.session-table__copy-id:hover {
+  background: #f8fafc;
+}

@@ -88,4 +88,31 @@ test.describe('@smoke Navigation IA - Session Detail & Cross-Session', () => {
     await expect(page.getByRole('button', { name: 'Card View' })).toHaveClass(/active/);
     await expect(page.locator('.session-card').first()).toBeVisible();
   });
+
+  test('should prioritize readable project names and provide session ID copy action', async ({
+    page,
+  }) => {
+    const firstProjectCell = page.locator('.session-table tbody tr').first().locator('td').first();
+    await expect(firstProjectCell).toHaveText('project');
+    await expect(firstProjectCell).not.toContainText('/home/user/project');
+
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => {
+            (window as Window & { __copiedSessionId?: string }).__copiedSessionId = text;
+          },
+        },
+      });
+    });
+
+    await page
+      .locator('tr[data-session-id="test-session-001"] .session-table__copy-id')
+      .click();
+    const copied = await page.evaluate(
+      () => (window as Window & { __copiedSessionId?: string }).__copiedSessionId
+    );
+    expect(copied).toBe('test-session-001');
+  });
 });

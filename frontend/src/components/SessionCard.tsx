@@ -8,6 +8,12 @@
  */
 
 import type { SessionSummary } from '../types/session';
+import {
+  formatAbsoluteTime,
+  formatRelativeWithAbsolute,
+  getProjectName,
+  truncateMiddle,
+} from '../utils/display';
 import './SessionCard.css';
 
 interface SessionCardProps {
@@ -22,26 +28,6 @@ const BOTTLENECK_COLORS: Record<string, string> = {
   User: '#22c55e',
 };
 
-function getRelativeTime(timestamp: string): string {
-  const now = new Date();
-  const past = new Date(timestamp);
-  const diffMs = now.getTime() - past.getTime();
-  if (diffMs < 60000) return 'just now';
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 60) return `${diffMins} min ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return past.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function getProjectName(projectPath: string): string {
-  const segments = projectPath.split('/').filter(Boolean);
-  return segments[segments.length - 1] || projectPath;
-}
-
 function getDisplayName(
   projectName: string,
   gitBranch: string | null,
@@ -53,16 +39,6 @@ function getDisplayName(
   return parts.join(' | ');
 }
 
-function formatAbsoluteTime(timestamp: string): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 export function SessionCard({
   session,
   isSelected = false,
@@ -70,7 +46,7 @@ export function SessionCard({
 }: SessionCardProps) {
   const projectName = getProjectName(session.project_path);
   const updatedTime = session.updated_at || session.created_at;
-  const relativeTime = getRelativeTime(updatedTime);
+  const relativeWithAbsolute = formatRelativeWithAbsolute(updatedTime);
   const absoluteTime = formatAbsoluteTime(updatedTime);
   const displayName = getDisplayName(projectName, session.git_branch);
   const bottleneckColor = session.bottleneck
@@ -79,7 +55,7 @@ export function SessionCard({
   const automationRatioDisplay = session.automation_ratio
     ? `${session.automation_ratio.toFixed(1)}x`
     : 'N/A';
-  const shortSessionId = session.session_id.slice(0, 8);
+  const shortSessionId = truncateMiddle(session.session_id, 4, 3);
 
   return (
     <button
@@ -87,7 +63,7 @@ export function SessionCard({
       className={`session-card ${isSelected ? 'session-card--selected' : ''}`}
       onClick={() => onClick?.(session.session_id)}
       aria-pressed={isSelected}
-      aria-label={`Session ${projectName}, updated ${relativeTime}`}
+      aria-label={`Session ${projectName}, updated ${relativeWithAbsolute}`}
     >
       {/* Header with project and branch */}
       <div className="session-card__header">
@@ -96,7 +72,7 @@ export function SessionCard({
         </h3>
       </div>
       <p className="session-card__time" title={absoluteTime}>
-        Updated {relativeTime} ({absoluteTime})
+        Updated {relativeWithAbsolute}
       </p>
 
       {/* Bottleneck badge */}
