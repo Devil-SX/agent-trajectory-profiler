@@ -231,7 +231,7 @@ export function CrossSessionOverview() {
         <article className="kpi-card">
           <h4>Automation efficiency</h4>
           <div className="kpi-value">{overview.avg_automation_ratio.toFixed(2)}x</div>
-          <p>Avg session duration: {formatDuration(overview.avg_session_duration_seconds)}</p>
+          <p>Active ratio: {formatPercent(overview.active_time_ratio * 100)}</p>
         </article>
 
         <article className="kpi-card">
@@ -246,7 +246,11 @@ export function CrossSessionOverview() {
         <article className="kpi-card">
           <h4>Tool execution</h4>
           <div className="kpi-value">{formatNumber(overview.total_tool_calls)}</div>
-          <p>Model timeouts: {formatNumber(overview.model_timeout_count)}</p>
+          <p>
+            Avg session duration: {formatDuration(overview.avg_session_duration_seconds)} ·
+            {' '}
+            Model timeouts: {formatNumber(overview.model_timeout_count)}
+          </p>
         </article>
       </div>
 

@@ -288,6 +288,7 @@ class TestAnalyticsAPI:
         assert "total_sessions" in payload
         assert "total_tokens" in payload
         assert "bottleneck_distribution" in payload
+        assert "active_time_ratio" in payload
 
         start = date.fromisoformat(payload["start_date"])
         end = date.fromisoformat(payload["end_date"])
@@ -306,6 +307,16 @@ class TestAnalyticsAPI:
         assert payload["total_sessions"] >= 1
         assert payload["total_messages"] >= 1
         assert payload["total_tokens"] >= 1
+        assert 0.0 <= payload["active_time_ratio"] <= 1.0
+
+        active = (
+            payload["model_time_seconds"]
+            + payload["tool_time_seconds"]
+            + payload["user_time_seconds"]
+        )
+        span = active + payload["inactive_time_seconds"]
+        expected_ratio = active / span if span > 0 else 0.0
+        assert payload["active_time_ratio"] == pytest.approx(expected_ratio, abs=1e-9)
 
     def test_analytics_distribution_tool(
         self, test_client: TestClient

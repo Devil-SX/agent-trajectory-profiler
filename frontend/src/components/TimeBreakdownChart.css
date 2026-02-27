@@ -30,6 +30,47 @@
   color: #6b7280;
 }
 
+.time-breakdown-chart .chart-header .active-ratio-text {
+  margin-top: 4px;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.time-breakdown-chart .time-category-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.time-breakdown-chart .time-category-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.time-breakdown-chart .time-category-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px 0;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.time-breakdown-chart .time-category-card .time-value {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.time-breakdown-chart .time-category-card .time-percent {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
 .time-breakdown-chart .charts-container {
   display: flex;
   flex-direction: column;
@@ -43,7 +84,32 @@
 .time-breakdown-chart .pie-chart-section {
   width: 100%;
   display: flex;
+  flex-direction: column;
   justify-content: center;
+  align-items: center;
+}
+
+.time-breakdown-chart .pie-scope-note {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.time-breakdown-chart .pie-scope-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.time-breakdown-chart .pie-scope-item {
+  border: 1px solid #dbe5ef;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  color: #334155;
+  background: #f8fbff;
 }
 
 .time-breakdown-chart .time-legend {
@@ -103,6 +169,10 @@
 
 /* Responsive */
 @media (min-width: 768px) {
+  .time-breakdown-chart .time-category-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .time-breakdown-chart .charts-container {
     flex-direction: row;
   }
@@ -119,6 +189,10 @@
 @media (max-width: 768px) {
   .time-breakdown-chart {
     padding: 16px;
+  }
+
+  .time-breakdown-chart .time-category-grid {
+    grid-template-columns: 1fr;
   }
 
   .time-breakdown-chart .time-legend {

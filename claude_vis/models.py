@@ -230,6 +230,7 @@ class TimeBreakdown(BaseModel):
     tool_time_percent: float = 0.0
     user_time_percent: float = 0.0
     inactive_time_percent: float = 0.0
+    active_time_ratio: float = 0.0
     inactivity_threshold_seconds: float = 1800.0
     user_interaction_count: int = 0
     interactions_per_hour: float = 0.0

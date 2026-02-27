@@ -692,6 +692,7 @@ def calculate_session_statistics(
             tool_time_percent=round(total_tool_time / total_active_time * 100, 1) if total_active_time > 0 else 0.0,
             user_time_percent=round(total_user_time / total_active_time * 100, 1) if total_active_time > 0 else 0.0,
             inactive_time_percent=round(total_inactive_time / total_span_time * 100, 1),
+            active_time_ratio=round(total_active_time / total_span_time, 4),
             inactivity_threshold_seconds=inactivity_threshold,
             user_interaction_count=user_interaction_count,
             interactions_per_hour=interactions_per_hour,
