@@ -112,8 +112,7 @@ _SYSTEM_ROLE_EN = (
 )
 
 _SYSTEM_ROLE_CN = (
-    "你是 Claude Code 智能体会话的性能分析师。"
-    "请产出简洁的、基于证据的 Markdown 报告。"
+    "你是 Claude Code 智能体会话的性能分析师。" "请产出简洁的、基于证据的 Markdown 报告。"
 )
 
 

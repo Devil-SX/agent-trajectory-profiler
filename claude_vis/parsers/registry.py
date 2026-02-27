@@ -50,8 +50,7 @@ def get_parser(ecosystem: str) -> TrajectoryParser:
     if ecosystem not in _registry:
         available = ", ".join(sorted(_registry.keys())) or "(none)"
         raise KeyError(
-            f"No parser registered for ecosystem '{ecosystem}'. "
-            f"Available: {available}"
+            f"No parser registered for ecosystem '{ecosystem}'. " f"Available: {available}"
         )
     return _registry[ecosystem]()
 
@@ -64,6 +63,7 @@ def list_ecosystems() -> list[str]:
 # ---------------------------------------------------------------------------
 # Auto-register built-in parsers
 # ---------------------------------------------------------------------------
+
 
 def _register_builtins() -> None:
     from claude_vis.parsers.claude_code import ClaudeCodeParser

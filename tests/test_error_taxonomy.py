@@ -34,7 +34,7 @@ def test_error_taxonomy_examples_precision() -> None:
         else:
             misses.append(
                 f'{sample["id"]}: expected({expected_category}, {expected_rule_id}) '
-                f'got({result.category}, {result.rule_id})'
+                f"got({result.category}, {result.rule_id})"
             )
 
     precision = matched / total if total else 0.0

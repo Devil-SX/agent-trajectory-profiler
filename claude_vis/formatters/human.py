@@ -109,7 +109,7 @@ def _format_standard(stats: SessionStatistics, session_id: str) -> str:
     lines.append(f"{'=' * 60}")
 
     # Messages
-    lines.append(f"\n  Messages")
+    lines.append("\n  Messages")
     lines.append(f"    Total:      {stats.message_count}")
     lines.append(f"    User:       {stats.user_message_count}")
     lines.append(f"    Assistant:  {stats.assistant_message_count}")
@@ -117,7 +117,7 @@ def _format_standard(stats: SessionStatistics, session_id: str) -> str:
         lines.append(f"    System:     {stats.system_message_count}")
 
     # Tokens (with percentages)
-    lines.append(f"\n  Tokens")
+    lines.append("\n  Tokens")
     lines.append(f"    Total:       {stats.total_tokens:,}")
     tb = stats.token_breakdown
     inp_pct = f"  ({tb.input_percent:.1f}%)" if tb else ""
@@ -152,9 +152,13 @@ def _format_standard(stats: SessionStatistics, session_id: str) -> str:
     if stats.tool_groups:
         multi_tool_groups = [g for g in stats.tool_groups if g.tool_count > 1]
         if multi_tool_groups:
-            lines.append(f"\n  Tool Groups (MCP)")
-            lines.append(f"    {'Group':<28} {'Count':>5}  {'Avg Lat':>8}  {'Errors':>6}  {'Tools':>5}")
-            lines.append(f"    {'---':<28} {'-----':>5}  {'--------':>8}  {'------':>6}  {'-----':>5}")
+            lines.append("\n  Tool Groups (MCP)")
+            lines.append(
+                f"    {'Group':<28} {'Count':>5}  {'Avg Lat':>8}  {'Errors':>6}  {'Tools':>5}"
+            )
+            lines.append(
+                f"    {'---':<28} {'-----':>5}  {'--------':>8}  {'------':>6}  {'-----':>5}"
+            )
             for g in multi_tool_groups:
                 lat_str = f"{g.avg_latency_seconds:.2f}s" if g.avg_latency_seconds > 0 else "--"
                 err_str = str(g.error_count) if g.error_count > 0 else "--"
@@ -177,19 +181,23 @@ def _format_standard(stats: SessionStatistics, session_id: str) -> str:
                 dist_parts.append(f"{n}: {bb.commands_per_call_distribution[n]}")
             else:
                 break
-        four_plus = sum(
-            cnt for n, cnt in bb.commands_per_call_distribution.items() if n >= 4
-        )
+        four_plus = sum(cnt for n, cnt in bb.commands_per_call_distribution.items() if n >= 4)
         if four_plus:
             dist_parts.append(f"4+: {four_plus}")
         lines.append(f"    Commands/Call    {', '.join(dist_parts)}")
 
         # Top commands table with latency and output
         top_n = 10
-        lines.append(f"    {'Command':<20} {'Count':>5}  {'Total Lat':>10}  {'Avg Lat':>8}  {'Output':>8}")
-        lines.append(f"    {'---':<20} {'-----':>5}  {'----------':>10}  {'--------':>8}  {'------':>8}")
+        lines.append(
+            f"    {'Command':<20} {'Count':>5}  {'Total Lat':>10}  {'Avg Lat':>8}  {'Output':>8}"
+        )
+        lines.append(
+            f"    {'---':<20} {'-----':>5}  {'----------':>10}  {'--------':>8}  {'------':>8}"
+        )
         for cs in bb.command_stats[:top_n]:
-            tot_lat = _format_duration(cs.total_latency_seconds) if cs.total_latency_seconds > 0 else "--"
+            tot_lat = (
+                _format_duration(cs.total_latency_seconds) if cs.total_latency_seconds > 0 else "--"
+            )
             avg_lat = f"{cs.avg_latency_seconds:.2f}s" if cs.avg_latency_seconds > 0 else "--"
             out_str = _format_chars(cs.total_output_chars) if cs.total_output_chars > 0 else "--"
             lines.append(
@@ -208,7 +216,9 @@ def _format_standard(stats: SessionStatistics, session_id: str) -> str:
     # Time Breakdown
     if stats.time_breakdown:
         tbd = stats.time_breakdown
-        lines.append(f"\n  Time Breakdown (active: {_format_duration(tbd.total_active_time_seconds)})")
+        lines.append(
+            f"\n  Time Breakdown (active: {_format_duration(tbd.total_active_time_seconds)})"
+        )
         lines.append(
             f"    Model:      {_format_duration(tbd.total_model_time_seconds):>12}  "
             f"({tbd.model_time_percent:>5.1f}%)"
@@ -238,7 +248,9 @@ def _format_standard(stats: SessionStatistics, session_id: str) -> str:
                 f"    Model Timeouts: {tbd.model_timeout_count} "
                 f"(gaps > {_format_duration(tbd.model_timeout_threshold_seconds)})"
             )
-        lines.append(f"    Interactions: {tbd.user_interaction_count}  ({tbd.interactions_per_hour:.1f}/hour)")
+        lines.append(
+            f"    Interactions: {tbd.user_interaction_count}  ({tbd.interactions_per_hour:.1f}/hour)"
+        )
 
     # Duration
     lines.append(f"\n  Duration:     {_format_duration(stats.session_duration_seconds)}")
@@ -282,10 +294,16 @@ def _format_detailed(stats: SessionStatistics, session_id: str) -> str:
     # Full bash command table (no cap)
     if stats.bash_breakdown and len(stats.bash_breakdown.command_stats) > 10:
         extra.append("\n  All Bash Commands (continued)")
-        extra.append(f"    {'Command':<20} {'Count':>5}  {'Total Lat':>10}  {'Avg Lat':>8}  {'Output':>8}")
-        extra.append(f"    {'---':<20} {'-----':>5}  {'----------':>10}  {'--------':>8}  {'------':>8}")
+        extra.append(
+            f"    {'Command':<20} {'Count':>5}  {'Total Lat':>10}  {'Avg Lat':>8}  {'Output':>8}"
+        )
+        extra.append(
+            f"    {'---':<20} {'-----':>5}  {'----------':>10}  {'--------':>8}  {'------':>8}"
+        )
         for cs in stats.bash_breakdown.command_stats[10:]:
-            tot_lat = _format_duration(cs.total_latency_seconds) if cs.total_latency_seconds > 0 else "--"
+            tot_lat = (
+                _format_duration(cs.total_latency_seconds) if cs.total_latency_seconds > 0 else "--"
+            )
             avg_lat = f"{cs.avg_latency_seconds:.2f}s" if cs.avg_latency_seconds > 0 else "--"
             out_str = _format_chars(cs.total_output_chars) if cs.total_output_chars > 0 else "--"
             extra.append(

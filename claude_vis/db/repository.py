@@ -117,10 +117,21 @@ class SessionRepository:
                 version          = excluded.version
             """,
             (
-                session_id, file_id, ecosystem, project_path, git_branch,
-                created_at, updated_at, total_messages, total_tokens,
-                now, duration_seconds, total_tool_calls,
-                bottleneck, automation_ratio, version,
+                session_id,
+                file_id,
+                ecosystem,
+                project_path,
+                git_branch,
+                created_at,
+                updated_at,
+                total_messages,
+                total_tokens,
+                now,
+                duration_seconds,
+                total_tool_calls,
+                bottleneck,
+                automation_ratio,
+                version,
             ),
         )
         self._conn.commit()
@@ -155,8 +166,12 @@ class SessionRepository:
             end_date: Include sessions created on or before this date (YYYY-MM-DD).
         """
         allowed_sort = {
-            "created_at", "parsed_at", "total_tokens",
-            "duration_seconds", "total_messages", "session_id",
+            "created_at",
+            "parsed_at",
+            "total_tokens",
+            "duration_seconds",
+            "total_messages",
+            "session_id",
         }
         if sort_by not in allowed_sort:
             sort_by = "created_at"

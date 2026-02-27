@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 
 class MessageRole(str, Enum):
@@ -91,9 +91,7 @@ class ToolResultContent(ContentBlock):
 
 
 # Union of all content types
-MessageContent = (
-    TextContent | ThinkingContent | ToolUseContent | ToolResultContent
-)
+MessageContent = TextContent | ThinkingContent | ToolUseContent | ToolResultContent
 
 
 class TokenUsage(BaseModel):
@@ -413,9 +411,7 @@ class SessionStatistics(BaseModel):
 
     # Subagent statistics
     subagent_count: int = 0
-    subagent_sessions: dict[str, int] = Field(
-        default_factory=dict
-    )  # agent_type -> count
+    subagent_sessions: dict[str, int] = Field(default_factory=dict)  # agent_type -> count
 
     # Time statistics
     session_duration_seconds: float | None = None
@@ -433,6 +429,7 @@ class SessionStatistics(BaseModel):
     compact_count: int = 0
     compact_events: list[CompactEvent] = Field(default_factory=list)
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def average_tokens_per_message(self) -> float:
         """Calculate average tokens per message."""

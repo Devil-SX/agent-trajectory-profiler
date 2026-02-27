@@ -73,7 +73,9 @@ def sample_session_data() -> list[dict[str, object]]:
 
 
 @pytest.fixture
-def sample_session_file(temp_session_dir: Path, sample_session_data: list[dict[str, object]]) -> Path:
+def sample_session_file(
+    temp_session_dir: Path, sample_session_data: list[dict[str, object]]
+) -> Path:
     """Create a sample JSONL session file."""
     session_file = temp_session_dir / "test-session-123.jsonl"
     with open(session_file, "w", encoding="utf-8") as f:

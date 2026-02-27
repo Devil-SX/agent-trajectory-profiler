@@ -44,15 +44,20 @@ def session_dir(tmp_path) -> Path:
 
     data_a = [
         {
-            "type": "user", "sessionId": "sess-a", "uuid": "m1",
+            "type": "user",
+            "sessionId": "sess-a",
+            "uuid": "m1",
             "timestamp": "2026-02-03T13:15:17.231Z",
             "message": {"role": "user", "content": "Hello"},
         },
         {
-            "type": "assistant", "sessionId": "sess-a", "uuid": "m2",
+            "type": "assistant",
+            "sessionId": "sess-a",
+            "uuid": "m2",
             "timestamp": "2026-02-03T13:15:18.231Z",
             "message": {
-                "role": "assistant", "content": "Hi!",
+                "role": "assistant",
+                "content": "Hi!",
                 "usage": {"input_tokens": 10, "output_tokens": 5},
             },
         },
@@ -63,15 +68,20 @@ def session_dir(tmp_path) -> Path:
 
     data_b = [
         {
-            "type": "user", "sessionId": "sess-b", "uuid": "m1",
+            "type": "user",
+            "sessionId": "sess-b",
+            "uuid": "m1",
             "timestamp": "2026-02-03T14:00:00.000Z",
             "message": {"role": "user", "content": "Test"},
         },
         {
-            "type": "assistant", "sessionId": "sess-b", "uuid": "m2",
+            "type": "assistant",
+            "sessionId": "sess-b",
+            "uuid": "m2",
             "timestamp": "2026-02-03T14:00:01.000Z",
             "message": {
-                "role": "assistant", "content": "OK",
+                "role": "assistant",
+                "content": "OK",
                 "usage": {"input_tokens": 20, "output_tokens": 10},
             },
         },
@@ -84,7 +94,9 @@ def session_dir(tmp_path) -> Path:
 
 
 class TestSyncEngineBasic:
-    def test_initial_sync(self, engine: SyncEngine, session_dir: Path, repo: SessionRepository) -> None:
+    def test_initial_sync(
+        self, engine: SyncEngine, session_dir: Path, repo: SessionRepository
+    ) -> None:
         result = engine.sync(session_dir)
         assert result.parsed == 2
         assert result.skipped == 0
@@ -112,11 +124,18 @@ class TestSyncEngineBasic:
         # Modify one file
         file_a = session_dir / "sess-a.jsonl"
         with open(file_a, "a") as f:
-            f.write(json.dumps({
-                "type": "user", "sessionId": "sess-a", "uuid": "m3",
-                "timestamp": "2026-02-03T13:16:00.000Z",
-                "message": {"role": "user", "content": "More"},
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "sessionId": "sess-a",
+                        "uuid": "m3",
+                        "timestamp": "2026-02-03T13:16:00.000Z",
+                        "message": {"role": "user", "content": "More"},
+                    }
+                )
+                + "\n"
+            )
 
         result = engine.sync(session_dir)
         assert result.parsed == 1  # Only sess-a re-parsed
@@ -145,7 +164,9 @@ class TestSyncEngineBasic:
 
 
 class TestSyncEngineDataIntegrity:
-    def test_statistics_stored(self, engine: SyncEngine, session_dir: Path, repo: SessionRepository) -> None:
+    def test_statistics_stored(
+        self, engine: SyncEngine, session_dir: Path, repo: SessionRepository
+    ) -> None:
         engine.sync(session_dir)
 
         stats = repo.get_statistics("sess-a")
@@ -153,7 +174,9 @@ class TestSyncEngineDataIntegrity:
         assert stats.message_count == 2
         assert stats.total_tokens == 15
 
-    def test_session_summary_fields(self, engine: SyncEngine, session_dir: Path, repo: SessionRepository) -> None:
+    def test_session_summary_fields(
+        self, engine: SyncEngine, session_dir: Path, repo: SessionRepository
+    ) -> None:
         engine.sync(session_dir)
 
         row = repo.get_session("sess-a")

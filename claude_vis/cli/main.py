@@ -183,7 +183,9 @@ def serve(
             except OSError:
                 return True
 
-    def find_available_port(start_port: int, host: str = "127.0.0.1", max_tries: int = 10) -> int | None:
+    def find_available_port(
+        start_port: int, host: str = "127.0.0.1", max_tries: int = 10
+    ) -> int | None:
         """Find an available port starting from start_port."""
         for port in range(start_port, start_port + max_tries):
             if not is_port_in_use(port, host):
@@ -251,9 +253,7 @@ def serve(
 
     # Verify session path exists
     if not settings.session_path.exists():
-        click.echo(
-            f"Warning: Session path does not exist: {settings.session_path}", err=True
-        )
+        click.echo(f"Warning: Session path does not exist: {settings.session_path}", err=True)
         click.echo("The API will start but no sessions will be available.", err=True)
         click.echo()
 
@@ -413,9 +413,7 @@ def parse(
             session = session.expanduser().resolve()
             click.echo(f"Parsing session directory: {session}", err=True)
             parsed_data = parse_session_directory(session, **parse_kwargs)
-            sessions_list = [
-                (s.metadata.session_id, s) for s in parsed_data.sessions
-            ]
+            sessions_list = [(s.metadata.session_id, s) for s in parsed_data.sessions]
             json_data = parsed_data.model_dump(mode="json")
             click.echo(
                 f"Successfully parsed {parsed_data.session_count} sessions "
@@ -428,9 +426,7 @@ def parse(
             path = path.expanduser().resolve()
             click.echo(f"Parsing sessions from: {path}", err=True)
             parsed_data = parse_session_directory(path, **parse_kwargs)
-            sessions_list = [
-                (s.metadata.session_id, s) for s in parsed_data.sessions
-            ]
+            sessions_list = [(s.metadata.session_id, s) for s in parsed_data.sessions]
             json_data = parsed_data.model_dump(mode="json")
             click.echo(
                 f"Successfully parsed {parsed_data.session_count} sessions "
@@ -651,10 +647,14 @@ def stats(
     # Validate date formats
     _date_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
     if start_date is not None and not _date_re.match(start_date):
-        click.echo(f"Error: Invalid --start-date format: '{start_date}'. Expected YYYY-MM-DD.", err=True)
+        click.echo(
+            f"Error: Invalid --start-date format: '{start_date}'. Expected YYYY-MM-DD.", err=True
+        )
         sys.exit(1)
     if end_date is not None and not _date_re.match(end_date):
-        click.echo(f"Error: Invalid --end-date format: '{end_date}'. Expected YYYY-MM-DD.", err=True)
+        click.echo(
+            f"Error: Invalid --end-date format: '{end_date}'. Expected YYYY-MM-DD.", err=True
+        )
         sys.exit(1)
     if start_date and end_date and start_date > end_date:
         click.echo("Error: --start-date must be on or before --end-date.", err=True)
@@ -674,8 +674,11 @@ def stats(
         click.echo(format_session_stats(statistics, session_id, level=output_level))
     else:
         rows = repo.list_sessions(
-            sort_by=sort_by, sort_order="DESC", limit=limit,
-            start_date=start_date, end_date=end_date,
+            sort_by=sort_by,
+            sort_order="DESC",
+            limit=limit,
+            start_date=start_date,
+            end_date=end_date,
         )
         if not rows:
             if start_date or end_date:
@@ -799,9 +802,13 @@ def analyze(
     env.pop("CLAUDE_CODE_ENTRYPOINT", None)
 
     cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--system-prompt", system_role,
+        "claude",
+        "-p",
+        prompt,
+        "--model",
+        model,
+        "--system-prompt",
+        system_role,
         "--dangerously-skip-permissions",
     ]
 

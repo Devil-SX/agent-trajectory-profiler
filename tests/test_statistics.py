@@ -381,9 +381,7 @@ class TestCalculateSessionStatistics:
         assert "string not found" in first_error.detail
         assert stats.tool_error_category_counts == {"file_not_found": 1}
 
-    def test_tool_error_records_fallback_to_uncategorized(
-        self, temp_session_dir: Path
-    ) -> None:
+    def test_tool_error_records_fallback_to_uncategorized(self, temp_session_dir: Path) -> None:
         """Unknown error text should map to uncategorized bucket."""
         file_path = temp_session_dir / "unknown-error.jsonl"
         unknown_error_messages = [
@@ -604,9 +602,7 @@ class TestExtractSubagentSessions:
         assert explore_agent.message_count == 2
 
         # Find bash-agent-1
-        bash_agent = next(
-            (s for s in subagent_sessions if s.agent_id == "bash-agent-1"), None
-        )
+        bash_agent = next((s for s in subagent_sessions if s.agent_id == "bash-agent-1"), None)
         assert bash_agent is not None
         assert bash_agent.message_count == 1
 
@@ -947,9 +943,7 @@ class TestConfigurableThresholds:
         assert tbd.model_timeout_count == 1
         assert tbd.model_timeout_threshold_seconds == 600.0
 
-    def test_model_timeout_detection_custom_threshold(
-        self, messages_with_large_gaps: Path
-    ) -> None:
+    def test_model_timeout_detection_custom_threshold(self, messages_with_large_gaps: Path) -> None:
         """Test model timeout detection with a custom 300s (5 min) threshold."""
         from claude_vis.parsers.session_parser import parse_jsonl_file
 
@@ -963,9 +957,7 @@ class TestConfigurableThresholds:
         assert tbd.model_timeout_count == 2
         assert tbd.model_timeout_threshold_seconds == 300.0
 
-    def test_no_model_timeout_with_high_threshold(
-        self, messages_with_large_gaps: Path
-    ) -> None:
+    def test_no_model_timeout_with_high_threshold(self, messages_with_large_gaps: Path) -> None:
         """Test that high threshold produces zero timeouts."""
         from claude_vis.parsers.session_parser import parse_jsonl_file
 
@@ -975,9 +967,7 @@ class TestConfigurableThresholds:
         assert stats.time_breakdown is not None
         assert stats.time_breakdown.model_timeout_count == 0
 
-    def test_parse_session_file_with_thresholds(
-        self, messages_with_large_gaps: Path
-    ) -> None:
+    def test_parse_session_file_with_thresholds(self, messages_with_large_gaps: Path) -> None:
         """Test that parse_session_file passes thresholds correctly."""
         session = parse_session_file(
             messages_with_large_gaps,

@@ -22,9 +22,7 @@ class TestCodexParser:
         assert any(msg.is_user_message for msg in messages)
         assert any(msg.is_assistant_message for msg in messages)
 
-    def test_parse_codex_session_file_statistics(
-        self, sample_codex_rollout_file: Path
-    ) -> None:
+    def test_parse_codex_session_file_statistics(self, sample_codex_rollout_file: Path) -> None:
         session = parse_codex_session_file(sample_codex_rollout_file)
 
         assert session.metadata.session_id == "123e4567-e89b-12d3-a456-426614174000"

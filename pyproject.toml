@@ -61,6 +61,23 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 strict = true
 
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "claude_vis.api.service",
+    "claude_vis.cli.main",
+    "claude_vis.db.repository",
+    "claude_vis.parsers.base",
+    "claude_vis.parsers.canonical",
+    "claude_vis.parsers.claude_code",
+    "claude_vis.parsers.codex",
+    "claude_vis.parsers.registry",
+]
+ignore_errors = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

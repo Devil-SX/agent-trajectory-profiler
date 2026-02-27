@@ -314,7 +314,7 @@ def sample_codex_rollout_file(codex_session_root: Path) -> Path:
             "payload": {
                 "type": "function_call",
                 "name": "exec_command",
-                "arguments": "{\"cmd\":\"pwd\"}",
+                "arguments": '{"cmd":"pwd"}',
                 "call_id": "call-test-1",
             },
         },
@@ -396,7 +396,8 @@ def session_service(multi_session_directory: Path, tmp_path: Path) -> SessionSer
 
 @pytest.fixture
 def initialized_session_service_sync(
-    multi_session_directory: Path, tmp_path: Path,
+    multi_session_directory: Path,
+    tmp_path: Path,
 ) -> SessionService:
     """Create and initialize a SessionService instance with test data (sync version for testing)."""
     import asyncio

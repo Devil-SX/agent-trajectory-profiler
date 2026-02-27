@@ -35,9 +35,7 @@ class TestAPIHealthEndpoints:
             assert "text/html" in content_type
             assert "<html" in response.text.lower()
 
-    def test_api_root_endpoint_uses_agent_neutral_branding(
-        self, test_client: TestClient
-    ) -> None:
+    def test_api_root_endpoint_uses_agent_neutral_branding(self, test_client: TestClient) -> None:
         """API metadata endpoint should use ecosystem-neutral service naming."""
         response = test_client.get("/api")
         assert response.status_code == 200
@@ -109,9 +107,7 @@ class TestSessionListAPI:
         assert isinstance(data["sessions"], list)
         assert data["count"] == len(data["sessions"])
 
-    def test_list_sessions_contains_expected_fields(
-        self, test_client: TestClient
-    ) -> None:
+    def test_list_sessions_contains_expected_fields(self, test_client: TestClient) -> None:
         """Test that session summaries contain all required fields."""
         response = test_client.get("/api/sessions")
         assert response.status_code == 200
@@ -167,9 +163,7 @@ class TestSessionListAPI:
         finally:
             get_settings.cache_clear()
 
-    def test_list_sessions_sorted_by_created_at(
-        self, test_client: TestClient
-    ) -> None:
+    def test_list_sessions_sorted_by_created_at(self, test_client: TestClient) -> None:
         """Test that sessions are sorted by creation time (newest first)."""
         response = test_client.get("/api/sessions")
         assert response.status_code == 200
@@ -263,9 +257,7 @@ class TestSessionStatisticsAPI:
             assert "statistics" in data
             assert data["session_id"] == session_id
 
-    def test_statistics_contains_required_fields(
-        self, test_client: TestClient
-    ) -> None:
+    def test_statistics_contains_required_fields(self, test_client: TestClient) -> None:
         """Test that statistics contain all required fields."""
         list_response = test_client.get("/api/sessions")
         sessions = list_response.json()["sessions"]
@@ -316,9 +308,7 @@ class TestSessionStatisticsAPI:
 
     def test_get_statistics_not_found(self, test_client: TestClient) -> None:
         """Test getting statistics for non-existent session returns 404."""
-        response = test_client.get(
-            "/api/sessions/non-existent-session-id/statistics"
-        )
+        response = test_client.get("/api/sessions/non-existent-session-id/statistics")
         assert response.status_code == 404
 
 
@@ -356,9 +346,7 @@ class TestAnalyticsAPI:
         end = date.fromisoformat(payload["end_date"])
         assert end - start == timedelta(days=6)
 
-    def test_analytics_overview_with_explicit_range(
-        self, test_client: TestClient
-    ) -> None:
+    def test_analytics_overview_with_explicit_range(self, test_client: TestClient) -> None:
         """Overview should include fixture data when range covers fixture timestamps."""
         response = test_client.get(
             "/api/analytics/overview?start_date=2026-02-01&end_date=2026-02-10"
@@ -372,10 +360,7 @@ class TestAnalyticsAPI:
         assert 0.0 <= payload["active_time_ratio"] <= 1.0
         assert payload["yield_ratio_tokens_p90"] >= payload["yield_ratio_tokens_median"]
         assert payload["yield_ratio_chars_p90"] >= payload["yield_ratio_chars_median"]
-        assert (
-            payload["avg_tokens_per_second_p90"]
-            >= payload["avg_tokens_per_second_median"]
-        )
+        assert payload["avg_tokens_per_second_p90"] >= payload["avg_tokens_per_second_median"]
 
         active = (
             payload["model_time_seconds"]
@@ -386,9 +371,7 @@ class TestAnalyticsAPI:
         expected_ratio = active / span if span > 0 else 0.0
         assert payload["active_time_ratio"] == pytest.approx(expected_ratio, abs=1e-9)
 
-    def test_analytics_distribution_tool(
-        self, test_client: TestClient
-    ) -> None:
+    def test_analytics_distribution_tool(self, test_client: TestClient) -> None:
         """Tool distribution endpoint should return bucketed results."""
         response = test_client.get(
             "/api/analytics/distributions?dimension=tool&start_date=2026-02-01&end_date=2026-02-10"
@@ -400,9 +383,7 @@ class TestAnalyticsAPI:
         assert "buckets" in payload
         assert isinstance(payload["buckets"], list)
 
-    def test_analytics_timeseries_weekly(
-        self, test_client: TestClient
-    ) -> None:
+    def test_analytics_timeseries_weekly(self, test_client: TestClient) -> None:
         """Timeseries endpoint should support week aggregation."""
         response = test_client.get(
             "/api/analytics/timeseries?interval=week&start_date=2026-02-01&end_date=2026-02-10"
@@ -414,22 +395,16 @@ class TestAnalyticsAPI:
         assert "points" in payload
         assert isinstance(payload["points"], list)
 
-    def test_analytics_invalid_date_range(
-        self, test_client: TestClient
-    ) -> None:
+    def test_analytics_invalid_date_range(self, test_client: TestClient) -> None:
         """Invalid date range should return HTTP 400."""
         response = test_client.get(
             "/api/analytics/overview?start_date=2026-02-10&end_date=2026-02-01"
         )
         assert response.status_code == 400
 
-    def test_analytics_invalid_dimension(
-        self, test_client: TestClient
-    ) -> None:
+    def test_analytics_invalid_dimension(self, test_client: TestClient) -> None:
         """Invalid distribution dimension should return HTTP 422."""
-        response = test_client.get(
-            "/api/analytics/distributions?dimension=invalid_dimension"
-        )
+        response = test_client.get("/api/analytics/distributions?dimension=invalid_dimension")
         assert response.status_code == 422
 
 
@@ -454,9 +429,7 @@ class TestSessionServiceIntegration:
         assert service.is_initialized
         assert service.session_count > 0
 
-    def test_service_list_sessions(
-        self, initialized_session_service_sync: SessionService
-    ) -> None:
+    def test_service_list_sessions(self, initialized_session_service_sync: SessionService) -> None:
         """Test listing sessions through the service."""
         import asyncio
 
@@ -466,9 +439,7 @@ class TestSessionServiceIntegration:
         assert all(hasattr(s, "session_id") for s in sessions)
         assert all(hasattr(s, "total_messages") for s in sessions)
 
-    def test_service_get_session(
-        self, initialized_session_service_sync: SessionService
-    ) -> None:
+    def test_service_get_session(self, initialized_session_service_sync: SessionService) -> None:
         """Test getting a session by ID."""
         import asyncio
 
@@ -490,9 +461,7 @@ class TestSessionServiceIntegration:
         assert len(sessions) > 0
 
         session_id = sessions[0].session_id
-        stats = asyncio.run(
-            initialized_session_service_sync.get_session_statistics(session_id)
-        )
+        stats = asyncio.run(initialized_session_service_sync.get_session_statistics(session_id))
         assert stats is not None
         assert stats.message_count > 0
         assert stats.total_tokens >= 0
@@ -503,9 +472,7 @@ class TestSessionServiceIntegration:
         """Test getting a non-existent session returns None."""
         import asyncio
 
-        session = asyncio.run(
-            initialized_session_service_sync.get_session("non-existent")
-        )
+        session = asyncio.run(initialized_session_service_sync.get_session("non-existent"))
         assert session is None
 
     def test_service_refresh_sessions(
@@ -578,20 +545,13 @@ class TestAPIEndToEnd:
             session_data = detail_response.json()["session"]
 
             # Step 3: Get session statistics
-            stats_response = test_client.get(
-                f"/api/sessions/{session_id}/statistics"
-            )
+            stats_response = test_client.get(f"/api/sessions/{session_id}/statistics")
             assert stats_response.status_code == 200
             stats_data = stats_response.json()["statistics"]
 
             # Verify consistency
-            assert (
-                session_data["metadata"]["total_messages"]
-                == stats_data["message_count"]
-            )
-            assert (
-                session_data["metadata"]["total_tokens"] == stats_data["total_tokens"]
-            )
+            assert session_data["metadata"]["total_messages"] == stats_data["message_count"]
+            assert session_data["metadata"]["total_tokens"] == stats_data["total_tokens"]
 
     def test_session_data_consistency(self, test_client: TestClient) -> None:
         """Test that session data is consistent across endpoints."""
@@ -608,11 +568,5 @@ class TestAPIEndToEnd:
 
             # Verify consistency between summary and detail
             assert session_summary["session_id"] == session_id
-            assert (
-                session_summary["total_messages"]
-                == session_detail["metadata"]["total_messages"]
-            )
-            assert (
-                session_summary["total_tokens"]
-                == session_detail["metadata"]["total_tokens"]
-            )
+            assert session_summary["total_messages"] == session_detail["metadata"]["total_messages"]
+            assert session_summary["total_tokens"] == session_detail["metadata"]["total_tokens"]

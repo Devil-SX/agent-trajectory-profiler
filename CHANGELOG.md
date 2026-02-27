@@ -44,6 +44,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Automation panels now expose per-session and aggregated token/char yield ratios to measure output efficiency per unit of user input.
 - Model analytics panels now expose mean/median/p90 throughput with explicit `tok/s` units and denominator semantics (model active time).
 - Session browser now renders sync controls across loading/error/empty/data states so sync remains accessible regardless list state.
+- Backend formatting baseline has been normalized with Black so CI format checks run consistently across Python versions.
+- `mypy` CI now applies targeted overrides for legacy high-debt modules and tests, keeping type checks active on maintained paths while avoiding unrelated blockers.
+
+### Fixed
+
+- Session statistics API payload now includes computed `average_tokens_per_message`, restoring full-stack round-trip compatibility.
 
 ## [0.6.0] - 2026-02-26
 

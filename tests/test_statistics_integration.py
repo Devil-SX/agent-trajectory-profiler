@@ -76,9 +76,7 @@ class TestStatisticsCalculationAccuracy:
 
         assert stats.total_tool_calls == tool_call_count
 
-    def test_tool_success_failure_tracking(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_tool_success_failure_tracking(self, sample_session_file: Path) -> None:
         """Test that tool success/failure tracking is accurate."""
         session = parse_session_file(sample_session_file)
         stats = session.statistics
@@ -89,9 +87,7 @@ class TestStatisticsCalculationAccuracy:
         for tool_stat in stats.tool_calls:
             assert tool_stat.count == tool_stat.success_count + tool_stat.error_count
 
-    def test_session_duration_calculation(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_session_duration_calculation(self, sample_session_file: Path) -> None:
         """Test that session duration is calculated correctly."""
         session = parse_session_file(sample_session_file)
         stats = session.statistics
@@ -109,9 +105,7 @@ class TestStatisticsCalculationAccuracy:
 class TestStatisticsWithSubagents:
     """Tests for statistics calculation with subagent sessions."""
 
-    def test_subagent_count_accuracy(
-        self, sample_session_file_with_subagents: Path
-    ) -> None:
+    def test_subagent_count_accuracy(self, sample_session_file_with_subagents: Path) -> None:
         """Test that subagent counts are accurate."""
         session = parse_session_file(sample_session_file_with_subagents)
         stats = session.statistics
@@ -121,9 +115,7 @@ class TestStatisticsWithSubagents:
         # Verify subagent count matches actual subagent sessions
         assert stats.subagent_count == len(session.subagent_sessions)
 
-    def test_subagent_type_grouping(
-        self, sample_session_file_with_subagents: Path
-    ) -> None:
+    def test_subagent_type_grouping(self, sample_session_file_with_subagents: Path) -> None:
         """Test that subagent sessions are grouped by type."""
         session = parse_session_file(sample_session_file_with_subagents)
         stats = session.statistics
@@ -140,9 +132,7 @@ class TestStatisticsWithSubagents:
         for agent_type, count in type_counts.items():
             assert stats.subagent_sessions.get(agent_type, 0) == count
 
-    def test_subagent_token_calculation(
-        self, sample_session_file_with_subagents: Path
-    ) -> None:
+    def test_subagent_token_calculation(self, sample_session_file_with_subagents: Path) -> None:
         """Test that subagent tokens are included in totals."""
         session = parse_session_file(sample_session_file_with_subagents)
         stats = session.statistics
@@ -161,9 +151,7 @@ class TestStatisticsWithSubagents:
 class TestStatisticsComputedProperties:
     """Tests for computed properties in statistics."""
 
-    def test_average_tokens_per_message(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_average_tokens_per_message(self, sample_session_file: Path) -> None:
         """Test average tokens per message calculation."""
         session = parse_session_file(sample_session_file)
         stats = session.statistics
@@ -219,9 +207,7 @@ class TestStatisticsComputedProperties:
             assert 0.0 <= rate <= 1.0
 
             # Find corresponding tool stat
-            tool_stat = next(
-                (t for t in stats.tool_calls if t.tool_name == tool_name), None
-            )
+            tool_stat = next((t for t in stats.tool_calls if t.tool_name == tool_name), None)
             if tool_stat and tool_stat.count > 0:
                 expected_rate = tool_stat.success_count / tool_stat.count
                 assert abs(rate - expected_rate) < 0.001
@@ -241,7 +227,7 @@ class TestStatisticsComputedProperties:
             assert error_prone[i][1] >= error_prone[i + 1][1]
 
         # Verify all have at least one error
-        for tool_name, error_count in error_prone:
+        for _tool_name, error_count in error_prone:
             assert error_count > 0
 
     def test_get_top_tools(self, sample_session_file: Path) -> None:
@@ -341,9 +327,7 @@ class TestStatisticsEdgeCases:
         assert stats.total_tool_calls == 0
         assert len(stats.tool_calls) == 0
 
-    def test_session_with_all_failed_tools(
-        self, temp_session_dir: Path
-    ) -> None:
+    def test_session_with_all_failed_tools(self, temp_session_dir: Path) -> None:
         """Test statistics when all tool calls fail."""
         import json
 
@@ -426,9 +410,7 @@ class TestStatisticsDataIntegrity:
         assert stats1.message_count == stats2.message_count
         assert stats1.total_tokens == stats2.total_tokens
 
-    def test_tool_statistics_consistency(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_tool_statistics_consistency(self, sample_session_file: Path) -> None:
         """Test that tool statistics are internally consistent."""
         session = parse_session_file(sample_session_file)
         stats = session.statistics
@@ -445,9 +427,7 @@ class TestStatisticsDataIntegrity:
             assert tool_stat.error_count >= 0
             assert tool_stat.total_tokens >= 0
 
-    def test_message_type_distribution(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_message_type_distribution(self, sample_session_file: Path) -> None:
         """Test that message type distribution is correct."""
         session = parse_session_file(sample_session_file)
         stats = session.statistics
@@ -456,9 +436,7 @@ class TestStatisticsDataIntegrity:
 
         # Sum of message types should equal total
         total_by_type = (
-            stats.user_message_count
-            + stats.assistant_message_count
-            + stats.system_message_count
+            stats.user_message_count + stats.assistant_message_count + stats.system_message_count
         )
 
         assert total_by_type == stats.message_count

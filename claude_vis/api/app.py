@@ -176,8 +176,12 @@ async def list_sessions(
     response: Response,
     page: int = 1,
     page_size: int = 50,
-    start_date: str | None = Query(default=None, description="Filter sessions created on or after this date (YYYY-MM-DD)"),
-    end_date: str | None = Query(default=None, description="Filter sessions created on or before this date (YYYY-MM-DD)"),
+    start_date: str | None = Query(
+        default=None, description="Filter sessions created on or after this date (YYYY-MM-DD)"
+    ),
+    end_date: str | None = Query(
+        default=None, description="Filter sessions created on or before this date (YYYY-MM-DD)"
+    ),
     ecosystem: str | None = Query(
         default=None,
         description="Filter sessions by ecosystem (e.g. claude_code, codex)",
@@ -232,9 +236,7 @@ async def list_sessions(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to list sessions: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Failed to list sessions: {str(e)}") from e
 
 
 @app.get(
@@ -243,8 +245,7 @@ async def list_sessions(
     tags=["Sessions"],
     summary="Get session details",
     description=(
-        "Get detailed information for a specific session including all "
-        "messages and subagents"
+        "Get detailed information for a specific session including all " "messages and subagents"
     ),
 )
 async def get_session(session_id: str, response: Response) -> SessionDetailResponse:
@@ -336,9 +337,7 @@ async def get_analytics_overview(
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
-    start_date, end_date = _normalize_date_range(
-        start_date, end_date, default_last_days=7
-    )
+    start_date, end_date = _normalize_date_range(start_date, end_date, default_last_days=7)
     assert start_date is not None and end_date is not None
 
     try:
@@ -375,15 +374,11 @@ async def get_analytics_distributions(
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
-    start_date, end_date = _normalize_date_range(
-        start_date, end_date, default_last_days=7
-    )
+    start_date, end_date = _normalize_date_range(start_date, end_date, default_last_days=7)
     assert start_date is not None and end_date is not None
 
     try:
-        result = await session_service.get_analytics_distribution(
-            dimension, start_date, end_date
-        )
+        result = await session_service.get_analytics_distribution(dimension, start_date, end_date)
         response.headers["Cache-Control"] = "public, max-age=60"
         return result
     except ValueError as e:
@@ -412,15 +407,11 @@ async def get_analytics_timeseries(
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
-    start_date, end_date = _normalize_date_range(
-        start_date, end_date, default_last_days=7
-    )
+    start_date, end_date = _normalize_date_range(start_date, end_date, default_last_days=7)
     assert start_date is not None and end_date is not None
 
     try:
-        result = await session_service.get_analytics_timeseries(
-            start_date, end_date, interval
-        )
+        result = await session_service.get_analytics_timeseries(start_date, end_date, interval)
         response.headers["Cache-Control"] = "public, max-age=60"
         return result
     except HTTPException:

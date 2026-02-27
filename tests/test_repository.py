@@ -2,9 +2,6 @@
 Tests for SessionRepository CRUD operations.
 """
 
-import sqlite3
-from datetime import datetime, timezone
-
 import pytest
 
 from claude_vis.db.connection import get_connection
@@ -113,21 +110,47 @@ class TestSessions:
         assert repo.count_sessions() == 0
         file_id = repo.upsert_tracked_file("/tmp/s.jsonl", 100, 1.0)
         repo.upsert_session(
-            "s1", file_id, "claude_code", "/p", None,
-            None, None, 1, 1, None, 0, None, None,
+            "s1",
+            file_id,
+            "claude_code",
+            "/p",
+            None,
+            None,
+            None,
+            1,
+            1,
+            None,
+            0,
+            None,
+            None,
         )
         assert repo.count_sessions() == 1
 
     def test_delete_session(self, repo: SessionRepository) -> None:
         file_id = repo.upsert_tracked_file("/tmp/s.jsonl", 100, 1.0)
         repo.upsert_session(
-            "s1", file_id, "claude_code", "/p", None,
-            None, None, 1, 1, None, 0, None, None,
+            "s1",
+            file_id,
+            "claude_code",
+            "/p",
+            None,
+            None,
+            None,
+            1,
+            1,
+            None,
+            0,
+            None,
+            None,
         )
         stats = SessionStatistics(
-            message_count=1, user_message_count=0, assistant_message_count=1,
-            system_message_count=0, total_tokens=100,
-            total_input_tokens=60, total_output_tokens=40,
+            message_count=1,
+            user_message_count=0,
+            assistant_message_count=1,
+            system_message_count=0,
+            total_tokens=100,
+            total_input_tokens=60,
+            total_output_tokens=40,
         )
         repo.upsert_statistics("s1", stats)
         assert repo.count_sessions() == 1
@@ -152,8 +175,11 @@ class TestSessionStatistics:
             cache_creation_tokens=1000,
             tool_calls=[
                 ToolCallStatistics(
-                    tool_name="Read", count=20, total_tokens=10000,
-                    success_count=18, error_count=2,
+                    tool_name="Read",
+                    count=20,
+                    total_tokens=10000,
+                    success_count=18,
+                    error_count=2,
                 ),
             ],
             total_tool_calls=20,
@@ -194,8 +220,19 @@ class TestGetFilePath:
     def test_get_file_path_for_session(self, repo: SessionRepository) -> None:
         file_id = repo.upsert_tracked_file("/tmp/my_session.jsonl", 100, 1.0, parse_status="parsed")
         repo.upsert_session(
-            "s1", file_id, "claude_code", "/p", None,
-            None, None, 1, 1, None, 0, None, None,
+            "s1",
+            file_id,
+            "claude_code",
+            "/p",
+            None,
+            None,
+            None,
+            1,
+            1,
+            None,
+            0,
+            None,
+            None,
         )
         path = repo.get_file_path_for_session("s1")
         assert path is not None

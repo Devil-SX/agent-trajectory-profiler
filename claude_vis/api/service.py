@@ -366,9 +366,12 @@ class SessionService:
         )
         offset = (page - 1) * page_size
         rows = self._repo.list_sessions(
-            sort_by=sort_by, sort_order=sort_order,
-            limit=page_size, offset=offset,
-            start_date=start_date, end_date=end_date,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=page_size,
+            offset=offset,
+            start_date=start_date,
+            end_date=end_date,
             ecosystem=ecosystem,
         )
         summaries = []
@@ -625,12 +628,12 @@ class SessionService:
                     "total_messages": 0,
                 }
             project_acc[project_path]["sessions"] = int(project_acc[project_path]["sessions"]) + 1
-            project_acc[project_path]["total_tokens"] = int(project_acc[project_path]["total_tokens"]) + int(
-                row.get("total_tokens") or 0
-            )
-            project_acc[project_path]["total_messages"] = int(project_acc[project_path]["total_messages"]) + int(
-                row.get("total_messages") or 0
-            )
+            project_acc[project_path]["total_tokens"] = int(
+                project_acc[project_path]["total_tokens"]
+            ) + int(row.get("total_tokens") or 0)
+            project_acc[project_path]["total_messages"] = int(
+                project_acc[project_path]["total_messages"]
+            ) + int(row.get("total_messages") or 0)
 
             stats = row.get("statistics") or {}
             total_input_tokens += int(stats.get("total_input_tokens") or 0)
@@ -725,7 +728,9 @@ class SessionService:
                     continue
                 bucket = tool_acc[tool_name]
                 bucket["total_calls"] = int(bucket["total_calls"]) + int(tool.get("count") or 0)
-                bucket["error_count"] = int(bucket["error_count"]) + int(tool.get("error_count") or 0)
+                bucket["error_count"] = int(bucket["error_count"]) + int(
+                    tool.get("error_count") or 0
+                )
                 bucket["latency_total"] = float(bucket["latency_total"]) + float(
                     tool.get("total_latency_seconds") or 0.0
                 )
@@ -1108,7 +1113,9 @@ class SessionService:
                 normalized.append(
                     {
                         "session_id": row["session_id"],
-                        "ecosystem": row["ecosystem"] if "ecosystem" in row.keys() else "claude_code",
+                        "ecosystem": (
+                            row["ecosystem"] if "ecosystem" in row.keys() else "claude_code"
+                        ),
                         "project_path": row["project_path"] or "",
                         "git_branch": row["git_branch"],
                         "created_at": row["created_at"],
@@ -1150,25 +1157,17 @@ class SessionService:
                         session.statistics.total_tool_calls if session.statistics else 0
                     ),
                     "duration_seconds": (
-                        session.statistics.session_duration_seconds
-                        if session.statistics
-                        else None
+                        session.statistics.session_duration_seconds if session.statistics else None
                     ),
                     "bottleneck": (
-                        self._derive_bottleneck(session.statistics)
-                        if session.statistics
-                        else None
+                        self._derive_bottleneck(session.statistics) if session.statistics else None
                     ),
                     "automation_ratio": (
                         self._derive_automation_ratio(session.statistics)
                         if session.statistics
                         else None
                     ),
-                    "statistics": (
-                        session.statistics.model_dump()
-                        if session.statistics
-                        else {}
-                    ),
+                    "statistics": (session.statistics.model_dump() if session.statistics else {}),
                 }
             )
         return rows
@@ -1252,7 +1251,9 @@ class SessionService:
         conn = self._repo._conn
         cur = conn.execute("SELECT COUNT(*) FROM tracked_files")
         total_files = cur.fetchone()[0]
-        cur = conn.execute("SELECT MAX(last_parsed_at) FROM tracked_files WHERE parse_status = 'parsed'")
+        cur = conn.execute(
+            "SELECT MAX(last_parsed_at) FROM tracked_files WHERE parse_status = 'parsed'"
+        )
         row = cur.fetchone()
         last_parsed_at = row[0] if row else None
         return {

@@ -73,9 +73,7 @@ def register_adapter(
         ecosystem_name = instance.ecosystem_name  # type: ignore[attr-defined]
 
     if not isinstance(ecosystem_name, str):
-        raise TypeError(
-            "Adapter ecosystem_name must be a string or property returning string"
-        )
+        raise TypeError("Adapter ecosystem_name must be a string or property returning string")
 
     _adapter_registry[ecosystem_name] = adapter_cls
     return adapter_cls
@@ -97,9 +95,7 @@ def list_adapters() -> list[str]:
     return sorted(_adapter_registry.keys())
 
 
-def parse_jsonl_to_canonical(
-    file_path: Path, adapter: TrajectoryEventAdapter
-) -> CanonicalSession:
+def parse_jsonl_to_canonical(file_path: Path, adapter: TrajectoryEventAdapter) -> CanonicalSession:
     """Parse JSONL file into canonical events via adapter conversion."""
     events: list[CanonicalEvent] = []
 
@@ -113,9 +109,7 @@ def parse_jsonl_to_canonical(
                 try:
                     data = json.loads(stripped)
                 except json.JSONDecodeError as e:
-                    raise SessionParseError(
-                        f"Invalid JSON at {file_path}:{line_num}: {e}"
-                    ) from e
+                    raise SessionParseError(f"Invalid JSON at {file_path}:{line_num}: {e}") from e
 
                 if not isinstance(data, dict):
                     continue

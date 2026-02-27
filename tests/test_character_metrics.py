@@ -31,7 +31,12 @@ def test_character_breakdown_mixed_cjk_latin_digits(temp_session_dir: Path) -> N
                 "role": "assistant",
                 "content": [
                     {"type": "text", "text": "测试xyz"},
-                    {"type": "tool_use", "id": "tool-1", "name": "Read", "input": {"path": "a.txt"}},
+                    {
+                        "type": "tool_use",
+                        "id": "tool-1",
+                        "name": "Read",
+                        "input": {"path": "a.txt"},
+                    },
                 ],
             },
         },

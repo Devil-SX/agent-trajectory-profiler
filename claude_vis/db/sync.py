@@ -8,7 +8,6 @@ which files need (re-)parsing, then delegates to a TrajectoryParser.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -93,7 +92,9 @@ class SyncEngine:
             except SessionParseError as exc:
                 result.errors.append(f"{file_path.name}: {exc}")
                 self._repo.upsert_tracked_file(
-                    abs_path, current_size, current_mtime,
+                    abs_path,
+                    current_size,
+                    current_mtime,
                     ecosystem=self._parser.ecosystem_name,
                     parse_status="error",
                 )
@@ -101,7 +102,9 @@ class SyncEngine:
             except Exception as exc:
                 result.errors.append(f"{file_path.name}: unexpected error: {exc}")
                 self._repo.upsert_tracked_file(
-                    abs_path, current_size, current_mtime,
+                    abs_path,
+                    current_size,
+                    current_mtime,
                     ecosystem=self._parser.ecosystem_name,
                     parse_status="error",
                 )
@@ -109,7 +112,9 @@ class SyncEngine:
 
             # Persist
             file_id = self._repo.upsert_tracked_file(
-                abs_path, current_size, current_mtime,
+                abs_path,
+                current_size,
+                current_mtime,
                 ecosystem=self._parser.ecosystem_name,
                 parse_status="parsed",
             )
@@ -129,9 +134,7 @@ class SyncEngine:
                 ]
                 bottleneck = max(categories, key=lambda x: x[1])[0]
                 if tbd.user_interaction_count > 0 and stats:
-                    automation_ratio = round(
-                        stats.total_tool_calls / tbd.user_interaction_count, 2
-                    )
+                    automation_ratio = round(stats.total_tool_calls / tbd.user_interaction_count, 2)
 
             created_at_str = meta.created_at.isoformat() if meta.created_at else None
             updated_at_str = meta.updated_at.isoformat() if meta.updated_at else None

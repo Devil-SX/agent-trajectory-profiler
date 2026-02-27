@@ -68,14 +68,14 @@ def _split_bash_on_operators(command_str: str) -> list[str]:
         ch = command_str[i]
 
         # Handle escape sequences inside double quotes / unquoted
-        if ch == '\\' and quote_char != "'" and i + 1 < n:
+        if ch == "\\" and quote_char != "'" and i + 1 < n:
             current.append(ch)
             current.append(command_str[i + 1])
             i += 2
             continue
 
         # Toggle quote state
-        if quote_char is None and ch in ("'", '"', '`'):
+        if quote_char is None and ch in ("'", '"', "`"):
             quote_char = ch
             current.append(ch)
             i += 1
@@ -90,15 +90,15 @@ def _split_bash_on_operators(command_str: str) -> list[str]:
         if quote_char is None:
             # Check two-char operators first: && ||
             if i + 1 < n:
-                two = command_str[i:i + 2]
-                if two in ('&&', '||'):
-                    parts.append(''.join(current))
+                two = command_str[i : i + 2]
+                if two in ("&&", "||"):
+                    parts.append("".join(current))
                     current = []
                     i += 2
                     continue
             # Single-char operators: | ;
-            if ch in ('|', ';'):
-                parts.append(''.join(current))
+            if ch in ("|", ";"):
+                parts.append("".join(current))
                 current = []
                 i += 1
                 continue
@@ -107,7 +107,7 @@ def _split_bash_on_operators(command_str: str) -> list[str]:
         i += 1
 
     # Last segment
-    tail = ''.join(current).strip()
+    tail = "".join(current).strip()
     if tail:
         parts.append(tail)
 
@@ -116,7 +116,7 @@ def _split_bash_on_operators(command_str: str) -> list[str]:
 
 # Regex to validate that an extracted token looks like a real command name
 # (starts with letter, dot, or underscore — filters out numbers, punctuation, etc.)
-_CMD_NAME_RE = re.compile(r'^[a-zA-Z_.]')
+_CMD_NAME_RE = re.compile(r"^[a-zA-Z_.]")
 
 
 def _parse_bash_sub_commands(command_str: str) -> list[str]:
@@ -149,16 +149,16 @@ def _parse_bash_sub_commands(command_str: str) -> list[str]:
         cmd_token = None
         for token in tokens:
             # Skip env var assignments like VAR=value
-            if '=' in token and not token.startswith('-') and token.split('=')[0].isidentifier():
+            if "=" in token and not token.startswith("-") and token.split("=")[0].isidentifier():
                 continue
             cmd_token = token
             break
 
         if cmd_token:
             # Strip path prefix: /usr/bin/python -> python
-            base = cmd_token.rsplit('/', 1)[-1]
+            base = cmd_token.rsplit("/", 1)[-1]
             # Strip leading ./ prefix
-            if base.startswith('./'):
+            if base.startswith("./"):
                 base = base[2:]
             # Validate it looks like a command name
             if base and _CMD_NAME_RE.match(base):
@@ -582,9 +582,7 @@ def calculate_session_statistics(
                                             content_block.get("content", "")
                                         )
                                         classification = classify_tool_error(error_text)
-                                        tool_error_category_counts[
-                                            classification.category
-                                        ] += 1
+                                        tool_error_category_counts[classification.category] += 1
                                         preview = (
                                             error_text.strip().replace("\n", " ")[:160]
                                             if error_text.strip()
@@ -638,7 +636,11 @@ def calculate_session_statistics(
                                                 result_chars = len(result_content)
                                             elif isinstance(result_content, list):
                                                 result_chars = sum(
-                                                    len(b.get("text", "")) if isinstance(b, dict) else len(str(b))
+                                                    (
+                                                        len(b.get("text", ""))
+                                                        if isinstance(b, dict)
+                                                        else len(str(b))
+                                                    )
                                                     for b in result_content
                                                 )
                                             else:
@@ -707,8 +709,13 @@ def calculate_session_statistics(
         g = tc.tool_group
         if g not in group_agg:
             group_agg[g] = {
-                "count": 0, "tokens": 0, "success": 0, "error": 0,
-                "total_latency": 0.0, "latency_count": 0, "tools": [],
+                "count": 0,
+                "tokens": 0,
+                "success": 0,
+                "error": 0,
+                "total_latency": 0.0,
+                "latency_count": 0,
+                "tools": [],
             }
         ga = group_agg[g]
         ga["count"] += tc.count
@@ -758,7 +765,9 @@ def calculate_session_statistics(
     total_active_time = total_model_time + total_tool_time + total_user_time
     total_span_time = total_active_time + total_inactive_time
     active_hours = total_active_time / 3600.0
-    interactions_per_hour = round(user_interaction_count / active_hours, 1) if active_hours > 0 else 0.0
+    interactions_per_hour = (
+        round(user_interaction_count / active_hours, 1) if active_hours > 0 else 0.0
+    )
     time_breakdown = None
     if total_span_time > 0:
         time_breakdown = TimeBreakdown(
@@ -767,9 +776,21 @@ def calculate_session_statistics(
             total_user_time_seconds=round(total_user_time, 2),
             total_inactive_time_seconds=round(total_inactive_time, 2),
             total_active_time_seconds=round(total_active_time, 2),
-            model_time_percent=round(total_model_time / total_active_time * 100, 1) if total_active_time > 0 else 0.0,
-            tool_time_percent=round(total_tool_time / total_active_time * 100, 1) if total_active_time > 0 else 0.0,
-            user_time_percent=round(total_user_time / total_active_time * 100, 1) if total_active_time > 0 else 0.0,
+            model_time_percent=(
+                round(total_model_time / total_active_time * 100, 1)
+                if total_active_time > 0
+                else 0.0
+            ),
+            tool_time_percent=(
+                round(total_tool_time / total_active_time * 100, 1)
+                if total_active_time > 0
+                else 0.0
+            ),
+            user_time_percent=(
+                round(total_user_time / total_active_time * 100, 1)
+                if total_active_time > 0
+                else 0.0
+            ),
             inactive_time_percent=round(total_inactive_time / total_span_time * 100, 1),
             active_time_ratio=round(total_active_time / total_span_time, 4),
             inactivity_threshold_seconds=inactivity_threshold,
@@ -782,13 +803,19 @@ def calculate_session_statistics(
     # Build TokenBreakdown
     # Use comprehensive total including cache tokens as denominator so all % sum to 100
     token_breakdown = None
-    all_tokens = total_input_tokens + total_output_tokens + cache_read_tokens + cache_creation_tokens
+    all_tokens = (
+        total_input_tokens + total_output_tokens + cache_read_tokens + cache_creation_tokens
+    )
     if all_tokens > 0:
         token_breakdown = TokenBreakdown(
             input_percent=round(total_input_tokens / all_tokens * 100, 1),
             output_percent=round(total_output_tokens / all_tokens * 100, 1),
-            cache_read_percent=round(cache_read_tokens / all_tokens * 100, 1) if cache_read_tokens else 0.0,
-            cache_creation_percent=round(cache_creation_tokens / all_tokens * 100, 1) if cache_creation_tokens else 0.0,
+            cache_read_percent=(
+                round(cache_read_tokens / all_tokens * 100, 1) if cache_read_tokens else 0.0
+            ),
+            cache_creation_percent=(
+                round(cache_creation_tokens / all_tokens * 100, 1) if cache_creation_tokens else 0.0
+            ),
         )
 
     # Build BashBreakdown
@@ -807,9 +834,13 @@ def calculate_session_statistics(
                 command_name=name,
                 count=cnt,
                 total_latency_seconds=round(bash_command_latency.get(name, 0.0), 2),
-                avg_latency_seconds=round(bash_command_latency.get(name, 0.0) / cnt, 2) if cnt > 0 else 0.0,
+                avg_latency_seconds=(
+                    round(bash_command_latency.get(name, 0.0) / cnt, 2) if cnt > 0 else 0.0
+                ),
                 total_output_chars=bash_command_output_chars.get(name, 0),
-                avg_output_chars=round(bash_command_output_chars.get(name, 0) / cnt, 2) if cnt > 0 else 0.0,
+                avg_output_chars=(
+                    round(bash_command_output_chars.get(name, 0) / cnt, 2) if cnt > 0 else 0.0
+                ),
             )
             for name, cnt in bash_command_counts.most_common()
         ]
@@ -843,9 +874,7 @@ def calculate_session_statistics(
         output_tokens_per_second = total_output_tokens / total_model_time
         cache_read_tokens_per_second = cache_read_tokens / total_model_time
         cache_creation_tokens_per_second = cache_creation_tokens / total_model_time
-        cache_tokens_per_second = (
-            cache_read_tokens + cache_creation_tokens
-        ) / total_model_time
+        cache_tokens_per_second = (cache_read_tokens + cache_creation_tokens) / total_model_time
 
     return SessionStatistics(
         message_count=len(messages),
@@ -923,11 +952,13 @@ def extract_compact_events(file_path: Path) -> list[CompactEvent]:
                 if data.get("subtype") != "compact_boundary":
                     continue
                 cm = data.get("compactMetadata", {})
-                events.append(CompactEvent(
-                    timestamp=data.get("timestamp", ""),
-                    trigger=cm.get("trigger", "unknown"),
-                    pre_tokens=cm.get("preTokens", 0),
-                ))
+                events.append(
+                    CompactEvent(
+                        timestamp=data.get("timestamp", ""),
+                        trigger=cm.get("trigger", "unknown"),
+                        pre_tokens=cm.get("preTokens", 0),
+                    )
+                )
     except OSError:
         pass
     return events
@@ -1023,8 +1054,7 @@ def find_session_files(directory: Path) -> list[Path]:
     # Filter out files in 'subagents' directories (they are handled as part of main sessions)
     # Also filter out history.jsonl which is a global history file
     session_files = [
-        f for f in all_jsonl_files
-        if "subagents" not in f.parts and f.name != "history.jsonl"
+        f for f in all_jsonl_files if "subagents" not in f.parts and f.name != "history.jsonl"
     ]
 
     return sorted(session_files)
@@ -1071,9 +1101,7 @@ def parse_session_directory(
             continue
 
     if not sessions and errors:
-        raise SessionParseError(
-            "Failed to parse any sessions. Errors:\n" + "\n".join(errors)
-        )
+        raise SessionParseError("Failed to parse any sessions. Errors:\n" + "\n".join(errors))
 
     # Create parsed data container
     parsed_data = ParsedSessionData(
@@ -1126,9 +1154,7 @@ class ClaudeCodeParser(TrajectoryParser):
     def find_session_files(self, directory: Path) -> list[Path]:
         return find_session_files(directory)
 
-    def _extract_subagent_sessions(
-        self, messages: list[MessageRecord]
-    ) -> list[SubagentSession]:
+    def _extract_subagent_sessions(self, messages: list[MessageRecord]) -> list[SubagentSession]:
         return extract_subagent_sessions(messages)
 
     def parse_session(self, file_path: Path) -> Session:

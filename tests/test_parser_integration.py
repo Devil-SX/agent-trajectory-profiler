@@ -8,8 +8,6 @@ session file handling, and integration with the statistics calculator.
 import json
 from pathlib import Path
 
-import pytest
-
 from claude_vis.parsers import (
     SessionParseError,
     parse_session_directory,
@@ -20,9 +18,7 @@ from claude_vis.parsers import (
 class TestParserIntegrationWithSingleSession:
     """Integration tests for parsing single session files."""
 
-    def test_parse_complete_session_file(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_parse_complete_session_file(self, sample_session_file: Path) -> None:
         """Test parsing a complete session file end-to-end."""
         session = parse_session_file(sample_session_file)
 
@@ -41,9 +37,7 @@ class TestParserIntegrationWithSingleSession:
         assert session.statistics.message_count == len(session.messages)
         assert session.statistics.total_tokens > 0
 
-    def test_parse_session_with_tool_calls(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_parse_session_with_tool_calls(self, sample_session_file: Path) -> None:
         """Test that tool calls are properly extracted during parsing."""
         session = parse_session_file(sample_session_file)
 
@@ -56,9 +50,7 @@ class TestParserIntegrationWithSingleSession:
         tool_names = [tc.tool_name for tc in session.statistics.tool_calls]
         assert "Read" in tool_names
 
-    def test_parse_session_with_subagents(
-        self, sample_session_file_with_subagents: Path
-    ) -> None:
+    def test_parse_session_with_subagents(self, sample_session_file_with_subagents: Path) -> None:
         """Test parsing session with subagent messages."""
         session = parse_session_file(sample_session_file_with_subagents)
 
@@ -74,9 +66,7 @@ class TestParserIntegrationWithSingleSession:
         assert subagent.agent_id is not None
         assert subagent.message_count > 0
 
-    def test_parse_session_token_calculations(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_parse_session_token_calculations(self, sample_session_file: Path) -> None:
         """Test that token calculations are accurate during parsing."""
         session = parse_session_file(sample_session_file)
 
@@ -93,9 +83,7 @@ class TestParserIntegrationWithSingleSession:
             assert stats.cache_read_tokens >= 0
             assert stats.cache_creation_tokens >= 0
 
-    def test_parse_session_message_order(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_parse_session_message_order(self, sample_session_file: Path) -> None:
         """Test that messages are parsed in correct chronological order."""
         session = parse_session_file(sample_session_file)
 
@@ -109,9 +97,7 @@ class TestParserIntegrationWithSingleSession:
 class TestParserIntegrationWithDirectory:
     """Integration tests for parsing session directories."""
 
-    def test_parse_directory_with_multiple_sessions(
-        self, multi_session_directory: Path
-    ) -> None:
+    def test_parse_directory_with_multiple_sessions(self, multi_session_directory: Path) -> None:
         """Test parsing a directory containing multiple sessions."""
         parsed_data = parse_session_directory(multi_session_directory)
 
@@ -129,9 +115,7 @@ class TestParserIntegrationWithDirectory:
             assert len(session.messages) > 0
             assert session.statistics is not None
 
-    def test_parse_directory_session_isolation(
-        self, multi_session_directory: Path
-    ) -> None:
+    def test_parse_directory_session_isolation(self, multi_session_directory: Path) -> None:
         """Test that sessions are properly isolated during directory parsing."""
         parsed_data = parse_session_directory(multi_session_directory)
 
@@ -146,17 +130,13 @@ class TestParserIntegrationWithDirectory:
             for message in session.messages:
                 assert message.sessionId == session.metadata.session_id
 
-    def test_parse_directory_aggregate_statistics(
-        self, multi_session_directory: Path
-    ) -> None:
+    def test_parse_directory_aggregate_statistics(self, multi_session_directory: Path) -> None:
         """Test that directory-level statistics are accurate."""
         parsed_data = parse_session_directory(multi_session_directory)
 
         # Calculate expected totals
         expected_messages = sum(len(s.messages) for s in parsed_data.sessions)
-        expected_tokens = sum(
-            s.metadata.total_tokens for s in parsed_data.sessions
-        )
+        expected_tokens = sum(s.metadata.total_tokens for s in parsed_data.sessions)
 
         assert parsed_data.total_messages == expected_messages
         assert parsed_data.total_tokens == expected_tokens
@@ -221,9 +201,7 @@ class TestParserIntegrationWithEdgeCases:
         session = parse_session_file(session_file)
         assert len(session.messages) == len(sample_complete_session)
 
-    def test_parse_session_with_missing_optional_fields(
-        self, temp_session_dir: Path
-    ) -> None:
+    def test_parse_session_with_missing_optional_fields(self, temp_session_dir: Path) -> None:
         """Test parsing messages with missing optional fields."""
         messages = [
             {
@@ -277,9 +255,7 @@ class TestParserIntegrationWithEdgeCases:
 class TestParserIntegrationDataConsistency:
     """Integration tests for data consistency across parsing operations."""
 
-    def test_reparse_session_consistency(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_reparse_session_consistency(self, sample_session_file: Path) -> None:
         """Test that reparsing the same file produces consistent results."""
         session1 = parse_session_file(sample_session_file)
         session2 = parse_session_file(sample_session_file)
@@ -295,9 +271,7 @@ class TestParserIntegrationDataConsistency:
         assert session1.statistics.message_count == session2.statistics.message_count
         assert session1.statistics.total_tokens == session2.statistics.total_tokens
 
-    def test_parse_directory_vs_individual_files(
-        self, multi_session_directory: Path
-    ) -> None:
+    def test_parse_directory_vs_individual_files(self, multi_session_directory: Path) -> None:
         """Test that directory parsing matches individual file parsing."""
         # Parse entire directory
         dir_parsed = parse_session_directory(multi_session_directory)
@@ -320,9 +294,7 @@ class TestParserIntegrationDataConsistency:
         total_messages_ind = sum(len(s.messages) for s in individual_sessions)
         assert total_messages_dir == total_messages_ind
 
-    def test_statistics_calculation_consistency(
-        self, sample_session_file: Path
-    ) -> None:
+    def test_statistics_calculation_consistency(self, sample_session_file: Path) -> None:
         """Test that statistics are consistently calculated."""
         session = parse_session_file(sample_session_file)
         stats = session.statistics
@@ -331,9 +303,7 @@ class TestParserIntegrationDataConsistency:
 
         # Verify message counts add up
         assert (
-            stats.user_message_count
-            + stats.assistant_message_count
-            + stats.system_message_count
+            stats.user_message_count + stats.assistant_message_count + stats.system_message_count
             == stats.message_count
         )
 

@@ -142,13 +142,21 @@ class CodexEventAdapter(TrajectoryEventAdapter):
                 role="user",
                 content=content,
                 cwd=payload_dict.get("cwd") if isinstance(payload_dict.get("cwd"), str) else None,
-                version=payload_dict.get("cli_version") if isinstance(payload_dict.get("cli_version"), str) else None,
+                version=(
+                    payload_dict.get("cli_version")
+                    if isinstance(payload_dict.get("cli_version"), str)
+                    else None
+                ),
             )
 
         if top_type == "event_msg":
             event_kind = payload_dict.get("type")
             if event_kind == "user_message":
-                text = payload_dict.get("message") if isinstance(payload_dict.get("message"), str) else ""
+                text = (
+                    payload_dict.get("message")
+                    if isinstance(payload_dict.get("message"), str)
+                    else ""
+                )
                 return _build_message_record(
                     session_id=session_id,
                     uuid=f"{session_id}-user-{event.line_number}",
@@ -357,9 +365,7 @@ def parse_codex_session_directory(
             errors.append(f"{file_path.name}: {exc}")
 
     if not sessions and errors:
-        raise SessionParseError(
-            "Failed to parse any codex sessions. Errors:\n" + "\n".join(errors)
-        )
+        raise SessionParseError("Failed to parse any codex sessions. Errors:\n" + "\n".join(errors))
     return ParsedSessionData(
         sessions=sessions,
         source_path=str(directory),

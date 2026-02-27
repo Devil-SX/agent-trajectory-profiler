@@ -41,18 +41,11 @@ class TestFullStackSessionWorkflow:
             api_session = detail_response.json()["session"]
 
             # Verify metadata consistency
+            assert api_session["metadata"]["session_id"] == parsed_session.metadata.session_id
             assert (
-                api_session["metadata"]["session_id"]
-                == parsed_session.metadata.session_id
+                api_session["metadata"]["total_messages"] == parsed_session.metadata.total_messages
             )
-            assert (
-                api_session["metadata"]["total_messages"]
-                == parsed_session.metadata.total_messages
-            )
-            assert (
-                api_session["metadata"]["total_tokens"]
-                == parsed_session.metadata.total_tokens
-            )
+            assert api_session["metadata"]["total_tokens"] == parsed_session.metadata.total_tokens
 
     def test_file_to_statistics_end_to_end(
         self, test_client: TestClient, sample_session_file: Path
@@ -160,11 +153,7 @@ class TestFullStackDataIntegrity:
             # Verify individual tool statistics
             for tool_stat in direct_stats.tool_calls:
                 api_tool = next(
-                    (
-                        t
-                        for t in api_stats["tool_calls"]
-                        if t["tool_name"] == tool_stat.tool_name
-                    ),
+                    (t for t in api_stats["tool_calls"] if t["tool_name"] == tool_stat.tool_name),
                     None,
                 )
                 if api_tool:
@@ -176,9 +165,7 @@ class TestFullStackDataIntegrity:
 class TestFullStackErrorHandling:
     """Tests for error handling across the full stack."""
 
-    def test_corrupt_file_handling(
-        self, temp_session_dir: Path, test_client: TestClient
-    ) -> None:
+    def test_corrupt_file_handling(self, temp_session_dir: Path, test_client: TestClient) -> None:
         """Test that corrupt files are handled gracefully."""
         # Create a corrupt file
         corrupt_file = temp_session_dir / "corrupt.jsonl"
@@ -248,9 +235,7 @@ class TestFullStackPerformance:
 class TestFullStackCompleteScenarios:
     """Complete end-to-end scenario tests."""
 
-    def test_new_user_viewing_sessions_scenario(
-        self, test_client: TestClient
-    ) -> None:
+    def test_new_user_viewing_sessions_scenario(self, test_client: TestClient) -> None:
         """Simulate a new user viewing sessions for the first time."""
         # Step 1: User hits the health endpoint
         health_response = test_client.get("/health")
@@ -269,14 +254,10 @@ class TestFullStackCompleteScenarios:
             assert detail_response.status_code == 200
 
             # Step 4: User views statistics
-            stats_response = test_client.get(
-                f"/api/sessions/{first_session_id}/statistics"
-            )
+            stats_response = test_client.get(f"/api/sessions/{first_session_id}/statistics")
             assert stats_response.status_code == 200
 
-    def test_analytics_workflow_scenario(
-        self, test_client: TestClient
-    ) -> None:
+    def test_analytics_workflow_scenario(self, test_client: TestClient) -> None:
         """Simulate user analyzing session statistics."""
         # Get all sessions
         list_response = test_client.get("/api/sessions")
@@ -292,9 +273,7 @@ class TestFullStackCompleteScenarios:
                 session_id = session_summary["session_id"]
 
                 # Get detailed statistics
-                stats_response = test_client.get(
-                    f"/api/sessions/{session_id}/statistics"
-                )
+                stats_response = test_client.get(f"/api/sessions/{session_id}/statistics")
                 if stats_response.status_code == 200:
                     stats = stats_response.json()["statistics"]
                     total_tokens += stats["total_tokens"]
@@ -303,9 +282,7 @@ class TestFullStackCompleteScenarios:
             # Should have accumulated some data
             assert total_messages > 0
 
-    def test_session_comparison_scenario(
-        self, test_client: TestClient
-    ) -> None:
+    def test_session_comparison_scenario(self, test_client: TestClient) -> None:
         """Simulate user comparing multiple sessions."""
         # Get all sessions
         list_response = test_client.get("/api/sessions")
@@ -318,9 +295,7 @@ class TestFullStackCompleteScenarios:
 
             for i in range(min(2, len(sessions))):
                 session_id = sessions[i]["session_id"]
-                stats_response = test_client.get(
-                    f"/api/sessions/{session_id}/statistics"
-                )
+                stats_response = test_client.get(f"/api/sessions/{session_id}/statistics")
                 if stats_response.status_code == 200:
                     session_stats.append(stats_response.json()["statistics"])
 

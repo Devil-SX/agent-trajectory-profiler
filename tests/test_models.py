@@ -515,9 +515,7 @@ class TestSession:
             start_time=datetime.now(timezone.utc),
             parent_message_uuid="parent",
         )
-        session = Session(
-            metadata=metadata, messages=[msg], subagent_sessions=[subagent]
-        )
+        session = Session(metadata=metadata, messages=[msg], subagent_sessions=[subagent])
         found = session.get_subagent_by_id("explore-123")
         assert found is not None
         assert found.agent_id == "explore-123"
@@ -546,9 +544,7 @@ class TestParsedSessionData:
             type=MessageType.USER,
         )
         session = Session(metadata=metadata, messages=[msg])
-        parsed = ParsedSessionData(
-            sessions=[session], source_path="/home/user/.claude/projects"
-        )
+        parsed = ParsedSessionData(sessions=[session], source_path="/home/user/.claude/projects")
         assert parsed.session_count == 1
         assert parsed.total_messages == 1
 
@@ -584,9 +580,7 @@ class TestParsedSessionData:
         )
         session1 = Session(metadata=metadata1, messages=[msg1])
         session2 = Session(metadata=metadata2, messages=[msg2])
-        parsed = ParsedSessionData(
-            sessions=[session1, session2], source_path="/test"
-        )
+        parsed = ParsedSessionData(sessions=[session1, session2], source_path="/test")
         assert parsed.session_count == 2
         assert parsed.total_messages == 2
         assert parsed.total_tokens == 1500
