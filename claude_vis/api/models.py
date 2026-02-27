@@ -58,12 +58,47 @@ class SessionStatisticsResponse(BaseModel):
     statistics: SessionStatistics
 
 
+class SyncEcosystemDetail(BaseModel):
+    """Per-ecosystem sync detail."""
+
+    ecosystem: str
+    files_scanned: int
+    file_size_bytes: int
+    parsed: int
+    skipped: int
+    errors: int
+
+
+class SyncRunDetail(BaseModel):
+    """Detail payload for sync execution status and results."""
+
+    status: Literal["idle", "running", "completed", "failed", "already_running"]
+    trigger: Literal["startup", "manual", "refresh"]
+    started_at: str | None = None
+    finished_at: str | None = None
+    parsed: int = 0
+    skipped: int = 0
+    errors: int = 0
+    total_files_scanned: int = 0
+    total_file_size_bytes: int = 0
+    ecosystems: list[SyncEcosystemDetail] = Field(default_factory=list)
+    error_samples: list[str] = Field(default_factory=list)
+
+
+class SyncTriggerRequest(BaseModel):
+    """Request model for POST /api/sync/run."""
+
+    force: bool = False
+
+
 class SyncStatusResponse(BaseModel):
     """Response model for GET /api/sync/status."""
 
     total_files: int
     total_sessions: int
     last_parsed_at: str | None = None
+    sync_running: bool = False
+    last_sync: SyncRunDetail | None = None
 
 
 class ErrorResponse(BaseModel):

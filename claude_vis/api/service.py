@@ -11,7 +11,7 @@ import json
 import math
 import sqlite3
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from statistics import mean, median
 from typing import Any, Literal, cast
@@ -75,6 +75,9 @@ class SessionService:
         self._repo: SessionRepository | None = None
         self._sessions: dict[str, Session] = {}
         self._session_ecosystem: dict[str, str] = {}
+        self._sync_lock = asyncio.Lock()
+        self._sync_running = False
+        self._last_sync_detail: dict[str, Any] | None = None
         self._initialized = False
 
     def _sync_targets(self) -> list[tuple[str, Path]]:
@@ -87,7 +90,8 @@ class SessionService:
         """
         Initialize the service.
 
-        Opens the DB and runs an auto-sync if the DB is empty.
+        Opens the DB and runs an incremental auto-sync for all supported
+        ecosystems.
         """
         try:
             self._conn = get_connection(self._db_path)
@@ -96,9 +100,8 @@ class SessionService:
             self._conn = None
             self._repo = None
 
-        # If DB is empty, auto-sync from disk
-        if self._repo is not None and self._repo.count_sessions() == 0:
-            await self._auto_sync()
+        if self._repo is not None:
+            await self._auto_sync(trigger="startup")
 
         # Fallback: if still no DB or DB is empty, load in-memory
         if self._repo is None or self._repo.count_sessions() == 0:
@@ -106,28 +109,165 @@ class SessionService:
 
         self._initialized = True
 
-    async def _auto_sync(self) -> None:
-        """Run sync engine to populate DB from disk."""
+    def _configure_parser(self, parser: Any) -> Any:
+        """Apply runtime threshold configuration to a parser instance."""
+        if hasattr(parser, "inactivity_threshold"):
+            parser.inactivity_threshold = self._inactivity_threshold  # type: ignore[attr-defined]
+        if hasattr(parser, "model_timeout_threshold"):
+            parser.model_timeout_threshold = self._model_timeout_threshold  # type: ignore[attr-defined]
+        return parser
+
+    @staticmethod
+    def _scan_files_for_stats(files: list[Path]) -> tuple[int, int]:
+        """Return number of files and cumulative file size."""
+        total_size = 0
+        for file_path in files:
+            try:
+                total_size += file_path.stat().st_size
+            except OSError:
+                continue
+        return len(files), total_size
+
+    async def _run_sync_cycle(self, *, force: bool, trigger: str) -> dict[str, Any]:
+        """Run one sync cycle across all ecosystems and return detailed stats."""
         if self._repo is None:
-            return
+            now = datetime.now(timezone.utc).isoformat()
+            detail = {
+                "status": "idle",
+                "trigger": trigger,
+                "started_at": now,
+                "finished_at": now,
+                "parsed": 0,
+                "skipped": 0,
+                "errors": 0,
+                "total_files_scanned": 0,
+                "total_file_size_bytes": 0,
+                "ecosystems": [],
+                "error_samples": [],
+            }
+            self._last_sync_detail = detail
+            return detail
 
         loop = asyncio.get_event_loop()
+        started_at = datetime.now(timezone.utc).isoformat()
+        detail: dict[str, Any] = {
+            "status": "running",
+            "trigger": trigger,
+            "started_at": started_at,
+            "finished_at": None,
+            "parsed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "total_files_scanned": 0,
+            "total_file_size_bytes": 0,
+            "ecosystems": [],
+            "error_samples": [],
+        }
+
         for ecosystem, path in self._sync_targets():
+            eco_detail = {
+                "ecosystem": ecosystem,
+                "files_scanned": 0,
+                "file_size_bytes": 0,
+                "parsed": 0,
+                "skipped": 0,
+                "errors": 0,
+            }
+
             if not path.exists():
+                detail["ecosystems"].append(eco_detail)
                 continue
+
             try:
                 parser = get_parser(ecosystem)
             except KeyError:
+                eco_detail["errors"] = 1
+                detail["errors"] = int(detail["errors"]) + 1
+                detail["error_samples"].append(f"{ecosystem}: parser not registered")
+                detail["ecosystems"].append(eco_detail)
                 continue
 
-            if hasattr(parser, "inactivity_threshold"):
-                parser.inactivity_threshold = self._inactivity_threshold  # type: ignore[attr-defined]
-            if hasattr(parser, "model_timeout_threshold"):
-                parser.model_timeout_threshold = self._model_timeout_threshold  # type: ignore[attr-defined]
+            parser = self._configure_parser(parser)
+
+            try:
+                files = await loop.run_in_executor(None, parser.find_session_files, path)
+            except SessionParseError as exc:
+                eco_detail["errors"] = 1
+                detail["errors"] = int(detail["errors"]) + 1
+                detail["error_samples"].append(f"{ecosystem}: {exc}")
+                detail["ecosystems"].append(eco_detail)
+                continue
+
+            file_count, file_size = self._scan_files_for_stats(files)
+            eco_detail["files_scanned"] = file_count
+            eco_detail["file_size_bytes"] = file_size
+            detail["total_files_scanned"] = int(detail["total_files_scanned"]) + file_count
+            detail["total_file_size_bytes"] = int(detail["total_file_size_bytes"]) + file_size
 
             engine = SyncEngine(self._repo, parser)
-            _sync = functools.partial(engine.sync, path)
-            await loop.run_in_executor(None, _sync)
+            sync_task = functools.partial(engine.sync, path, force=force)
+            result = await loop.run_in_executor(None, sync_task)
+            eco_detail["parsed"] = result.parsed
+            eco_detail["skipped"] = result.skipped
+            eco_detail["errors"] = len(result.errors)
+            detail["parsed"] = int(detail["parsed"]) + result.parsed
+            detail["skipped"] = int(detail["skipped"]) + result.skipped
+            detail["errors"] = int(detail["errors"]) + len(result.errors)
+            if result.errors:
+                detail["error_samples"].extend(
+                    [f"{ecosystem}: {error}" for error in result.errors[:5]]
+                )
+            detail["ecosystems"].append(eco_detail)
+
+        detail["finished_at"] = datetime.now(timezone.utc).isoformat()
+        detail["status"] = "failed" if int(detail["errors"]) > 0 else "completed"
+        self._last_sync_detail = detail
+        return detail
+
+    async def _auto_sync(self, *, trigger: str = "refresh") -> dict[str, Any]:
+        """Run incremental sync and store detailed status."""
+        self._sync_running = True
+        try:
+            return await self._run_sync_cycle(force=False, trigger=trigger)
+        finally:
+            self._sync_running = False
+
+    async def trigger_sync(self, *, force: bool = False) -> dict[str, Any]:
+        """
+        Trigger manual sync from API.
+
+        Returns:
+            Sync detail dict. If a sync is already in progress, returns
+            status=already_running with the latest known detail.
+        """
+        if self._repo is None:
+            return {
+                "status": "idle",
+                "trigger": "manual",
+                "started_at": None,
+                "finished_at": None,
+                "parsed": 0,
+                "skipped": 0,
+                "errors": 0,
+                "total_files_scanned": 0,
+                "total_file_size_bytes": 0,
+                "ecosystems": [],
+                "error_samples": ["database unavailable"],
+            }
+
+        if self._sync_lock.locked():
+            detail = dict(self._last_sync_detail or {})
+            detail["status"] = "already_running"
+            if "trigger" not in detail:
+                detail["trigger"] = "manual"
+            return detail
+
+        async with self._sync_lock:
+            self._sync_running = True
+            try:
+                return await self._run_sync_cycle(force=force, trigger="manual")
+            finally:
+                self._sync_running = False
 
     async def _load_sessions_in_memory(self) -> None:
         """Legacy fallback: load all sessions into memory."""
@@ -140,14 +280,9 @@ class SessionService:
                 if not path.exists():
                     continue
                 try:
-                    parser = get_parser(ecosystem)
+                    parser = self._configure_parser(get_parser(ecosystem))
                 except KeyError:
                     continue
-
-                if hasattr(parser, "inactivity_threshold"):
-                    parser.inactivity_threshold = self._inactivity_threshold  # type: ignore[attr-defined]
-                if hasattr(parser, "model_timeout_threshold"):
-                    parser.model_timeout_threshold = self._model_timeout_threshold  # type: ignore[attr-defined]
 
                 try:
                     files = await loop.run_in_executor(None, parser.find_session_files, path)
@@ -182,7 +317,7 @@ class SessionService:
     async def refresh_sessions(self) -> None:
         """Re-sync from disk."""
         if self._repo is not None:
-            await self._auto_sync()
+            await self._auto_sync(trigger="refresh")
         else:
             await self._load_sessions_in_memory()
 
@@ -1090,8 +1225,28 @@ class SessionService:
 
     def get_sync_status(self) -> dict:
         """Return sync status info for the /api/sync/status endpoint."""
+        last_sync = self._last_sync_detail or {
+            "status": "idle",
+            "trigger": "startup",
+            "started_at": None,
+            "finished_at": None,
+            "parsed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "total_files_scanned": 0,
+            "total_file_size_bytes": 0,
+            "ecosystems": [],
+            "error_samples": [],
+        }
+
         if self._repo is None:
-            return {"total_files": 0, "total_sessions": len(self._sessions), "last_parsed_at": None}
+            return {
+                "total_files": 0,
+                "total_sessions": len(self._sessions),
+                "last_parsed_at": None,
+                "sync_running": self._sync_running,
+                "last_sync": last_sync,
+            }
 
         total_sessions = self._repo.count_sessions()
         conn = self._repo._conn
@@ -1104,6 +1259,8 @@ class SessionService:
             "total_files": total_files,
             "total_sessions": total_sessions,
             "last_parsed_at": last_parsed_at,
+            "sync_running": self._sync_running,
+            "last_sync": last_sync,
         }
 
     @property

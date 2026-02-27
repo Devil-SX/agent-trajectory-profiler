@@ -27,6 +27,40 @@ export interface SessionListResponse {
   total_pages: number;
 }
 
+export interface SyncEcosystemDetail {
+  ecosystem: string;
+  files_scanned: number;
+  file_size_bytes: number;
+  parsed: number;
+  skipped: number;
+  errors: number;
+}
+
+export type SyncRunState = 'idle' | 'running' | 'completed' | 'failed' | 'already_running';
+export type SyncTrigger = 'startup' | 'manual' | 'refresh';
+
+export interface SyncRunDetail {
+  status: SyncRunState;
+  trigger: SyncTrigger;
+  started_at: string | null;
+  finished_at: string | null;
+  parsed: number;
+  skipped: number;
+  errors: number;
+  total_files_scanned: number;
+  total_file_size_bytes: number;
+  ecosystems: SyncEcosystemDetail[];
+  error_samples: string[];
+}
+
+export interface SyncStatusResponse {
+  total_files: number;
+  total_sessions: number;
+  last_parsed_at: string | null;
+  sync_running: boolean;
+  last_sync: SyncRunDetail | null;
+}
+
 export interface ErrorResponse {
   error: string;
   detail?: string;

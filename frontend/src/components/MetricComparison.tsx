@@ -86,8 +86,6 @@ const formatDuration = (seconds: number | null): string => {
 };
 
 export function MetricComparison({
-  sessionAId: _sessionAId,
-  sessionBId: _sessionBId,
   statisticsA,
   statisticsB,
 }: MetricComparisonProps) {

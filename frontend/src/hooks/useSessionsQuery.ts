@@ -2,14 +2,21 @@
  * React Query hooks for session data with caching and optimistic updates.
  */
 
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import {
   fetchAnalyticsDistribution,
   fetchAnalyticsOverview,
   fetchAnalyticsTimeseries,
+  fetchSyncStatus,
   fetchSessions,
   fetchSessionDetail,
   fetchSessionStatistics,
+  triggerSync,
 } from '../api/sessions';
 import type {
   AnalyticsDimension,
@@ -17,6 +24,8 @@ import type {
   AnalyticsInterval,
   AnalyticsOverviewResponse,
   AnalyticsTimeseriesResponse,
+  SyncRunDetail,
+  SyncStatusResponse,
   SessionListResponse,
   SessionDetailResponse,
   SessionStatisticsResponse,
@@ -49,6 +58,7 @@ export const sessionKeys = {
     endDate: string | null,
   ) =>
     [...sessionKeys.analytics(), 'timeseries', { interval, startDate, endDate }] as const,
+  syncStatus: () => [...sessionKeys.all, 'sync-status'] as const,
 };
 
 /**
@@ -136,5 +146,34 @@ export function useAnalyticsTimeseriesQuery(
     queryKey: sessionKeys.analyticsTimeseries(interval, startDate, endDate),
     queryFn: () => fetchAnalyticsTimeseries(interval, startDate, endDate),
     staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+/**
+ * Hook to fetch synchronization status.
+ */
+export function useSyncStatusQuery(): UseQueryResult<SyncStatusResponse, Error> {
+  return useQuery({
+    queryKey: sessionKeys.syncStatus(),
+    queryFn: fetchSyncStatus,
+    staleTime: 15 * 1000,
+    refetchInterval: 15 * 1000,
+  });
+}
+
+/**
+ * Hook to trigger manual synchronization.
+ */
+export function useRunSyncMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<SyncRunDetail, Error, { force?: boolean }>({
+    mutationFn: async ({ force = false }) => triggerSync(force),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: sessionKeys.syncStatus() }),
+        queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
+      ]);
+    },
   });
 }

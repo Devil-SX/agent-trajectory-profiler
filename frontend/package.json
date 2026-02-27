@@ -13,6 +13,7 @@
     "type-check": "tsc --noEmit",
     "preview": "vite preview",
     "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep @smoke --project=chromium",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug"
   },

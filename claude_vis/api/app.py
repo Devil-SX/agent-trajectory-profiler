@@ -26,7 +26,9 @@ from claude_vis.api.models import (
     SessionDetailResponse,
     SessionListResponse,
     SessionStatisticsResponse,
+    SyncRunDetail,
     SyncStatusResponse,
+    SyncTriggerRequest,
 )
 from claude_vis.api.service import SessionService
 
@@ -360,7 +362,7 @@ async def get_analytics_overview(
 )
 async def get_analytics_distributions(
     response: Response,
-    dimension: AnalyticsDimension = Query(
+    dimension: AnalyticsDimension = Query(  # noqa: B008
         default="bottleneck",
         description=(
             "Distribution dimension: bottleneck|project|branch|automation_band|tool|"
@@ -442,11 +444,28 @@ async def sync_status() -> SyncStatusResponse:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
     info = session_service.get_sync_status()
-    return SyncStatusResponse(
-        total_files=info["total_files"],
-        total_sessions=info["total_sessions"],
-        last_parsed_at=info["last_parsed_at"],
-    )
+    return SyncStatusResponse(**info)
+
+
+@app.post(
+    "/api/sync/run",
+    response_model=SyncRunDetail,
+    tags=["Sync"],
+    summary="Trigger sync",
+    description="Trigger a manual synchronization run and return execution details.",
+)
+async def run_sync(
+    payload: SyncTriggerRequest | None = None,
+) -> SyncRunDetail:
+    """Trigger manual DB sync and return detailed results."""
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    if payload is None:
+        payload = SyncTriggerRequest()
+
+    detail = await session_service.trigger_sync(force=payload.force)
+    return SyncRunDetail(**detail)
 
 
 @app.exception_handler(Exception)

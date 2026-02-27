@@ -56,6 +56,46 @@ class TestAPIHealthEndpoints:
         assert data["sessions_loaded"] >= 0
 
 
+class TestSyncAPI:
+    """Tests for sync status and manual trigger endpoints."""
+
+    def test_sync_status_exposes_detailed_fields(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/sync/status")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "total_files" in data
+        assert "total_sessions" in data
+        assert "last_parsed_at" in data
+        assert "sync_running" in data
+        assert "last_sync" in data
+
+        last_sync = data["last_sync"]
+        assert "status" in last_sync
+        assert "trigger" in last_sync
+        assert "parsed" in last_sync
+        assert "skipped" in last_sync
+        assert "errors" in last_sync
+        assert "total_files_scanned" in last_sync
+        assert "total_file_size_bytes" in last_sync
+        assert "ecosystems" in last_sync
+        assert isinstance(last_sync["ecosystems"], list)
+
+    def test_manual_sync_endpoint_returns_run_detail(self, test_client: TestClient) -> None:
+        response = test_client.post("/api/sync/run", json={"force": False})
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["status"] in {"completed", "failed", "already_running", "idle", "running"}
+        assert data["trigger"] == "manual"
+        assert "parsed" in data
+        assert "skipped" in data
+        assert "errors" in data
+        assert "total_files_scanned" in data
+        assert "total_file_size_bytes" in data
+        assert "ecosystems" in data
+
+
 class TestSessionListAPI:
     """Tests for session listing API endpoint."""
 

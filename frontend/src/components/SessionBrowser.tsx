@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { useSessionsQuery } from '../hooks/useSessionsQuery';
+import { useRunSyncMutation, useSessionsQuery, useSyncStatusQuery } from '../hooks/useSessionsQuery';
 import type { SessionSummary } from '../types/session';
 import {
   SessionFilter,
@@ -22,6 +22,7 @@ import {
 } from './SessionFilter';
 import type { DateRange } from './DateRangePicker';
 import { SessionListView } from './SessionListView';
+import { SyncControl } from './SyncControl';
 import './SessionBrowser.css';
 
 interface SessionBrowserProps {
@@ -61,6 +62,8 @@ export function SessionBrowser({
     dateRange.start_date,
     dateRange.end_date
   );
+  const syncStatusQuery = useSyncStatusQuery();
+  const runSyncMutation = useRunSyncMutation();
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     controlledSelectedSessionId
@@ -203,111 +206,137 @@ export function SessionBrowser({
 
   const showComparison = onComparisonSessionChange !== undefined;
 
-  if (loading) {
-    return (
-      <div className="session-browser loading">
-        <div className="loading-container">
-          <p>Loading sessions...</p>
-        </div>
-      </div>
+  const handleRunSync = () => {
+    runSyncMutation.mutate(
+      { force: false },
+      {
+        onSuccess: (result) => {
+          if (result.status === 'already_running') {
+            toast('Sync is already running. Please wait for completion.');
+            return;
+          }
+          toast.success(
+            `Sync complete: parsed ${result.parsed}, skipped ${result.skipped}, errors ${result.errors}.`
+          );
+        },
+        onError: (err) => {
+          toast.error(`Failed to run sync: ${err.message}`);
+        },
+      }
     );
-  }
+  };
 
-  if (error) {
-    return (
-      <div className="session-browser error">
-        <div className="error-container">
-          <p className="error-message">Error: {error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (sessions.length === 0) {
-    return (
-      <div className="session-browser empty">
-        <div className="empty-container">
-          <p>No sessions available</p>
-        </div>
-      </div>
-    );
-  }
+  const browserStateClass = loading
+    ? 'loading'
+    : error
+      ? 'error'
+      : sessions.length === 0
+        ? 'empty'
+        : '';
 
   return (
-    <div className="session-browser">
+    <div className={`session-browser ${browserStateClass}`.trim()}>
       <div className="session-browser-container">
-        <div className="session-browser-filter">
-          <SessionFilter
-            onSearchChange={setSearchQuery}
-            onSortChange={setSortBy}
-            onBottleneckFilterChange={setBottleneckFilter}
-            onDateRangeChange={setDateRange}
-            searchQuery={searchQuery}
-            sortBy={sortBy}
-            bottleneckFilter={bottleneckFilter}
-            dateRange={dateRange}
-          />
-        </div>
-
-        <div className="session-browser-list">
-          <SessionListView
-            sessions={filteredAndSortedSessions}
-            selectedId={activeSessionId}
-            onSelect={handleSessionSelect}
-            viewMode={viewMode}
-          />
-        </div>
-
-        <div className="session-browser-actions">
-          <div className="session-browser-meta">
-            <div className="session-view-toggle" role="group" aria-label="Session view mode">
-              <button
-                className={`session-view-toggle__button ${viewMode === 'cards' ? 'active' : ''}`}
-                type="button"
-                onClick={() => setViewMode('cards')}
-                aria-pressed={viewMode === 'cards'}
-              >
-                Card View
-              </button>
-              <button
-                className={`session-view-toggle__button ${viewMode === 'table' ? 'active' : ''}`}
-                type="button"
-                onClick={() => setViewMode('table')}
-                aria-pressed={viewMode === 'table'}
-              >
-                Table View
-              </button>
-            </div>
-            <div className="session-count">
-              {filteredAndSortedSessions.length} of {sessions.length} sessions
-            </div>
+        <SyncControl
+          status={syncStatusQuery.data}
+          isLoading={syncStatusQuery.isLoading}
+          isSyncing={runSyncMutation.isPending}
+          onRunSync={handleRunSync}
+        />
+        {loading && (
+          <div className="loading-container">
+            <p>Loading sessions...</p>
           </div>
+        )}
 
-          {showComparison && (
-            <div className="comparison-actions">
-              <button
-                className={`compare-button ${isPickingComparison ? 'compare-button--active' : ''}`}
-                type="button"
-                onClick={() => setIsPickingComparison((prev) => !prev)}
-              >
-                {isPickingComparison ? 'Cancel Compare Pick' : 'Pick Comparison Session'}
-              </button>
+        {!loading && error && (
+          <div className="error-container">
+            <p className="error-message">Error: {error}</p>
+          </div>
+        )}
 
-              <button
-                className="compare-button compare-button--secondary"
-                type="button"
-                onClick={() => onComparisonSessionChange?.(null)}
-                disabled={!comparisonSessionId}
-              >
-                Clear Comparison
-              </button>
+        {!loading && !error && sessions.length === 0 && (
+          <div className="empty-container">
+            <p>No sessions available</p>
+          </div>
+        )}
 
-              <span className="comparison-state">
-                Compare: {shortId(comparisonSessionId)}
-              </span>
+        {!loading && !error && sessions.length > 0 && (
+          <>
+            <div className="session-browser-filter">
+              <SessionFilter
+                onSearchChange={setSearchQuery}
+                onSortChange={setSortBy}
+                onBottleneckFilterChange={setBottleneckFilter}
+                onDateRangeChange={setDateRange}
+                searchQuery={searchQuery}
+                sortBy={sortBy}
+                bottleneckFilter={bottleneckFilter}
+                dateRange={dateRange}
+              />
             </div>
-          )}
-        </div>
+
+            <div className="session-browser-list">
+              <SessionListView
+                sessions={filteredAndSortedSessions}
+                selectedId={activeSessionId}
+                onSelect={handleSessionSelect}
+                viewMode={viewMode}
+              />
+            </div>
+
+            <div className="session-browser-actions">
+              <div className="session-browser-meta">
+                <div className="session-view-toggle" role="group" aria-label="Session view mode">
+                  <button
+                    className={`session-view-toggle__button ${viewMode === 'cards' ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => setViewMode('cards')}
+                    aria-pressed={viewMode === 'cards'}
+                  >
+                    Card View
+                  </button>
+                  <button
+                    className={`session-view-toggle__button ${viewMode === 'table' ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => setViewMode('table')}
+                    aria-pressed={viewMode === 'table'}
+                  >
+                    Table View
+                  </button>
+                </div>
+                <div className="session-count">
+                  {filteredAndSortedSessions.length} of {sessions.length} sessions
+                </div>
+              </div>
+
+              {showComparison && (
+                <div className="comparison-actions">
+                  <button
+                    className={`compare-button ${isPickingComparison ? 'compare-button--active' : ''}`}
+                    type="button"
+                    onClick={() => setIsPickingComparison((prev) => !prev)}
+                  >
+                    {isPickingComparison ? 'Cancel Compare Pick' : 'Pick Comparison Session'}
+                  </button>
+
+                  <button
+                    className="compare-button compare-button--secondary"
+                    type="button"
+                    onClick={() => onComparisonSessionChange?.(null)}
+                    disabled={!comparisonSessionId}
+                  >
+                    Clear Comparison
+                  </button>
+
+                  <span className="comparison-state">
+                    Compare: {shortId(comparisonSessionId)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

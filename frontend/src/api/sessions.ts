@@ -8,6 +8,8 @@ import type {
   AnalyticsInterval,
   AnalyticsOverviewResponse,
   AnalyticsTimeseriesResponse,
+  SyncRunDetail,
+  SyncStatusResponse,
   SessionListResponse,
   SessionDetailResponse,
   SessionStatisticsResponse,
@@ -302,6 +304,42 @@ export async function fetchAnalyticsTimeseries(
   } catch (error) {
     if (import.meta.env.DEV) {
       console.error('Failed to fetch analytics timeseries:', error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch synchronization status and last-run details.
+ */
+export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/sync/status`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to fetch sync status:', error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Trigger manual synchronization.
+ */
+export async function triggerSync(force: boolean = false): Promise<SyncRunDetail> {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/sync/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ force }),
+    });
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to trigger sync:', error);
     }
     throw error;
   }

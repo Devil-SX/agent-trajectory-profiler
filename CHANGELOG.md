@@ -25,6 +25,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Trajectory file-size and character analytics (`character_breakdown`) for per-session statistics and cross-session aggregates.
 - User-efficiency yield ratios for tokens/chars (`user_yield_ratio_tokens`, `user_yield_ratio_chars`) with cross-session mean/median/p90 aggregates.
 - Model throughput metrics (`tok/s`) for average/read/output/cache rates plus cache-read/cache-creation splits at session and cross-session levels.
+- Sync control capability: new `POST /api/sync/run` endpoint plus expanded `GET /api/sync/status` payload with last-run detail (`parsed/skipped/errors`), per-ecosystem stats, and scanned file sizes.
+- Session browser sync panel with manual trigger button, last sync timestamp, and Claude/Codex breakdown cards.
+- Playwright smoke coverage for sync panel rendering and manual sync trigger flow (`tests/sync-control.spec.ts`).
+- CI frontend jobs (`frontend-static-checks`, `frontend-e2e-smoke`) and `npm run test:e2e:smoke` script.
 
 ### Changed
 
@@ -39,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Resource views now surface trajectory bytes and mixed-language character metrics (CJK/Latin plus user/model/tool attribution) in both session and cross-session dashboards.
 - Automation panels now expose per-session and aggregated token/char yield ratios to measure output efficiency per unit of user input.
 - Model analytics panels now expose mean/median/p90 throughput with explicit `tok/s` units and denominator semantics (model active time).
+- Session browser now renders sync controls across loading/error/empty/data states so sync remains accessible regardless list state.
 
 ## [0.6.0] - 2026-02-26
 
