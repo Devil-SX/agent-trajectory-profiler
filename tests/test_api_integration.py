@@ -245,6 +245,8 @@ class TestSessionStatisticsAPI:
             assert "total_output_tokens" in stats
             assert "trajectory_file_size_bytes" in stats
             assert "character_breakdown" in stats
+            assert "user_yield_ratio_tokens" in stats
+            assert "user_yield_ratio_chars" in stats
 
     def test_statistics_tool_call_data(self, test_client: TestClient) -> None:
         """Test that statistics include tool call information."""
@@ -293,6 +295,12 @@ class TestAnalyticsAPI:
         assert "active_time_ratio" in payload
         assert "total_trajectory_file_size_bytes" in payload
         assert "total_chars" in payload
+        assert "yield_ratio_tokens_mean" in payload
+        assert "yield_ratio_tokens_median" in payload
+        assert "yield_ratio_tokens_p90" in payload
+        assert "yield_ratio_chars_mean" in payload
+        assert "yield_ratio_chars_median" in payload
+        assert "yield_ratio_chars_p90" in payload
 
         start = date.fromisoformat(payload["start_date"])
         end = date.fromisoformat(payload["end_date"])
@@ -312,6 +320,8 @@ class TestAnalyticsAPI:
         assert payload["total_messages"] >= 1
         assert payload["total_tokens"] >= 1
         assert 0.0 <= payload["active_time_ratio"] <= 1.0
+        assert payload["yield_ratio_tokens_p90"] >= payload["yield_ratio_tokens_median"]
+        assert payload["yield_ratio_chars_p90"] >= payload["yield_ratio_chars_median"]
 
         active = (
             payload["model_time_seconds"]

@@ -192,6 +192,8 @@ export const mockSessionStatistics: SessionStatisticsResponse = {
       whitespace_chars: 1200,
       other_chars: 200,
     },
+    user_yield_ratio_tokens: 1.9,
+    user_yield_ratio_chars: 3.0,
     tool_calls: [
       {
         tool_name: 'Read',

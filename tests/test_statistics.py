@@ -344,6 +344,22 @@ class TestCalculateSessionStatistics:
         assert edit_tool is not None
         assert edit_tool.total_tokens == 180
 
+    def test_user_yield_ratios(
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
+    ) -> None:
+        """Token/character yield ratios should be computed with available denominators."""
+        file_path = temp_session_dir / "test-yield.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in sample_messages_with_tools:
+                f.write(json.dumps(data) + "\n")
+
+        messages = parse_jsonl_file(file_path)
+        stats = calculate_session_statistics(messages)
+
+        assert stats.user_yield_ratio_tokens == pytest.approx(2.0, abs=1e-6)
+        assert stats.user_yield_ratio_chars is not None
+        assert stats.user_yield_ratio_chars > 0
+
     def test_tool_error_records_are_categorized(
         self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:
@@ -418,6 +434,31 @@ class TestCalculateSessionStatistics:
         assert stats.tool_error_records[0].category == UNCATEGORIZED_ERROR
         assert stats.tool_error_records[0].matched_rule is None
         assert stats.tool_error_category_counts == {UNCATEGORIZED_ERROR: 1}
+
+    def test_user_yield_ratio_zero_denominator(self, temp_session_dir: Path) -> None:
+        """Yield ratios should be None when denominator inputs are absent."""
+        file_path = temp_session_dir / "yield-zero.jsonl"
+        messages = [
+            {
+                "type": "assistant",
+                "sessionId": "yield-zero",
+                "uuid": "msg-1",
+                "timestamp": "2026-02-03T13:15:17.231Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "output only"}],
+                    "usage": {"input_tokens": 0, "output_tokens": 20},
+                },
+            }
+        ]
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in messages:
+                f.write(json.dumps(data) + "\n")
+
+        parsed = parse_jsonl_file(file_path)
+        stats = calculate_session_statistics(parsed)
+        assert stats.user_yield_ratio_tokens is None
+        assert stats.user_yield_ratio_chars is None
 
     def test_session_duration(
         self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]

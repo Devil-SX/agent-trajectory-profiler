@@ -394,6 +394,8 @@ class SessionStatistics(BaseModel):
     cache_creation_tokens: int = 0
     trajectory_file_size_bytes: int = 0
     character_breakdown: CharacterBreakdown = Field(default_factory=CharacterBreakdown)
+    user_yield_ratio_tokens: float | None = None
+    user_yield_ratio_chars: float | None = None
 
     # Tool statistics
     tool_calls: list[ToolCallStatistics] = Field(default_factory=list)
