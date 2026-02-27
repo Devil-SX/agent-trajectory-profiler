@@ -241,6 +241,16 @@ export function CrossSessionOverview() {
             Input/Output: {formatNumber(overview.total_input_tokens)} /{' '}
             {formatNumber(overview.total_output_tokens)}
           </p>
+          <p>
+            Trajectory size: {formatNumber(overview.total_trajectory_file_size_bytes)}
+            {' '}
+            bytes
+          </p>
+          <p>
+            Chars (CJK/Latin): {formatNumber(overview.total_cjk_chars)}
+            {' / '}
+            {formatNumber(overview.total_latin_chars)}
+          </p>
         </article>
 
         <article className="kpi-card">

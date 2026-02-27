@@ -372,6 +372,14 @@ class SessionService:
                 total_output_tokens=0,
                 total_cache_read_tokens=0,
                 total_cache_creation_tokens=0,
+                total_trajectory_file_size_bytes=0,
+                total_chars=0,
+                total_user_chars=0,
+                total_model_chars=0,
+                total_tool_chars=0,
+                total_cjk_chars=0,
+                total_latin_chars=0,
+                total_other_chars=0,
                 avg_automation_ratio=0.0,
                 avg_session_duration_seconds=0.0,
                 model_time_seconds=0.0,
@@ -407,6 +415,14 @@ class SessionService:
         total_output_tokens = 0
         total_cache_read_tokens = 0
         total_cache_creation_tokens = 0
+        total_trajectory_file_size_bytes = 0
+        total_chars = 0
+        total_user_chars = 0
+        total_model_chars = 0
+        total_tool_chars = 0
+        total_cjk_chars = 0
+        total_latin_chars = 0
+        total_other_chars = 0
         model_time_seconds = 0.0
         tool_time_seconds = 0.0
         user_time_seconds = 0.0
@@ -451,6 +467,16 @@ class SessionService:
             total_output_tokens += int(stats.get("total_output_tokens") or 0)
             total_cache_read_tokens += int(stats.get("cache_read_tokens") or 0)
             total_cache_creation_tokens += int(stats.get("cache_creation_tokens") or 0)
+            total_trajectory_file_size_bytes += int(stats.get("trajectory_file_size_bytes") or 0)
+
+            char_stats = stats.get("character_breakdown") or {}
+            total_chars += int(char_stats.get("total_chars") or 0)
+            total_user_chars += int(char_stats.get("user_chars") or 0)
+            total_model_chars += int(char_stats.get("model_chars") or 0)
+            total_tool_chars += int(char_stats.get("tool_chars") or 0)
+            total_cjk_chars += int(char_stats.get("cjk_chars") or 0)
+            total_latin_chars += int(char_stats.get("latin_chars") or 0)
+            total_other_chars += int(char_stats.get("other_chars") or 0)
 
             time_breakdown = stats.get("time_breakdown") or {}
             model_time_seconds += float(time_breakdown.get("total_model_time_seconds") or 0.0)
@@ -548,6 +574,14 @@ class SessionService:
             total_output_tokens=total_output_tokens,
             total_cache_read_tokens=total_cache_read_tokens,
             total_cache_creation_tokens=total_cache_creation_tokens,
+            total_trajectory_file_size_bytes=total_trajectory_file_size_bytes,
+            total_chars=total_chars,
+            total_user_chars=total_user_chars,
+            total_model_chars=total_model_chars,
+            total_tool_chars=total_tool_chars,
+            total_cjk_chars=total_cjk_chars,
+            total_latin_chars=total_latin_chars,
+            total_other_chars=total_other_chars,
             avg_automation_ratio=mean(automation_values) if automation_values else 0.0,
             avg_session_duration_seconds=mean(duration_values) if duration_values else 0.0,
             model_time_seconds=model_time_seconds,

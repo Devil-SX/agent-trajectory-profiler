@@ -180,6 +180,18 @@ export const mockSessionStatistics: SessionStatisticsResponse = {
     total_output_tokens: 5000,
     cache_read_tokens: 2000,
     cache_creation_tokens: 500,
+    trajectory_file_size_bytes: 40960,
+    character_breakdown: {
+      total_chars: 24000,
+      user_chars: 6000,
+      model_chars: 14000,
+      tool_chars: 4000,
+      cjk_chars: 8000,
+      latin_chars: 14000,
+      digit_chars: 600,
+      whitespace_chars: 1200,
+      other_chars: 200,
+    },
     tool_calls: [
       {
         tool_name: 'Read',

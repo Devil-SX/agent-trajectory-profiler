@@ -1,0 +1,111 @@
+/**
+ * E2E tests for cross-session file size and character metrics.
+ */
+
+import { test, expect } from '@playwright/test';
+import { setupMockApi } from './fixtures/mockServer';
+
+test.describe('@full Cross Session Char Metrics', () => {
+  test('should render trajectory size and CJK/Latin character totals in overview', async ({ page }) => {
+    await setupMockApi(page);
+
+    await page.route(/\/api\/analytics\/overview(\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          start_date: '2026-02-20',
+          end_date: '2026-02-26',
+          total_sessions: 12,
+          total_messages: 540,
+          total_tokens: 320000,
+          total_tool_calls: 860,
+          total_input_tokens: 180000,
+          total_output_tokens: 140000,
+          total_cache_read_tokens: 22000,
+          total_cache_creation_tokens: 9000,
+          total_trajectory_file_size_bytes: 987654,
+          total_chars: 450000,
+          total_user_chars: 120000,
+          total_model_chars: 250000,
+          total_tool_chars: 80000,
+          total_cjk_chars: 90000,
+          total_latin_chars: 330000,
+          total_other_chars: 30000,
+          avg_automation_ratio: 2.5,
+          avg_session_duration_seconds: 4200,
+          model_time_seconds: 36000,
+          tool_time_seconds: 22000,
+          user_time_seconds: 14000,
+          inactive_time_seconds: 8000,
+          active_time_ratio: 0.8788,
+          model_timeout_count: 3,
+          bottleneck_distribution: [
+            { key: 'model', label: 'Model', count: 7, value: 7, percent: 58.3 },
+            { key: 'tool', label: 'Tool', count: 4, value: 4, percent: 33.3 },
+            { key: 'user', label: 'User', count: 1, value: 1, percent: 8.4 },
+          ],
+          top_projects: [],
+          top_tools: [],
+        }),
+      });
+    });
+
+    await page.route(/\/api\/analytics\/distributions(\?.*)?$/, async (route) => {
+      const url = route.request().url();
+      const payload = url.includes('dimension=session_token_share')
+        ? {
+            dimension: 'session_token_share',
+            start_date: '2026-02-20',
+            end_date: '2026-02-26',
+            total: 100,
+            buckets: [],
+          }
+        : {
+            dimension: 'automation_band',
+            start_date: '2026-02-20',
+            end_date: '2026-02-26',
+            total: 12,
+            buckets: [],
+          };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(payload),
+      });
+    });
+
+    await page.route(/\/api\/analytics\/timeseries(\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          interval: 'day',
+          start_date: '2026-02-20',
+          end_date: '2026-02-26',
+          points: [
+            {
+              period: '2026-02-20',
+              sessions: 2,
+              tokens: 43000,
+              tool_calls: 120,
+              avg_automation_ratio: 2.1,
+              avg_duration_seconds: 3900,
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Advanced Analytics' }).click();
+    await page.waitForSelector('.cross-session-overview', { timeout: 10000 });
+
+    await expect(page.locator('.kpi-card', { hasText: 'Token volume' })).toContainText(
+      'Trajectory size: 987,654 bytes'
+    );
+    await expect(page.locator('.kpi-card', { hasText: 'Token volume' })).toContainText(
+      'Chars (CJK/Latin): 90,000 / 330,000'
+    );
+  });
+});

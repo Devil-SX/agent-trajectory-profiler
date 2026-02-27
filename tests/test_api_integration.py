@@ -243,6 +243,8 @@ class TestSessionStatisticsAPI:
             assert "total_tokens" in stats
             assert "total_input_tokens" in stats
             assert "total_output_tokens" in stats
+            assert "trajectory_file_size_bytes" in stats
+            assert "character_breakdown" in stats
 
     def test_statistics_tool_call_data(self, test_client: TestClient) -> None:
         """Test that statistics include tool call information."""
@@ -289,6 +291,8 @@ class TestAnalyticsAPI:
         assert "total_tokens" in payload
         assert "bottleneck_distribution" in payload
         assert "active_time_ratio" in payload
+        assert "total_trajectory_file_size_bytes" in payload
+        assert "total_chars" in payload
 
         start = date.fromisoformat(payload["start_date"])
         end = date.fromisoformat(payload["end_date"])

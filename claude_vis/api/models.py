@@ -131,6 +131,14 @@ class AnalyticsOverviewResponse(BaseModel):
     total_output_tokens: int
     total_cache_read_tokens: int
     total_cache_creation_tokens: int
+    total_trajectory_file_size_bytes: int
+    total_chars: int
+    total_user_chars: int
+    total_model_chars: int
+    total_tool_chars: int
+    total_cjk_chars: int
+    total_latin_chars: int
+    total_other_chars: int
     avg_automation_ratio: float
     avg_session_duration_seconds: float
     model_time_seconds: float
