@@ -30,6 +30,7 @@ interface SessionBrowserProps {
   onComparisonSessionChange?: (sessionId: string | null) => void;
   selectedSessionId?: string | null;
   comparisonSessionId?: string | null;
+  autoSelectFirst?: boolean;
 }
 
 type SessionViewMode = 'cards' | 'table';
@@ -47,6 +48,7 @@ export function SessionBrowser({
   onComparisonSessionChange,
   selectedSessionId: controlledSelectedSessionId = null,
   comparisonSessionId,
+  autoSelectFirst = true,
 }: SessionBrowserProps) {
   const [page] = useState(1);
   const [pageSize] = useState(200);
@@ -117,6 +119,19 @@ export function SessionBrowser({
       return;
     }
 
+    if (!autoSelectFirst) {
+      if (controlledSelectedSessionId) {
+        const sessionExists = sessions.some(
+          (s) => s.session_id === controlledSelectedSessionId
+        );
+        if (sessionExists) {
+          setActiveSessionId(controlledSelectedSessionId);
+        }
+      }
+      initRef.current = true;
+      return;
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     const sessionIdParam = urlParams.get('session');
 
@@ -138,7 +153,7 @@ export function SessionBrowser({
     setActiveSessionId(initialSessionId);
     onSessionChange?.(initialSessionId);
     initRef.current = true;
-  }, [controlledSelectedSessionId, onSessionChange, sessions]);
+  }, [autoSelectFirst, controlledSelectedSessionId, onSessionChange, sessions]);
 
   // Filter and sort sessions
   const filteredAndSortedSessions = useMemo(() => {
@@ -182,7 +197,9 @@ export function SessionBrowser({
     if (filteredAndSortedSessions.length === 0) {
       if (activeSessionId) {
         setActiveSessionId(null);
-        onSessionChange?.(null);
+        if (autoSelectFirst) {
+          onSessionChange?.(null);
+        }
       }
       return;
     }
@@ -192,14 +209,18 @@ export function SessionBrowser({
     );
 
     if (!activeStillVisible) {
-      const nextSessionId = filteredAndSortedSessions[0].session_id;
-      setActiveSessionId(nextSessionId);
-      onSessionChange?.(nextSessionId);
-      if (initRef.current) {
-        toast('Selection adjusted to visible results after filtering.');
+      if (autoSelectFirst) {
+        const nextSessionId = filteredAndSortedSessions[0].session_id;
+        setActiveSessionId(nextSessionId);
+        onSessionChange?.(nextSessionId);
+        if (initRef.current) {
+          toast('Selection adjusted to visible results after filtering.');
+        }
+      } else {
+        setActiveSessionId(null);
       }
     }
-  }, [activeSessionId, filteredAndSortedSessions, onSessionChange]);
+  }, [activeSessionId, autoSelectFirst, filteredAndSortedSessions, onSessionChange]);
 
   const handleSessionSelect = (sessionId: string) => {
     const showComparison = onComparisonSessionChange !== undefined;

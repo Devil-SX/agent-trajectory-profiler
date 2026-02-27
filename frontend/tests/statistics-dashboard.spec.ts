@@ -8,6 +8,8 @@ import { setupMockApi } from './fixtures/mockServer';
 import { mockSessionStatistics } from './fixtures/mockData';
 
 async function openStatisticsTab(page: Page): Promise<void> {
+  await page.waitForSelector('.session-table tbody tr[data-session-id]', { timeout: 10000 });
+  await page.locator('.session-table tbody tr[data-session-id]').first().click();
   await page.waitForSelector('.tab-button', { timeout: 10000 });
   await page.getByRole('button', { name: 'Statistics' }).click();
   await page.waitForSelector('.statistics-dashboard', { timeout: 10000 });

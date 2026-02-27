@@ -69,6 +69,11 @@
   min-height: 0;
 }
 
+.main-content--overview {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .session-content {
   padding: 0;
   background-color: var(--color-surface);
@@ -143,9 +148,50 @@
   border-bottom-color: var(--color-accent);
 }
 
+.tab-button:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-muted);
+  opacity: 0.65;
+}
+
 .tab-button.mobile-sidebar-toggle {
   margin-left: auto;
   font-size: 0.9rem;
+}
+
+.detail-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.detail-back-button {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+}
+
+.detail-back-button:hover {
+  background: var(--color-surface-muted);
+}
+
+.detail-session-caption {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.detail-session-caption code {
+  color: var(--color-text-primary);
+  background: var(--color-surface-muted);
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
 }
 
 /* Sidebar container for mobile drawer */

@@ -40,6 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Theme-mode persistence and runtime resolution (`system` / `light` / `dark`) via app-level controls and `localStorage`.
 - New Playwright theme regressions (`@visual`) with light and dark baselines, plus accessibility assertions (`@a11y`) for keyboard focus visibility and text contrast.
 - Nightly frontend workflow (`frontend-e2e-full`, `frontend-visual-regression`, `frontend-a11y`) to enforce non-smoke quality gates.
+- Two-layer navigation E2E coverage for overview-first flow, table drill-down, browser back/forward, and URL deep-link restore (`tests/tab-navigation.spec.ts`).
 
 ### Changed
 
@@ -66,6 +67,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session and cross-session UI copy now uses "Leverage" terminology, with a configurable code-capacity estimate card (assumption-based, non-exact).
 - Cross-session analytics now includes interactive multi-project comparison controls and a project swimlane heatmap with tooltip, no-data state, and large-project truncation hint.
 - Unified design-token theming across app shell and critical analytics surfaces (`App`, `SessionBrowser`, `StatisticsDashboard`, `CrossSessionOverview`) with consistent light/dark contrast behavior.
+- App information architecture now defaults to an overview layer (cross-session analytics + session table) and drills down to session detail via row click with explicit back navigation and URL state (`view`/`session`/`tab`).
 
 ### Fixed
 

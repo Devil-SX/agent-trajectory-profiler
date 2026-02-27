@@ -14,6 +14,12 @@ type SessionDetailTab = 'timeline' | 'statistics';
 type ThemeMode = 'system' | 'light' | 'dark';
 type ResolvedTheme = 'light' | 'dark';
 
+interface RouteState {
+  view: PrimaryView;
+  sessionId: string | null;
+  tab: SessionDetailTab;
+}
+
 const THEME_MODE_STORAGE_KEY = 'agent-vis:theme-mode';
 
 function readInitialThemeMode(): ThemeMode {
@@ -34,11 +40,66 @@ function readSystemThemePreference(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+function normalizeDetailTab(value: string | null): SessionDetailTab {
+  if (value === 'statistics') {
+    return 'statistics';
+  }
+  return 'timeline';
+}
+
+function readRouteState(): RouteState {
+  if (typeof window === 'undefined') {
+    return {
+      view: 'cross-session',
+      sessionId: null,
+      tab: 'timeline',
+    };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('session');
+  const tab = normalizeDetailTab(params.get('tab'));
+
+  if (sessionId) {
+    return {
+      view: 'session-detail',
+      sessionId,
+      tab,
+    };
+  }
+
+  return {
+    view: 'cross-session',
+    sessionId: null,
+    tab,
+  };
+}
+
+function buildRouteUrl(route: RouteState): string {
+  if (typeof window === 'undefined') {
+    return '/';
+  }
+
+  const params = new URLSearchParams();
+
+  if (route.view === 'session-detail' && route.sessionId) {
+    params.set('session', route.sessionId);
+    if (route.tab !== 'timeline') {
+      params.set('tab', route.tab);
+    }
+  } else {
+    params.set('view', 'overview');
+  }
+
+  const query = params.toString();
+  return query ? `${window.location.pathname}?${query}` : window.location.pathname;
+}
+
 function App() {
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [comparisonSessionId, setComparisonSessionId] = useState<string | null>(null);
-  const [primaryView, setPrimaryView] = useState<PrimaryView>('session-detail');
-  const [sessionDetailTab, setSessionDetailTab] = useState<SessionDetailTab>('timeline');
+  const initialRoute = readRouteState();
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialRoute.sessionId);
+  const [primaryView, setPrimaryView] = useState<PrimaryView>(initialRoute.view);
+  const [sessionDetailTab, setSessionDetailTab] = useState<SessionDetailTab>(initialRoute.tab);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(readInitialThemeMode);
@@ -46,6 +107,25 @@ function App() {
 
   const resolvedTheme: ResolvedTheme =
     themeMode === 'system' ? (systemPrefersDark ? 'dark' : 'light') : themeMode;
+
+  const applyRouteState = (next: RouteState, mode: 'push' | 'replace' = 'push') => {
+    setPrimaryView(next.view);
+    setSelectedSessionId(next.sessionId);
+    setSessionDetailTab(next.tab);
+
+    if (next.view !== 'session-detail' || next.tab !== 'timeline') {
+      setIsMobileSidebarOpen(false);
+    }
+
+    if (typeof window !== 'undefined') {
+      const nextUrl = buildRouteUrl(next);
+      if (mode === 'replace') {
+        window.history.replaceState(null, '', nextUrl);
+      } else {
+        window.history.pushState(null, '', nextUrl);
+      }
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -74,6 +154,30 @@ function App() {
   }, [themeMode]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const normalized = readRouteState();
+    const normalizedUrl = buildRouteUrl(normalized);
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (normalizedUrl !== currentUrl) {
+      window.history.replaceState(null, '', normalizedUrl);
+    }
+
+    const handlePopState = () => {
+      const next = readRouteState();
+      setPrimaryView(next.view);
+      setSelectedSessionId(next.sessionId);
+      setSessionDetailTab(next.tab);
+      setIsMobileSidebarOpen(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth <= 768);
     };
@@ -84,18 +188,36 @@ function App() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handleSessionChange = (sessionId: string | null) => {
-    setSelectedSessionId(sessionId);
-  };
+  const handleSessionOpenFromOverview = (sessionId: string | null) => {
+    if (!sessionId) {
+      return;
+    }
 
-  const handleComparisonSessionChange = (sessionId: string | null) => {
-    setComparisonSessionId(sessionId);
+    applyRouteState({
+      view: 'session-detail',
+      sessionId,
+      tab: 'timeline',
+    });
   };
 
   const handlePrimaryViewChange = (view: PrimaryView) => {
-    setPrimaryView(view);
-    if (view !== 'session-detail') {
-      setIsMobileSidebarOpen(false);
+    if (view === 'cross-session') {
+      applyRouteState(
+        {
+          view: 'cross-session',
+          sessionId: selectedSessionId,
+          tab: sessionDetailTab,
+        },
+      );
+      return;
+    }
+
+    if (selectedSessionId) {
+      applyRouteState({
+        view: 'session-detail',
+        sessionId: selectedSessionId,
+        tab: sessionDetailTab,
+      });
     }
   };
 
@@ -104,6 +226,23 @@ function App() {
     if (tab !== 'timeline') {
       setIsMobileSidebarOpen(false);
     }
+
+    if (primaryView === 'session-detail' && selectedSessionId && typeof window !== 'undefined') {
+      const url = buildRouteUrl({
+        view: 'session-detail',
+        sessionId: selectedSessionId,
+        tab,
+      });
+      window.history.replaceState(null, '', url);
+    }
+  };
+
+  const handleBackToOverview = () => {
+    applyRouteState({
+      view: 'cross-session',
+      sessionId: selectedSessionId,
+      tab: sessionDetailTab,
+    });
   };
 
   const showSessionDetail = primaryView === 'session-detail';
@@ -140,7 +279,7 @@ function App() {
         }}
       />
       <header>
-        <h1>Claude Code Session Visualizer</h1>
+        <h1>Agent Trajectory Visualizer</h1>
         <div className="header-controls">
           <label htmlFor="theme-mode-select">Theme</label>
           <select
@@ -156,95 +295,118 @@ function App() {
         </div>
       </header>
       <main>
-        <SessionBrowser
-          onSessionChange={handleSessionChange}
-          onComparisonSessionChange={showCrossSession ? handleComparisonSessionChange : undefined}
-          selectedSessionId={selectedSessionId}
-          comparisonSessionId={comparisonSessionId}
-        />
-
         <div className="view-tabs view-tabs--primary">
-          <button
-            className={`tab-button ${showSessionDetail ? 'active' : ''}`}
-            onClick={() => handlePrimaryViewChange('session-detail')}
-          >
-            Session Detail
-          </button>
           <button
             className={`tab-button ${showCrossSession ? 'active' : ''}`}
             onClick={() => handlePrimaryViewChange('cross-session')}
           >
             Cross-Session Analytics
           </button>
+          <button
+            className={`tab-button ${showSessionDetail ? 'active' : ''}`}
+            onClick={() => handlePrimaryViewChange('session-detail')}
+            disabled={!selectedSessionId}
+          >
+            Session Detail
+          </button>
         </div>
 
-        {showSessionDetail && (
-          <div className="view-tabs view-tabs--secondary">
-            <button
-              className={`tab-button ${sessionDetailTab === 'timeline' ? 'active' : ''}`}
-              onClick={() => handleSessionDetailTabChange('timeline')}
-            >
-              Timeline
-            </button>
-            <button
-              className={`tab-button ${sessionDetailTab === 'statistics' ? 'active' : ''}`}
-              onClick={() => handleSessionDetailTabChange('statistics')}
-            >
-              Statistics
-            </button>
-            {isMobile && showTimeline && selectedSessionId && (
-              <button
-                className="tab-button mobile-sidebar-toggle"
-                onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-                aria-label="Toggle sidebar"
-              >
-                {isMobileSidebarOpen ? '✕ Close' : '☰ Info'}
-              </button>
-            )}
+        {showCrossSession && (
+          <div className="main-content main-content--overview">
+            <SessionBrowser
+              onSessionChange={handleSessionOpenFromOverview}
+              selectedSessionId={selectedSessionId}
+              autoSelectFirst={false}
+            />
+
+            <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
+              <div className="session-content">
+                <AdvancedAnalytics sessionId={null} />
+              </div>
+            </Suspense>
           </div>
         )}
 
-        <div className="main-content">
-          {showCrossSession ? (
-            <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
-              <div className="session-content">
-                <AdvancedAnalytics
-                  sessionId={selectedSessionId}
-                  comparisonSessionId={comparisonSessionId}
-                />
-              </div>
-            </Suspense>
-          ) : selectedSessionId ? (
-            <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
-              {showTimeline && (
-                <div className="session-content">
-                  <MessageTimeline sessionId={selectedSessionId} autoScrollToBottom={true} />
-                </div>
+        {showSessionDetail && (
+          <>
+            <div className="detail-toolbar">
+              <button
+                type="button"
+                className="detail-back-button"
+                onClick={handleBackToOverview}
+              >
+                Back to Overview
+              </button>
+              {selectedSessionId && (
+                <p className="detail-session-caption">
+                  Session: <code>{selectedSessionId}</code>
+                </p>
               )}
-              {showStatistics && (
-                <div className="session-content">
-                  <StatisticsDashboard sessionId={selectedSessionId} />
-                </div>
-              )}
-              {showTimeline && (
-                <div className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''}`}>
-                  {isMobile && isMobileSidebarOpen && (
-                    <div
-                      className="sidebar-overlay"
-                      onClick={() => setIsMobileSidebarOpen(false)}
-                      aria-hidden="true"
-                    />
-                  )}
-                  <SessionMetadataSidebar sessionId={selectedSessionId} />
-                </div>
-              )}
-            </Suspense>
-          ) : (
-            <div className="no-session">
-              <p>No session selected for Session Detail. Cross-Session Analytics is still available.</p>
             </div>
-          )}
-        </div>
+
+            <div className="view-tabs view-tabs--secondary">
+              <button
+                className={`tab-button ${sessionDetailTab === 'timeline' ? 'active' : ''}`}
+                onClick={() => handleSessionDetailTabChange('timeline')}
+              >
+                Timeline
+              </button>
+              <button
+                className={`tab-button ${sessionDetailTab === 'statistics' ? 'active' : ''}`}
+                onClick={() => handleSessionDetailTabChange('statistics')}
+              >
+                Statistics
+              </button>
+              {isMobile && showTimeline && selectedSessionId && (
+                <button
+                  className="tab-button mobile-sidebar-toggle"
+                  onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+                  aria-label="Toggle sidebar"
+                >
+                  {isMobileSidebarOpen ? '✕ Close' : '☰ Info'}
+                </button>
+              )}
+            </div>
+
+            <div className="main-content">
+              {selectedSessionId ? (
+                <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
+                  {showTimeline && (
+                    <div className="session-content">
+                      <MessageTimeline sessionId={selectedSessionId} autoScrollToBottom={true} />
+                    </div>
+                  )}
+                  {showStatistics && (
+                    <div className="session-content">
+                      <StatisticsDashboard sessionId={selectedSessionId} />
+                    </div>
+                  )}
+                  {showTimeline && (
+                    <div className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''}`}>
+                      {isMobile && isMobileSidebarOpen && (
+                        <div
+                          className="sidebar-overlay"
+                          onClick={() => setIsMobileSidebarOpen(false)}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <SessionMetadataSidebar sessionId={selectedSessionId} />
+                    </div>
+                  )}
+                </Suspense>
+              ) : (
+                <div className="no-session">
+                  <div>
+                    <p>No session selected.</p>
+                    <button type="button" onClick={handleBackToOverview}>
+                      Return to Overview
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );

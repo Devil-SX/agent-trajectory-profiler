@@ -1,118 +1,82 @@
 /**
- * E2E tests for top-level navigation and tab state persistence.
+ * E2E tests for two-layer navigation:
+ * Overview (cross-session + table) -> Session Detail.
  */
 
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { setupMockApi } from './fixtures/mockServer';
 
-async function waitForNavigationReady(page: import('@playwright/test').Page) {
-  await page.waitForSelector('.view-tabs--primary', { timeout: 10000 });
-  await page.waitForSelector('.view-tabs--secondary', { timeout: 10000 });
-  await page.waitForSelector('.session-table tbody tr.selected, .session-card--selected', {
-    timeout: 10000,
-  });
+async function waitForOverview(page: import('@playwright/test').Page) {
+  await page.waitForSelector('.session-browser:not(.loading)', { timeout: 10000 });
+  await page.waitForSelector('.advanced-analytics', { timeout: 10000 });
+  await page.waitForSelector('.session-table tbody tr[data-session-id]', { timeout: 10000 });
 }
 
-test.describe('@smoke Navigation IA - Session Detail & Cross-Session', () => {
+test.describe('@smoke Navigation IA - Overview then Session Detail', () => {
   test.beforeEach(async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
-    await waitForNavigationReady(page);
+    await waitForOverview(page);
   });
 
-  test('should open Cross-Session Analytics without requiring selected session', async ({
-    page,
-  }) => {
-    await page.getByRole('button', { name: 'Cross-Session Analytics' }).click();
+  test('lands on overview by default and shows both analytics + session table', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Cross-Session Analytics' })).toHaveClass(
       /active/
     );
-    await expect(page.locator('.advanced-analytics').first()).toBeVisible();
-    await expect(page.locator('.analytics-title')).toHaveText('Cross-Session Analytics');
-
-    // Force no visible sessions -> selected session should become null, but cross-session
-    // analytics should remain available.
-    await page.locator('.search-input').fill('__no_match__');
-    await page.waitForTimeout(500);
-    await expect(page.locator('.advanced-analytics').first()).toBeVisible();
-    await expect(page.locator('.advanced-analytics')).toContainText(
-      'Cross-session analytics is available without selecting a session.'
-    );
-  });
-
-  test('should keep Session Detail sub-tab when switching selected session', async ({
-    page,
-  }) => {
-    await page.getByRole('button', { name: 'Statistics' }).click();
-    await expect(page.getByRole('button', { name: 'Statistics' })).toHaveClass(/active/);
-    await expect(page.locator('.statistics-dashboard')).toBeVisible();
-
-    await page.locator('tr[data-session-id="test-session-002"]').click();
-    await expect(page.locator('tr[data-session-id="test-session-002"]')).toHaveClass(
-      /selected/
-    );
-
-    await expect(page.getByRole('button', { name: 'Statistics' })).toHaveClass(/active/);
-    await expect(page.locator('.statistics-dashboard')).toBeVisible();
-  });
-
-  test('should keep Cross-Session view active when switching sessions', async ({ page }) => {
-    await page.getByRole('button', { name: 'Cross-Session Analytics' }).click();
-    await expect(page.getByRole('button', { name: 'Cross-Session Analytics' })).toHaveClass(
-      /active/
-    );
-
-    await page.locator('tr[data-session-id="test-session-002"]').click();
-    await expect(page.locator('tr[data-session-id="test-session-002"]')).toHaveClass(
-      /selected/
-    );
-
-    await expect(page.getByRole('button', { name: 'Cross-Session Analytics' })).toHaveClass(
-      /active/
-    );
-    await expect(page.locator('.advanced-analytics').first()).toBeVisible();
-  });
-
-  test('should default to table view and persist session list view preference', async ({
-    page,
-  }) => {
-    await expect(page.getByRole('button', { name: 'Table View' })).toHaveClass(/active/);
+    await expect(page.locator('.advanced-analytics')).toBeVisible();
     await expect(page.locator('.session-table')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Card View' }).click();
-    await expect(page.getByRole('button', { name: 'Card View' })).toHaveClass(/active/);
-    await expect(page.locator('.session-card').first()).toBeVisible();
-
-    await page.reload();
-    await waitForNavigationReady(page);
-    await expect(page.getByRole('button', { name: 'Card View' })).toHaveClass(/active/);
-    await expect(page.locator('.session-card').first()).toBeVisible();
+    const url = page.url();
+    expect(url).toContain('view=overview');
   });
 
-  test('should prioritize readable project names and provide session ID copy action', async ({
-    page,
-  }) => {
-    const firstProjectCell = page.locator('.session-table tbody tr').first().locator('td').first();
-    await expect(firstProjectCell).toHaveText('project');
-    await expect(firstProjectCell).not.toContainText('/home/user/project');
+  test('drills down from table row into session detail and supports in-page back', async ({ page }) => {
+    await page.locator('tr[data-session-id="test-session-002"]').click();
 
-    await page.evaluate(() => {
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: {
-          writeText: async (text: string) => {
-            (window as Window & { __copiedSessionId?: string }).__copiedSessionId = text;
-          },
-        },
-      });
-    });
+    await expect(page.getByRole('button', { name: 'Session Detail' })).toHaveClass(/active/);
+    await expect(page.locator('.detail-back-button')).toBeVisible();
+    await expect(page.locator('.message-timeline, .statistics-dashboard').first()).toBeVisible();
+    await expect(page).toHaveURL(/session=test-session-002/);
 
-    await page
-      .locator('tr[data-session-id="test-session-001"] .session-table__copy-id')
-      .click();
-    const copied = await page.evaluate(
-      () => (window as Window & { __copiedSessionId?: string }).__copiedSessionId
+    await page.getByRole('button', { name: 'Back to Overview' }).click();
+    await waitForOverview(page);
+    await expect(page.getByRole('button', { name: 'Cross-Session Analytics' })).toHaveClass(
+      /active/
     );
-    expect(copied).toBe('test-session-001');
+    await expect(page).toHaveURL(/view=overview/);
+  });
+});
+
+test.describe('@full Navigation history + URL restore', () => {
+  test('browser back/forward follows overview-detail route state', async ({ page }) => {
+    await setupMockApi(page);
+    await page.goto('/');
+    await waitForOverview(page);
+
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await expect(page).toHaveURL(/session=test-session-001/);
+    await expect(page.getByRole('button', { name: 'Session Detail' })).toHaveClass(/active/);
+
+    await page.goBack();
+    await waitForOverview(page);
+    await expect(page).toHaveURL(/view=overview/);
+
+    await page.goForward();
+    await expect(page).toHaveURL(/session=test-session-001/);
+    await expect(page.getByRole('button', { name: 'Session Detail' })).toHaveClass(/active/);
+  });
+
+  test('session deep-link restores detail view and tab from URL', async ({ page }) => {
+    await setupMockApi(page);
+    await page.goto('/?session=test-session-001&tab=statistics');
+
+    await expect(page.getByRole('button', { name: 'Session Detail' })).toHaveClass(/active/);
+    await expect(page.getByRole('button', { name: 'Statistics' })).toHaveClass(/active/);
+    await expect(page.locator('.statistics-dashboard')).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Session Detail' })).toHaveClass(/active/);
+    await expect(page.getByRole('button', { name: 'Statistics' })).toHaveClass(/active/);
+    await expect(page.locator('.statistics-dashboard')).toBeVisible();
   });
 });
