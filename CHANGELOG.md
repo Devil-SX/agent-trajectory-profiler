@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Canonical `agent_vis` Python package namespace mirroring existing `claude_vis` modules via compatibility wrappers.
+- Canonical `agent-vis` CLI entry point in `pyproject.toml`, while preserving `claude-vis` for backward compatibility.
+- Installation/uninstallation scripts now manage both global commands (`agent-vis` canonical, `claude-vis` legacy alias).
+- Namespace compatibility regression tests to ensure canonical and legacy imports expose equivalent symbols.
+
+### Changed
+
+- API branding and metadata text to ecosystem-neutral naming (`Agent Trajectory Visualizer API`) instead of Claude-only wording.
+- CLI user-facing branding and examples now prefer `agent-vis` as canonical command.
+- README (EN/CN) now includes explicit migration notes and deprecation path for `claude_vis` -> `agent_vis`.
+
 ## [0.6.0] - 2026-02-26
 
 > **Code Stats** | Total: 44,586 lines | Delta: +11,705 (-1,920) = **+9,785 net** | Change: **+28.8%** vs v0.3.0

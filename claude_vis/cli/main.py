@@ -1,4 +1,4 @@
-"""Main CLI entry point for Claude Code Session Visualizer."""
+"""Main CLI entry point for Agent Trajectory Profiler."""
 
 import json
 import os
@@ -6,11 +6,15 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from claude_vis.formatters.human import OutputLevel, format_session_stats
 from claude_vis.parsers import SessionParseError, parse_session_directory, parse_session_file
+
+if TYPE_CHECKING:
+    from claude_vis.models import SessionStatistics
 
 
 def get_project_root() -> Path:
@@ -82,9 +86,9 @@ def check_and_build_frontend() -> bool:
 
 
 @click.group()
-@click.version_option(version="0.5.0", prog_name="claude-vis")
+@click.version_option(version="0.5.0", prog_name="agent-vis")
 def main() -> None:
-    """Claude Code Session Visualizer CLI."""
+    """Agent Trajectory Profiler CLI."""
     pass
 
 
@@ -104,7 +108,7 @@ def main() -> None:
     "--path",
     type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
     default=None,
-    help="Path to Claude session directory (default: ~/.claude/projects/)",
+    help="Path to agent session directory (default: ~/.claude/projects/)",
 )
 @click.option(
     "--single-session",
@@ -133,10 +137,10 @@ def serve(
     log_level: str | None,
 ) -> None:
     """
-    Start the Claude Code Session Visualizer API server.
+    Start the Agent Trajectory Profiler API server.
 
     This command starts a FastAPI server that provides REST endpoints
-    for accessing and analyzing Claude Code session data. The server
+    for accessing and analyzing agent session data. The server
     also serves the frontend static files in production mode.
 
     Frontend is automatically built if not already built.
@@ -144,22 +148,22 @@ def serve(
     Examples:
 
         # Start server with default settings
-        claude-vis serve
+        agent-vis serve
 
         # Start on custom host/port
-        claude-vis serve --host 127.0.0.1 --port 8080
+        agent-vis serve --host 127.0.0.1 --port 8080
 
         # Use custom session directory
-        claude-vis serve --path /path/to/sessions
+        agent-vis serve --path /path/to/sessions
 
         # Load only a specific session
-        claude-vis serve --single-session abc123
+        agent-vis serve --single-session abc123
 
         # Enable auto-reload for development (hot reload)
-        claude-vis serve --reload
+        agent-vis serve --reload
 
         # Set custom log level
-        claude-vis serve --log-level debug
+        agent-vis serve --log-level debug
     """
     # Import here to avoid loading uvicorn when not needed
     import os
@@ -233,7 +237,7 @@ def serve(
 
     # Print startup information
     click.echo("=" * 60)
-    click.echo("Claude Code Session Visualizer")
+    click.echo("Agent Trajectory Profiler")
     click.echo("=" * 60)
     click.echo(f"Session Path: {settings.session_path}")
     if single_session:
@@ -352,7 +356,7 @@ def parse(
     model_timeout: float | None,
 ) -> None:
     """
-    Parse Claude Code session data and output JSON.
+    Parse agent trajectory session data and output JSON.
 
     Three modes of operation:
 
@@ -365,19 +369,19 @@ def parse(
 
     \b
         # Human-readable statistics
-        claude-vis parse --file session.jsonl --human
+        agent-vis parse --file session.jsonl --human
 
     \b
         # Parse a single file (pretty JSON by default)
-        claude-vis parse --file session.jsonl
+        agent-vis parse --file session.jsonl
 
     \b
         # Parse a session directory
-        claude-vis parse --session ./my-project-sessions/
+        agent-vis parse --session ./my-project-sessions/
 
     \b
         # Compact JSON for piping
-        claude-vis parse --compact | jq .
+        agent-vis parse --compact | jq .
     """
     if file and session:
         click.echo("Error: --file and --session are mutually exclusive.", err=True)
@@ -515,15 +519,15 @@ def sync(
 
     \b
         # Sync default directory
-        claude-vis sync
+        agent-vis sync
 
     \b
         # Sync a specific directory
-        claude-vis sync --path ~/.claude/projects/my-project/
+        agent-vis sync --path ~/.claude/projects/my-project/
 
     \b
         # Force re-parse everything
-        claude-vis sync --force
+        agent-vis sync --force
     """
     from claude_vis.db.connection import get_connection
     from claude_vis.db.repository import SessionRepository
@@ -616,25 +620,25 @@ def stats(
     """
     Query session statistics from the database.
 
-    Run 'claude-vis sync' first to populate the database.
+    Run 'agent-vis sync' first to populate the database.
 
     Examples:
 
     \b
         # List all sessions (summary)
-        claude-vis stats --level 1
+        agent-vis stats --level 1
 
     \b
         # Detailed stats for one session
-        claude-vis stats --session-id abc123 --level 3
+        agent-vis stats --session-id abc123 --level 3
 
     \b
         # Sort by token usage
-        claude-vis stats --sort-by total_tokens --limit 10
+        agent-vis stats --sort-by total_tokens --limit 10
 
     \b
         # Filter by date range
-        claude-vis stats --start-date 2026-02-01 --end-date 2026-02-25
+        agent-vis stats --start-date 2026-02-01 --end-date 2026-02-25
     """
     import re
 
@@ -661,7 +665,7 @@ def stats(
         statistics = repo.get_statistics(session_id)
         if statistics is None:
             click.echo(f"Error: Session '{session_id}' not found in database.", err=True)
-            click.echo("Run 'claude-vis sync' first to populate the database.", err=True)
+            click.echo("Run 'agent-vis sync' first to populate the database.", err=True)
             conn.close()
             sys.exit(1)
         click.echo(format_session_stats(statistics, session_id, level=output_level))
@@ -674,7 +678,7 @@ def stats(
             if start_date or end_date:
                 click.echo("No sessions found for the specified date range.", err=True)
             else:
-                click.echo("No sessions in database. Run 'claude-vis sync' first.", err=True)
+                click.echo("No sessions in database. Run 'agent-vis sync' first.", err=True)
             conn.close()
             sys.exit(1)
 
@@ -739,15 +743,15 @@ def analyze(
 
     \b
         # English analysis with default model
-        claude-vis analyze --file session.jsonl
+        agent-vis analyze --file session.jsonl
 
     \b
         # Chinese analysis with specific model
-        claude-vis analyze --file session.jsonl --lang cn --model sonnet
+        agent-vis analyze --file session.jsonl --lang cn --model sonnet
 
     \b
         # Custom output path
-        claude-vis analyze --file session.jsonl -o report.md
+        agent-vis analyze --file session.jsonl -o report.md
     """
     from claude_vis.prompts.analyze import build_analyze_prompt
 

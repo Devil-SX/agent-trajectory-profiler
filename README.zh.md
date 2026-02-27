@@ -49,7 +49,10 @@ uv sync
 ./install.sh
 ```
 
-安装后可在任意目录使用 `claude-vis` 命令。
+安装后可在任意目录使用以下两个命令：
+
+- `agent-vis`（规范主命令）
+- `claude-vis`（兼容旧命令）
 
 卸载：
 ```bash
@@ -64,7 +67,15 @@ cd agent-trajectory-profiler
 uv sync
 ```
 
-以下命令中将 `claude-vis` 替换为 `uv run claude-vis`。
+新脚本建议使用 `uv run agent-vis`。  
+`uv run claude-vis` 仍保留为兼容别名。
+
+## 迁移说明（`claude_vis` -> `agent_vis`）
+
+- 规范 Python 包命名空间已更新为 `agent_vis`。
+- 规范 CLI 命令已更新为 `agent-vis`。
+- 旧的 `claude_vis` 导入路径与 `claude-vis` 命令在迁移期继续兼容。
+- 弃用路径：`claude_vis` / `claude-vis` 在 `0.x` 版本期间保持兼容；若未来移除，将仅在后续主版本中进行，并在 release note 明确说明。
 
 ## 使用方式
 
