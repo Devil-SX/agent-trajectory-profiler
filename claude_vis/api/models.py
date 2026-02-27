@@ -204,6 +204,14 @@ class AnalyticsOverviewResponse(BaseModel):
     tool_time_seconds: float
     user_time_seconds: float
     inactive_time_seconds: float
+    day_model_time_seconds: float
+    day_tool_time_seconds: float
+    day_user_time_seconds: float
+    day_inactive_time_seconds: float
+    night_model_time_seconds: float
+    night_tool_time_seconds: float
+    night_user_time_seconds: float
+    night_inactive_time_seconds: float
     active_time_ratio: float
     model_timeout_count: int
     bottleneck_distribution: list[AnalyticsBucket]

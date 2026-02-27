@@ -31,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CI frontend jobs (`frontend-static-checks`, `frontend-e2e-smoke`) and `npm run test:e2e:smoke` script.
 - Playwright smoke coverage for IA refactor: cross-session access without session preselection, tab/session state persistence, and session list view preference persistence.
 - Playwright smoke coverage for readability upgrades: readable project rendering in session table and copy-to-clipboard behavior for session IDs.
+- Cross-session day/night analytics fields in `/api/analytics/overview` with fixed local-night window (`01:00-09:00`) and per-category (`model/tool/user/inactive`) duration buckets.
+- Playwright smoke coverage for day/night analytics rendering and chart/table consistency checks (`tests/day-night-analytics.spec.ts`).
 
 ### Changed
 
@@ -53,6 +55,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Frontend labels and E2E expectations now consistently use `Cross-Session Analytics` instead of `Advanced Analytics`.
 - Session table now prioritizes human-readable project names and unified relative+absolute timestamp formatting, with session ID/hash downgraded to a compact copyable field.
 - Cross-session token-share chart now truncates long session labels for readability while preserving full values in tooltip context.
+- Cross-session overview now includes a dedicated Day vs Night section (stacked chart + table) with explicit local-time night-window labeling.
 
 ### Fixed
 

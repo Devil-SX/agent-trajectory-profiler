@@ -149,6 +149,40 @@
   font-size: 0.96rem;
 }
 
+.day-night-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.day-night-note {
+  margin: 0;
+  color: #4f6073;
+  font-size: 0.84rem;
+}
+
+.day-night-summary {
+  margin: 0;
+  color: #243447;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.day-night-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.day-night-chart {
+  min-height: 280px;
+}
+
+.day-night-table td:first-child {
+  font-weight: 600;
+}
+
 .empty-hint {
   color: #7a8c9f;
   margin: 0;
@@ -195,6 +229,10 @@
 
   .kpi-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .day-night-layout {
+    grid-template-columns: 1fr;
   }
 }
 

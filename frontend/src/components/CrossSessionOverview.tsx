@@ -30,6 +30,16 @@ interface DateWindow {
   endDate: string | null;
 }
 
+interface DayNightRow {
+  period: 'Day' | 'Night';
+  model: number;
+  tool: number;
+  user: number;
+  inactive: number;
+  total: number;
+  share: number;
+}
+
 const DISTRIBUTION_COLORS = ['#2563eb', '#0891b2', '#ea580c', '#dc2626', '#16a34a', '#7c3aed'];
 
 function toIsoDate(value: Date): string {
@@ -128,6 +138,42 @@ export function CrossSessionOverview() {
     if (!sessionShareDistribution) return [];
     return sessionShareDistribution.buckets.slice(0, 8);
   }, [sessionShareDistribution]);
+
+  const dayNightRows = useMemo<DayNightRow[]>(() => {
+    if (!overview) return [];
+
+    const rows: DayNightRow[] = [
+      {
+        period: 'Day',
+        model: overview.day_model_time_seconds,
+        tool: overview.day_tool_time_seconds,
+        user: overview.day_user_time_seconds,
+        inactive: overview.day_inactive_time_seconds,
+        total: 0,
+        share: 0,
+      },
+      {
+        period: 'Night',
+        model: overview.night_model_time_seconds,
+        tool: overview.night_tool_time_seconds,
+        user: overview.night_user_time_seconds,
+        inactive: overview.night_inactive_time_seconds,
+        total: 0,
+        share: 0,
+      },
+    ];
+
+    const withTotals = rows.map((row) => ({
+      ...row,
+      total: row.model + row.tool + row.user + row.inactive,
+    }));
+    const grandTotal = withTotals.reduce((sum, row) => sum + row.total, 0);
+
+    return withTotals.map((row) => ({
+      ...row,
+      share: grandTotal > 0 ? row.total / grandTotal : 0,
+    }));
+  }, [overview]);
 
   if (isLoading) {
     return (
@@ -301,6 +347,72 @@ export function CrossSessionOverview() {
             {')'}
           </p>
         </article>
+      </div>
+
+      <div className="overview-grid">
+        <section className="overview-card day-night-card">
+          <h4>Day vs night time mix</h4>
+          <p className="day-night-note">Night window: 01:00-09:00 (local time).</p>
+          <p className="day-night-summary">
+            Day total: {formatDuration(dayNightRows[0]?.total ?? 0)}
+            {' · '}
+            Night total: {formatDuration(dayNightRows[1]?.total ?? 0)}
+          </p>
+
+          {dayNightRows.length === 0 || dayNightRows.every((row) => row.total <= 0) ? (
+            <p className="empty-hint">No day/night time data in this range.</p>
+          ) : (
+            <div className="day-night-layout">
+              <div className="day-night-chart" aria-label="Day night time chart">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={dayNightRows}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="period" />
+                    <YAxis />
+                    <Tooltip
+                      formatter={(value) => formatDuration(Number(value))}
+                      labelFormatter={(label) => `${label} period`}
+                    />
+                    <Legend />
+                    <Bar dataKey="model" stackId="total" name="Model" fill="#2563eb" />
+                    <Bar dataKey="tool" stackId="total" name="Tool" fill="#0891b2" />
+                    <Bar dataKey="user" stackId="total" name="User" fill="#ea580c" />
+                    <Bar dataKey="inactive" stackId="total" name="Inactive" fill="#94a3b8" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="table-wrapper">
+                <table className="compact-table day-night-table">
+                  <thead>
+                    <tr>
+                      <th>Period</th>
+                      <th>Model</th>
+                      <th>Tool</th>
+                      <th>User</th>
+                      <th>Inactive</th>
+                      <th>Total</th>
+                      <th>Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dayNightRows.map((row) => (
+                      <tr key={row.period}>
+                        <td>{row.period}</td>
+                        <td>{formatDuration(row.model)}</td>
+                        <td>{formatDuration(row.tool)}</td>
+                        <td>{formatDuration(row.user)}</td>
+                        <td>{formatDuration(row.inactive)}</td>
+                        <td>{formatDuration(row.total)}</td>
+                        <td>{formatPercent(row.share * 100)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
 
       <div className="overview-grid two-columns">

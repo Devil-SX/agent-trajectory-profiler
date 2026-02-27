@@ -5,7 +5,7 @@ Tests cover API endpoints, service layer integration, and error handling
 with test client for realistic request/response testing.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -343,6 +343,14 @@ class TestAnalyticsAPI:
         assert "read_tokens_per_second_mean" in payload
         assert "output_tokens_per_second_mean" in payload
         assert "cache_tokens_per_second_mean" in payload
+        assert "day_model_time_seconds" in payload
+        assert "day_tool_time_seconds" in payload
+        assert "day_user_time_seconds" in payload
+        assert "day_inactive_time_seconds" in payload
+        assert "night_model_time_seconds" in payload
+        assert "night_tool_time_seconds" in payload
+        assert "night_user_time_seconds" in payload
+        assert "night_inactive_time_seconds" in payload
 
         start = date.fromisoformat(payload["start_date"])
         end = date.fromisoformat(payload["end_date"])
@@ -372,6 +380,19 @@ class TestAnalyticsAPI:
         span = active + payload["inactive_time_seconds"]
         expected_ratio = active / span if span > 0 else 0.0
         assert payload["active_time_ratio"] == pytest.approx(expected_ratio, abs=1e-9)
+        day_total = (
+            payload["day_model_time_seconds"]
+            + payload["day_tool_time_seconds"]
+            + payload["day_user_time_seconds"]
+            + payload["day_inactive_time_seconds"]
+        )
+        night_total = (
+            payload["night_model_time_seconds"]
+            + payload["night_tool_time_seconds"]
+            + payload["night_user_time_seconds"]
+            + payload["night_inactive_time_seconds"]
+        )
+        assert day_total + night_total == pytest.approx(span, abs=1e-3)
 
     def test_analytics_distribution_tool(self, test_client: TestClient) -> None:
         """Tool distribution endpoint should return bucketed results."""
@@ -487,6 +508,22 @@ class TestSessionServiceIntegration:
         asyncio.run(initialized_session_service_sync.refresh_sessions())
         # Count should remain the same after refresh
         assert initialized_session_service_sync.session_count == initial_count
+
+    def test_day_night_window_boundaries(self) -> None:
+        """Night window is [01:00, 09:00) in local clock time."""
+        assert SessionService._is_night_local_clock(0, 59) is False
+        assert SessionService._is_night_local_clock(1, 0) is True
+        assert SessionService._is_night_local_clock(8, 59) is True
+        assert SessionService._is_night_local_clock(9, 0) is False
+
+    def test_split_day_night_span_boundaries(self) -> None:
+        """Boundary split should classify pre-01:00 as day and 01:00+ as night."""
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        start = datetime(2026, 2, 1, 0, 59, tzinfo=local_tz)
+        day_seconds, night_seconds = SessionService._split_day_night_span(start, 120.0)
+
+        assert day_seconds == pytest.approx(60.0)
+        assert night_seconds == pytest.approx(60.0)
 
 
 class TestAPIErrorHandling:

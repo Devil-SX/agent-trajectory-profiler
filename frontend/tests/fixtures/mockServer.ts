@@ -58,6 +58,14 @@ export async function setupMockApi(page: Page) {
     tool_time_seconds: 2800,
     user_time_seconds: 1900,
     inactive_time_seconds: 600,
+    day_model_time_seconds: 4100,
+    day_tool_time_seconds: 1900,
+    day_user_time_seconds: 1300,
+    day_inactive_time_seconds: 300,
+    night_model_time_seconds: 1200,
+    night_tool_time_seconds: 900,
+    night_user_time_seconds: 600,
+    night_inactive_time_seconds: 300,
     active_time_ratio: 0.93,
     model_timeout_count: 1,
     bottleneck_distribution: [
@@ -237,7 +245,7 @@ export async function setupMockApi(page: Page) {
     });
   });
 
-  await page.route(/\/api\/analytics\/distribution(?:\?.*)?$/, async (route) => {
+  await page.route(/\/api\/analytics\/distribution(?:s)?(?:\?.*)?$/, async (route) => {
     const url = new URL(route.request().url());
     const dimension = url.searchParams.get('dimension');
     const payload = dimension === 'session_token_share'

@@ -11,7 +11,7 @@ import json
 import math
 import sqlite3
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean, median
 from typing import Any, Literal, cast
@@ -549,6 +549,14 @@ class SessionService:
                 tool_time_seconds=0.0,
                 user_time_seconds=0.0,
                 inactive_time_seconds=0.0,
+                day_model_time_seconds=0.0,
+                day_tool_time_seconds=0.0,
+                day_user_time_seconds=0.0,
+                day_inactive_time_seconds=0.0,
+                night_model_time_seconds=0.0,
+                night_tool_time_seconds=0.0,
+                night_user_time_seconds=0.0,
+                night_inactive_time_seconds=0.0,
                 active_time_ratio=0.0,
                 model_timeout_count=0,
                 bottleneck_distribution=[],
@@ -590,6 +598,14 @@ class SessionService:
         tool_time_seconds = 0.0
         user_time_seconds = 0.0
         inactive_time_seconds = 0.0
+        day_model_time_seconds = 0.0
+        day_tool_time_seconds = 0.0
+        day_user_time_seconds = 0.0
+        day_inactive_time_seconds = 0.0
+        night_model_time_seconds = 0.0
+        night_tool_time_seconds = 0.0
+        night_user_time_seconds = 0.0
+        night_inactive_time_seconds = 0.0
         model_timeout_count = 0
         token_yield_ratios: list[float] = []
         char_yield_ratios: list[float] = []
@@ -716,11 +732,40 @@ class SessionService:
             if cache_create_tok_s is not None:
                 throughput_values["cache_creation"].append(float(cache_create_tok_s))
 
-            model_time_seconds += float(time_breakdown.get("total_model_time_seconds") or 0.0)
-            tool_time_seconds += float(time_breakdown.get("total_tool_time_seconds") or 0.0)
-            user_time_seconds += float(time_breakdown.get("total_user_time_seconds") or 0.0)
-            inactive_time_seconds += float(time_breakdown.get("total_inactive_time_seconds") or 0.0)
+            model_seconds = float(time_breakdown.get("total_model_time_seconds") or 0.0)
+            tool_seconds = float(time_breakdown.get("total_tool_time_seconds") or 0.0)
+            user_seconds = float(time_breakdown.get("total_user_time_seconds") or 0.0)
+            inactive_seconds = float(time_breakdown.get("total_inactive_time_seconds") or 0.0)
+
+            model_time_seconds += model_seconds
+            tool_time_seconds += tool_seconds
+            user_time_seconds += user_seconds
+            inactive_time_seconds += inactive_seconds
             model_timeout_count += int(time_breakdown.get("model_timeout_count") or 0)
+
+            span_seconds = float(row.get("duration_seconds") or 0.0)
+            component_span = model_seconds + tool_seconds + user_seconds + inactive_seconds
+            if span_seconds <= 0 and component_span > 0:
+                span_seconds = component_span
+
+            day_ratio = 1.0
+            night_ratio = 0.0
+            created_at = self._parse_created_datetime(row.get("created_at"))
+            if created_at is not None and span_seconds > 0:
+                day_span, night_span = self._split_day_night_span(created_at, span_seconds)
+                total_span = day_span + night_span
+                if total_span > 0:
+                    day_ratio = day_span / total_span
+                    night_ratio = night_span / total_span
+
+            day_model_time_seconds += model_seconds * day_ratio
+            day_tool_time_seconds += tool_seconds * day_ratio
+            day_user_time_seconds += user_seconds * day_ratio
+            day_inactive_time_seconds += inactive_seconds * day_ratio
+            night_model_time_seconds += model_seconds * night_ratio
+            night_tool_time_seconds += tool_seconds * night_ratio
+            night_user_time_seconds += user_seconds * night_ratio
+            night_inactive_time_seconds += inactive_seconds * night_ratio
 
             for tool in stats.get("tool_calls") or []:
                 tool_name = str(tool.get("tool_name") or "").strip()
@@ -880,6 +925,14 @@ class SessionService:
             tool_time_seconds=tool_time_seconds,
             user_time_seconds=user_time_seconds,
             inactive_time_seconds=inactive_time_seconds,
+            day_model_time_seconds=day_model_time_seconds,
+            day_tool_time_seconds=day_tool_time_seconds,
+            day_user_time_seconds=day_user_time_seconds,
+            day_inactive_time_seconds=day_inactive_time_seconds,
+            night_model_time_seconds=night_model_time_seconds,
+            night_tool_time_seconds=night_tool_time_seconds,
+            night_user_time_seconds=night_user_time_seconds,
+            night_inactive_time_seconds=night_inactive_time_seconds,
             active_time_ratio=active_time_ratio,
             model_timeout_count=model_timeout_count,
             bottleneck_distribution=bottleneck_distribution,
@@ -1190,6 +1243,65 @@ class SessionService:
         if not tbd or tbd.user_interaction_count <= 0:
             return None
         return round(statistics.total_tool_calls / tbd.user_interaction_count, 2)
+
+    @staticmethod
+    def _parse_created_datetime(created_at: Any) -> datetime | None:
+        """Parse an ISO timestamp and normalize to an aware datetime."""
+        if created_at is None:
+            return None
+        text = str(created_at).strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    @staticmethod
+    def _is_night_local_clock(hour: int, minute: int = 0) -> bool:
+        """Return True when local clock falls inside [01:00, 09:00)."""
+        return (hour, minute) >= (1, 0) and (hour, minute) < (9, 0)
+
+    @classmethod
+    def _split_day_night_span(
+        cls, start_at: datetime, duration_seconds: float
+    ) -> tuple[float, float]:
+        """
+        Split a session span into local day/night seconds.
+
+        Night window is fixed to 01:00-09:00 local time. All other local
+        clock time is treated as day.
+        """
+        if duration_seconds <= 0:
+            return (0.0, 0.0)
+
+        cursor = start_at.astimezone()
+        remaining = float(duration_seconds)
+        day_seconds = 0.0
+        night_seconds = 0.0
+
+        while remaining > 1e-9:
+            midnight = cursor.replace(hour=0, minute=0, second=0, microsecond=0)
+            boundaries = (
+                midnight + timedelta(hours=1),
+                midnight + timedelta(hours=9),
+                midnight + timedelta(days=1),
+            )
+            next_boundary = min(boundary for boundary in boundaries if boundary > cursor)
+            segment = min(remaining, (next_boundary - cursor).total_seconds())
+            if cls._is_night_local_clock(cursor.hour, cursor.minute):
+                night_seconds += segment
+            else:
+                day_seconds += segment
+            cursor = cursor + timedelta(seconds=segment)
+            remaining -= segment
+
+        return (day_seconds, night_seconds)
 
     @staticmethod
     def _parse_created_date(created_at: Any) -> date | None:

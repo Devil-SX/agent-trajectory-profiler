@@ -432,6 +432,14 @@ export interface AnalyticsOverviewResponse {
   tool_time_seconds: number;
   user_time_seconds: number;
   inactive_time_seconds: number;
+  day_model_time_seconds: number;
+  day_tool_time_seconds: number;
+  day_user_time_seconds: number;
+  day_inactive_time_seconds: number;
+  night_model_time_seconds: number;
+  night_tool_time_seconds: number;
+  night_user_time_seconds: number;
+  night_inactive_time_seconds: number;
   active_time_ratio: number;
   model_timeout_count: number;
   bottleneck_distribution: AnalyticsBucket[];
