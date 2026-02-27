@@ -12,12 +12,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Canonical `agent-vis` CLI entry point in `pyproject.toml`, while preserving `claude-vis` for backward compatibility.
 - Installation/uninstallation scripts now manage both global commands (`agent-vis` canonical, `claude-vis` legacy alias).
 - Namespace compatibility regression tests to ensure canonical and legacy imports expose equivalent symbols.
+- Canonical parser middle layer (`claude_vis.parsers.canonical`) with adapter contract (`TrajectoryEventAdapter`), neutral event models (`CanonicalEvent` / `CanonicalSession`), and ecosystem adapter registry.
+- Canonical conversion contract tests covering registry extension, source-to-canonical normalization, and canonical-to-message compatibility behavior.
 
 ### Changed
 
 - API branding and metadata text to ecosystem-neutral naming (`Agent Trajectory Visualizer API`) instead of Claude-only wording.
 - CLI user-facing branding and examples now prefer `agent-vis` as canonical command.
 - README (EN/CN) now includes explicit migration notes and deprecation path for `claude_vis` -> `agent_vis`.
+- Claude parser ingestion path now uses the canonical adapter pipeline (`JSONL -> CanonicalEvent -> MessageRecord`) without changing downstream statistics logic.
 
 ## [0.6.0] - 2026-02-26
 
