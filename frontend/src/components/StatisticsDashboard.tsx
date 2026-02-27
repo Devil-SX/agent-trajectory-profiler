@@ -160,11 +160,15 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
   const automationRatio = interactions > 0
     ? statistics.total_tool_calls / interactions
     : null;
-  const tokenYieldRatio = typeof statistics.user_yield_ratio_tokens === 'number'
-    ? statistics.user_yield_ratio_tokens
+  const tokenYieldRatio = typeof statistics.leverage_ratio_tokens === 'number'
+    ? statistics.leverage_ratio_tokens
+    : typeof statistics.user_yield_ratio_tokens === 'number'
+      ? statistics.user_yield_ratio_tokens
     : null;
-  const charYieldRatio = typeof statistics.user_yield_ratio_chars === 'number'
-    ? statistics.user_yield_ratio_chars
+  const charYieldRatio = typeof statistics.leverage_ratio_chars === 'number'
+    ? statistics.leverage_ratio_chars
+    : typeof statistics.user_yield_ratio_chars === 'number'
+      ? statistics.user_yield_ratio_chars
     : null;
 
   const withCalls = statistics.tool_calls.filter((item) => item.count > 0);
@@ -273,7 +277,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
           </div>
 
           <div className="stat-card">
-            <h4 className="card-title">User Yield Ratio</h4>
+            <h4 className="card-title">Leverage Ratio</h4>
             <div className="stat-value large">
               {tokenYieldRatio !== null ? `${tokenYieldRatio.toFixed(2)}x` : 'N/A'}
             </div>
@@ -283,6 +287,10 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                 <span className="breakdown-value">
                   {charYieldRatio !== null ? `${charYieldRatio.toFixed(2)}x` : 'N/A'}
                 </span>
+              </div>
+              <div className="breakdown-item">
+                <span className="breakdown-label">Formula</span>
+                <span className="breakdown-value">(Model + Tool) / User</span>
               </div>
             </div>
           </div>

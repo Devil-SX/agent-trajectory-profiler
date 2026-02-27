@@ -129,6 +129,8 @@ class ProjectAggregate(BaseModel):
     total_messages: int
     percent_sessions: float
     percent_tokens: float
+    leverage_tokens_mean: float | None
+    leverage_chars_mean: float | None
 
 
 class ToolAggregate(BaseModel):
@@ -164,6 +166,7 @@ class AnalyticsOverviewResponse(BaseModel):
     total_tool_calls: int
     total_input_tokens: int
     total_output_tokens: int
+    total_tool_output_tokens: int
     total_cache_read_tokens: int
     total_cache_creation_tokens: int
     total_trajectory_file_size_bytes: int
@@ -180,6 +183,12 @@ class AnalyticsOverviewResponse(BaseModel):
     yield_ratio_chars_mean: float
     yield_ratio_chars_median: float
     yield_ratio_chars_p90: float
+    leverage_tokens_mean: float
+    leverage_tokens_median: float
+    leverage_tokens_p90: float
+    leverage_chars_mean: float
+    leverage_chars_median: float
+    leverage_chars_p90: float
     avg_tokens_per_second_mean: float
     avg_tokens_per_second_median: float
     avg_tokens_per_second_p90: float

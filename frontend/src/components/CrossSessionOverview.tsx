@@ -80,6 +80,13 @@ function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
+function formatLeverage(value: number | null | undefined): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 'N/A';
+  }
+  return `${value.toFixed(2)}x`;
+}
+
 function getLeadingBucket(buckets: AnalyticsBucket[]): string {
   if (buckets.length === 0) {
     return 'No data';
@@ -94,6 +101,8 @@ function formatSessionShareLabel(label: string): string {
 
 export function CrossSessionOverview() {
   const [preset, setPreset] = useState<RangePreset>('7d');
+  const [codingFraction, setCodingFraction] = useState(0.3);
+  const [tokensPerLine, setTokensPerLine] = useState(10);
   const [customRange, setCustomRange] = useState<DateWindow>({
     startDate: null,
     endDate: null,
@@ -174,6 +183,33 @@ export function CrossSessionOverview() {
       share: grandTotal > 0 ? row.total / grandTotal : 0,
     }));
   }, [overview]);
+
+  const leverageEstimate = useMemo(() => {
+    if (!overview) {
+      return {
+        outputBudgetTokens: 0,
+        effectiveCodingTokens: 0,
+        estimatedCodeLines: 0,
+      };
+    }
+
+    const normalizedFraction = Number.isFinite(codingFraction) && codingFraction > 0
+      ? codingFraction
+      : 0;
+    const normalizedTokensPerLine = Number.isFinite(tokensPerLine) && tokensPerLine > 0
+      ? tokensPerLine
+      : 10;
+    const outputBudgetTokens =
+      overview.total_output_tokens + (overview.total_tool_output_tokens || 0);
+    const effectiveCodingTokens = outputBudgetTokens * normalizedFraction;
+    const estimatedCodeLines = effectiveCodingTokens / normalizedTokensPerLine;
+
+    return {
+      outputBudgetTokens,
+      effectiveCodingTokens,
+      estimatedCodeLines,
+    };
+  }, [codingFraction, overview, tokensPerLine]);
 
   if (isLoading) {
     return (
@@ -284,18 +320,22 @@ export function CrossSessionOverview() {
           <div className="kpi-value">{overview.avg_automation_ratio.toFixed(2)}x</div>
           <p>Active ratio: {formatPercent(overview.active_time_ratio * 100)}</p>
           <p>
-            Token yield (mean/median/p90): {overview.yield_ratio_tokens_mean.toFixed(2)}x /
+            Token leverage (mean/median/p90): {formatLeverage(
+              overview.leverage_tokens_mean ?? overview.yield_ratio_tokens_mean
+            )} /
             {' '}
-            {overview.yield_ratio_tokens_median.toFixed(2)}x /
+            {formatLeverage(overview.leverage_tokens_median ?? overview.yield_ratio_tokens_median)} /
             {' '}
-            {overview.yield_ratio_tokens_p90.toFixed(2)}x
+            {formatLeverage(overview.leverage_tokens_p90 ?? overview.yield_ratio_tokens_p90)}
           </p>
           <p>
-            Char yield (mean/median/p90): {overview.yield_ratio_chars_mean.toFixed(2)}x /
+            Char leverage (mean/median/p90): {formatLeverage(
+              overview.leverage_chars_mean ?? overview.yield_ratio_chars_mean
+            )} /
             {' '}
-            {overview.yield_ratio_chars_median.toFixed(2)}x /
+            {formatLeverage(overview.leverage_chars_median ?? overview.yield_ratio_chars_median)} /
             {' '}
-            {overview.yield_ratio_chars_p90.toFixed(2)}x
+            {formatLeverage(overview.leverage_chars_p90 ?? overview.yield_ratio_chars_p90)}
           </p>
         </article>
 
@@ -345,6 +385,47 @@ export function CrossSessionOverview() {
             {' / '}
             {overview.cache_creation_tokens_per_second_mean.toFixed(2)}
             {')'}
+          </p>
+        </article>
+
+        <article className="kpi-card leverage-estimator-card">
+          <h4>Code capacity estimate</h4>
+          <div className="kpi-value">{formatNumber(Math.round(leverageEstimate.estimatedCodeLines))}</div>
+          <p>Approximate editable LOC upper bound for this selected range.</p>
+          <div className="leverage-controls">
+            <label>
+              Coding token fraction
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={codingFraction}
+                onChange={(event) => setCodingFraction(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              Tokens per LOC
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={tokensPerLine}
+                onChange={(event) => setTokensPerLine(Number(event.target.value))}
+              />
+            </label>
+          </div>
+          <p>
+            Inputs: {formatNumber(leverageEstimate.outputBudgetTokens)}
+            {' '}
+            output tokens, effective
+            {' '}
+            {formatNumber(Math.round(leverageEstimate.effectiveCodingTokens))}
+            {' '}
+            coding tokens.
+          </p>
+          <p className="leverage-note">
+            Estimate only. Real leverage depends on docs quality, skills, tooling, and model fit.
           </p>
         </article>
       </div>
@@ -538,6 +619,8 @@ export function CrossSessionOverview() {
                     <th>Project</th>
                     <th>Sessions</th>
                     <th>Token share</th>
+                    <th>Token leverage</th>
+                    <th>Char leverage</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -546,6 +629,8 @@ export function CrossSessionOverview() {
                       <td>{project.project_name}</td>
                       <td>{formatNumber(project.sessions)}</td>
                       <td>{formatPercent(project.percent_tokens)}</td>
+                      <td>{formatLeverage(project.leverage_tokens_mean)}</td>
+                      <td>{formatLeverage(project.leverage_chars_mean)}</td>
                     </tr>
                   ))}
                 </tbody>

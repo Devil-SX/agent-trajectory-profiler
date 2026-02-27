@@ -437,6 +437,18 @@ class SessionStatistics(BaseModel):
             return 0.0
         return self.total_tokens / self.message_count
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def leverage_ratio_tokens(self) -> float | None:
+        """Alias of token yield ratio for leverage-oriented API clients."""
+        return self.user_yield_ratio_tokens
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def leverage_ratio_chars(self) -> float | None:
+        """Alias of character yield ratio for leverage-oriented API clients."""
+        return self.user_yield_ratio_chars
+
     @property
     def tool_usage_summary(self) -> dict[str, int]:
         """Get tool usage summary as dict."""

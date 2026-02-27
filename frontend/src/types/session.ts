@@ -327,6 +327,8 @@ export interface SessionStatistics {
   character_breakdown: CharacterBreakdown;
   user_yield_ratio_tokens: number | null;
   user_yield_ratio_chars: number | null;
+  leverage_ratio_tokens: number | null;
+  leverage_ratio_chars: number | null;
   avg_tokens_per_second: number | null;
   read_tokens_per_second: number | null;
   output_tokens_per_second: number | null;
@@ -372,6 +374,8 @@ export interface ProjectAggregate {
   total_messages: number;
   percent_sessions: number;
   percent_tokens: number;
+  leverage_tokens_mean: number | null;
+  leverage_chars_mean: number | null;
 }
 
 export interface ToolAggregate {
@@ -392,6 +396,7 @@ export interface AnalyticsOverviewResponse {
   total_tool_calls: number;
   total_input_tokens: number;
   total_output_tokens: number;
+  total_tool_output_tokens: number;
   total_cache_read_tokens: number;
   total_cache_creation_tokens: number;
   total_trajectory_file_size_bytes: number;
@@ -408,6 +413,12 @@ export interface AnalyticsOverviewResponse {
   yield_ratio_chars_mean: number;
   yield_ratio_chars_median: number;
   yield_ratio_chars_p90: number;
+  leverage_tokens_mean: number;
+  leverage_tokens_median: number;
+  leverage_tokens_p90: number;
+  leverage_chars_mean: number;
+  leverage_chars_median: number;
+  leverage_chars_p90: number;
   avg_tokens_per_second_mean: number;
   avg_tokens_per_second_median: number;
   avg_tokens_per_second_p90: number;

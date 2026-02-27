@@ -33,6 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Playwright smoke coverage for readability upgrades: readable project rendering in session table and copy-to-clipboard behavior for session IDs.
 - Cross-session day/night analytics fields in `/api/analytics/overview` with fixed local-night window (`01:00-09:00`) and per-category (`model/tool/user/inactive`) duration buckets.
 - Playwright smoke coverage for day/night analytics rendering and chart/table consistency checks (`tests/day-night-analytics.spec.ts`).
+- Leverage analytics API fields for session/cross-session views (`leverage_ratio_*`, `leverage_*_mean|median|p90`) plus aggregated `total_tool_output_tokens`.
+- Project-level leverage aggregates in cross-session overview (`top_projects[*].leverage_tokens_mean`, `leverage_chars_mean`) for per-project comparison.
 
 ### Changed
 
@@ -56,6 +58,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session table now prioritizes human-readable project names and unified relative+absolute timestamp formatting, with session ID/hash downgraded to a compact copyable field.
 - Cross-session token-share chart now truncates long session labels for readability while preserving full values in tooltip context.
 - Cross-session overview now includes a dedicated Day vs Night section (stacked chart + table) with explicit local-time night-window labeling.
+- Session and cross-session UI copy now uses "Leverage" terminology, with a configurable code-capacity estimate card (assumption-based, non-exact).
 
 ### Fixed
 

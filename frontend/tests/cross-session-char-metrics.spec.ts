@@ -22,6 +22,7 @@ test.describe('@full Cross Session Char Metrics', () => {
           total_tool_calls: 860,
           total_input_tokens: 180000,
           total_output_tokens: 140000,
+          total_tool_output_tokens: 42000,
           total_cache_read_tokens: 22000,
           total_cache_creation_tokens: 9000,
           total_trajectory_file_size_bytes: 987654,
@@ -38,6 +39,12 @@ test.describe('@full Cross Session Char Metrics', () => {
           yield_ratio_chars_mean: 3.5,
           yield_ratio_chars_median: 3.3,
           yield_ratio_chars_p90: 4.2,
+          leverage_tokens_mean: 2.4,
+          leverage_tokens_median: 2.2,
+          leverage_tokens_p90: 3.1,
+          leverage_chars_mean: 3.5,
+          leverage_chars_median: 3.3,
+          leverage_chars_p90: 4.2,
           avg_tokens_per_second_mean: 12.4,
           avg_tokens_per_second_median: 11.8,
           avg_tokens_per_second_p90: 15.9,
@@ -77,7 +84,30 @@ test.describe('@full Cross Session Char Metrics', () => {
             { key: 'tool', label: 'Tool', count: 4, value: 4, percent: 33.3 },
             { key: 'user', label: 'User', count: 1, value: 1, percent: 8.4 },
           ],
-          top_projects: [],
+          top_projects: [
+            {
+              project_path: '/home/user/alpha',
+              project_name: 'alpha',
+              sessions: 6,
+              total_tokens: 190000,
+              total_messages: 310,
+              percent_sessions: 50,
+              percent_tokens: 59.4,
+              leverage_tokens_mean: 2.9,
+              leverage_chars_mean: 3.8,
+            },
+            {
+              project_path: '/home/user/beta',
+              project_name: 'beta',
+              sessions: 4,
+              total_tokens: 130000,
+              total_messages: 230,
+              percent_sessions: 33.3,
+              percent_tokens: 40.6,
+              leverage_tokens_mean: 1.6,
+              leverage_chars_mean: 2.1,
+            },
+          ],
           top_tools: [],
         }),
       });
@@ -140,10 +170,10 @@ test.describe('@full Cross Session Char Metrics', () => {
       'Chars (CJK/Latin): 90,000 / 330,000'
     );
     await expect(page.locator('.kpi-card', { hasText: 'Automation efficiency' })).toContainText(
-      'Token yield (mean/median/p90): 2.40x / 2.20x / 3.10x'
+      'Token leverage (mean/median/p90): 2.40x / 2.20x / 3.10x'
     );
     await expect(page.locator('.kpi-card', { hasText: 'Automation efficiency' })).toContainText(
-      'Char yield (mean/median/p90): 3.50x / 3.30x / 4.20x'
+      'Char leverage (mean/median/p90): 3.50x / 3.30x / 4.20x'
     );
     await expect(page.locator('.kpi-card', { hasText: 'Tool execution' })).toContainText(
       'Model tok/s (mean/median/p90): 12.40 / 11.80 / 15.90'
@@ -153,6 +183,15 @@ test.describe('@full Cross Session Char Metrics', () => {
     );
     await expect(page.locator('.kpi-card', { hasText: 'Tool execution' })).toContainText(
       'Cache tok/s mean: 1.60 (1.10 / 0.50)'
+    );
+    await expect(page.locator('.kpi-card', { hasText: 'Code capacity estimate' })).toContainText(
+      '5,460'
+    );
+    await expect(page.locator('.overview-card', { hasText: 'Top projects' })).toContainText(
+      '2.90x'
+    );
+    await expect(page.locator('.overview-card', { hasText: 'Top projects' })).toContainText(
+      '3.80x'
     );
   });
 });

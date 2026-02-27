@@ -281,6 +281,8 @@ class TestSessionStatisticsAPI:
             assert "character_breakdown" in stats
             assert "user_yield_ratio_tokens" in stats
             assert "user_yield_ratio_chars" in stats
+            assert "leverage_ratio_tokens" in stats
+            assert "leverage_ratio_chars" in stats
             assert "avg_tokens_per_second" in stats
             assert "read_tokens_per_second" in stats
             assert "output_tokens_per_second" in stats
@@ -329,6 +331,7 @@ class TestAnalyticsAPI:
         assert "total_tokens" in payload
         assert "bottleneck_distribution" in payload
         assert "active_time_ratio" in payload
+        assert "total_tool_output_tokens" in payload
         assert "total_trajectory_file_size_bytes" in payload
         assert "total_chars" in payload
         assert "yield_ratio_tokens_mean" in payload
@@ -337,6 +340,12 @@ class TestAnalyticsAPI:
         assert "yield_ratio_chars_mean" in payload
         assert "yield_ratio_chars_median" in payload
         assert "yield_ratio_chars_p90" in payload
+        assert "leverage_tokens_mean" in payload
+        assert "leverage_tokens_median" in payload
+        assert "leverage_tokens_p90" in payload
+        assert "leverage_chars_mean" in payload
+        assert "leverage_chars_median" in payload
+        assert "leverage_chars_p90" in payload
         assert "avg_tokens_per_second_mean" in payload
         assert "avg_tokens_per_second_median" in payload
         assert "avg_tokens_per_second_p90" in payload
@@ -370,6 +379,8 @@ class TestAnalyticsAPI:
         assert 0.0 <= payload["active_time_ratio"] <= 1.0
         assert payload["yield_ratio_tokens_p90"] >= payload["yield_ratio_tokens_median"]
         assert payload["yield_ratio_chars_p90"] >= payload["yield_ratio_chars_median"]
+        assert payload["leverage_tokens_p90"] >= payload["leverage_tokens_median"]
+        assert payload["leverage_chars_p90"] >= payload["leverage_chars_median"]
         assert payload["avg_tokens_per_second_p90"] >= payload["avg_tokens_per_second_median"]
 
         active = (
@@ -524,6 +535,63 @@ class TestSessionServiceIntegration:
 
         assert day_seconds == pytest.approx(60.0)
         assert night_seconds == pytest.approx(60.0)
+
+    @pytest.mark.asyncio
+    async def test_analytics_overview_leverage_invalid_payload_fallback(
+        self, tmp_path: Path
+    ) -> None:
+        """Malformed leverage source fields should not crash analytics aggregation."""
+        service = SessionService(
+            session_path=tmp_path / "claude",
+            codex_session_path=tmp_path / "codex",
+        )
+        rows = [
+            {
+                "session_id": "bad-1",
+                "project_path": "/tmp/project-a",
+                "git_branch": "main",
+                "created_at": "2026-02-03T10:00:00.000Z",
+                "updated_at": "2026-02-03T10:10:00.000Z",
+                "total_messages": 1,
+                "total_tokens": 20,
+                "total_tool_calls": 0,
+                "duration_seconds": 600.0,
+                "bottleneck": "Model",
+                "automation_ratio": None,
+                "statistics": {
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 20,
+                    "user_yield_ratio_tokens": "invalid",
+                    "user_yield_ratio_chars": "invalid",
+                    "character_breakdown": {
+                        "total_chars": 30,
+                        "user_chars": 0,
+                        "model_chars": 30,
+                        "tool_chars": 0,
+                        "cjk_chars": 0,
+                        "latin_chars": 30,
+                        "other_chars": 0,
+                    },
+                    "tool_calls": [{"tool_name": "Read", "total_tokens": "invalid"}],
+                    "time_breakdown": {
+                        "total_model_time_seconds": 300.0,
+                        "total_tool_time_seconds": 200.0,
+                        "total_user_time_seconds": 100.0,
+                        "total_inactive_time_seconds": 0.0,
+                        "model_timeout_count": 0,
+                    },
+                },
+            }
+        ]
+        service._get_analytics_rows = lambda *_: rows  # type: ignore[method-assign]
+
+        payload = await service.get_analytics_overview("2026-02-01", "2026-02-10")
+        assert payload.total_sessions == 1
+        assert payload.total_tool_output_tokens == 0
+        assert payload.leverage_tokens_mean == 0.0
+        assert payload.leverage_chars_mean == 0.0
+        assert payload.top_projects[0].leverage_tokens_mean is None
+        assert payload.top_projects[0].leverage_chars_mean is None
 
 
 class TestAPIErrorHandling:

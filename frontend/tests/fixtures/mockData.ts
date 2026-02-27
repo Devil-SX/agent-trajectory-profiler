@@ -194,6 +194,8 @@ export const mockSessionStatistics: SessionStatisticsResponse = {
     },
     user_yield_ratio_tokens: 1.9,
     user_yield_ratio_chars: 3.0,
+    leverage_ratio_tokens: 1.9,
+    leverage_ratio_chars: 3.0,
     avg_tokens_per_second: 14.2,
     read_tokens_per_second: 9.5,
     output_tokens_per_second: 4.7,

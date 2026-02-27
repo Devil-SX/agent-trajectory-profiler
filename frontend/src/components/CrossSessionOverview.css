@@ -125,6 +125,38 @@
   font-size: 0.84rem;
 }
 
+.leverage-estimator-card .kpi-value {
+  font-size: 1.25rem;
+}
+
+.leverage-controls {
+  margin-top: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+}
+
+.leverage-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.74rem;
+  color: #4f6073;
+}
+
+.leverage-controls input {
+  border: 1px solid #c6d2dd;
+  border-radius: 6px;
+  min-height: 34px;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.82rem;
+}
+
+.leverage-note {
+  color: #6b7d90;
+  font-style: italic;
+}
+
 .overview-grid {
   display: grid;
   gap: 1rem;

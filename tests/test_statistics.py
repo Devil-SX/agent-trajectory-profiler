@@ -359,6 +359,46 @@ class TestCalculateSessionStatistics:
         assert stats.user_yield_ratio_tokens == pytest.approx(2.0, abs=1e-6)
         assert stats.user_yield_ratio_chars is not None
         assert stats.user_yield_ratio_chars > 0
+        assert stats.leverage_ratio_tokens == pytest.approx(stats.user_yield_ratio_tokens, abs=1e-6)
+        assert stats.leverage_ratio_chars == pytest.approx(stats.user_yield_ratio_chars, abs=1e-6)
+
+    def test_user_yield_ratios_low_leverage(self, temp_session_dir: Path) -> None:
+        """Low-output sessions should surface leverage ratios below 1.0."""
+        file_path = temp_session_dir / "test-yield-low.jsonl"
+        messages = [
+            {
+                "type": "user",
+                "sessionId": "yield-low",
+                "uuid": "msg-1",
+                "timestamp": "2026-02-03T10:00:00.000Z",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "A" * 100}],
+                },
+            },
+            {
+                "type": "assistant",
+                "sessionId": "yield-low",
+                "uuid": "msg-2",
+                "timestamp": "2026-02-03T10:00:10.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "done"}],
+                    "usage": {"input_tokens": 200, "output_tokens": 20},
+                },
+            },
+        ]
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in messages:
+                f.write(json.dumps(data) + "\n")
+
+        parsed = parse_jsonl_file(file_path)
+        stats = calculate_session_statistics(parsed)
+
+        assert stats.user_yield_ratio_tokens is not None
+        assert stats.user_yield_ratio_tokens < 1.0
+        assert stats.leverage_ratio_tokens is not None
+        assert stats.leverage_ratio_tokens < 1.0
 
     def test_tool_error_records_are_categorized(
         self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
@@ -457,6 +497,8 @@ class TestCalculateSessionStatistics:
         stats = calculate_session_statistics(parsed)
         assert stats.user_yield_ratio_tokens is None
         assert stats.user_yield_ratio_chars is None
+        assert stats.leverage_ratio_tokens is None
+        assert stats.leverage_ratio_chars is None
 
     def test_model_throughput_rates(self, temp_session_dir: Path) -> None:
         """Model throughput rates should use model active seconds as denominator."""

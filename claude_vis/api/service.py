@@ -509,6 +509,7 @@ class SessionService:
                 total_tool_calls=0,
                 total_input_tokens=0,
                 total_output_tokens=0,
+                total_tool_output_tokens=0,
                 total_cache_read_tokens=0,
                 total_cache_creation_tokens=0,
                 total_trajectory_file_size_bytes=0,
@@ -525,6 +526,12 @@ class SessionService:
                 yield_ratio_chars_mean=0.0,
                 yield_ratio_chars_median=0.0,
                 yield_ratio_chars_p90=0.0,
+                leverage_tokens_mean=0.0,
+                leverage_tokens_median=0.0,
+                leverage_tokens_p90=0.0,
+                leverage_chars_mean=0.0,
+                leverage_chars_median=0.0,
+                leverage_chars_p90=0.0,
                 avg_tokens_per_second_mean=0.0,
                 avg_tokens_per_second_median=0.0,
                 avg_tokens_per_second_p90=0.0,
@@ -584,6 +591,7 @@ class SessionService:
 
         total_input_tokens = 0
         total_output_tokens = 0
+        total_tool_output_tokens = 0
         total_cache_read_tokens = 0
         total_cache_creation_tokens = 0
         total_trajectory_file_size_bytes = 0
@@ -618,6 +626,14 @@ class SessionService:
             "cache_creation": [],
         }
 
+        def _coerce_float(value: Any) -> float | None:
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
         tool_acc: dict[str, dict[str, float | int | set[str]]] = defaultdict(
             lambda: {
                 "total_calls": 0,
@@ -642,6 +658,10 @@ class SessionService:
                     "sessions": 0,
                     "total_tokens": 0,
                     "total_messages": 0,
+                    "leverage_tokens_sum": 0.0,
+                    "leverage_tokens_count": 0,
+                    "leverage_chars_sum": 0.0,
+                    "leverage_chars_count": 0,
                 }
             project_acc[project_path]["sessions"] = int(project_acc[project_path]["sessions"]) + 1
             project_acc[project_path]["total_tokens"] = int(
@@ -667,20 +687,30 @@ class SessionService:
             total_latin_chars += int(char_stats.get("latin_chars") or 0)
             total_other_chars += int(char_stats.get("other_chars") or 0)
 
-            token_ratio = stats.get("user_yield_ratio_tokens")
+            tool_tokens = int(
+                sum(
+                    _coerce_float(tool.get("total_tokens")) or 0.0
+                    for tool in (stats.get("tool_calls") or [])
+                )
+            )
+            total_tool_output_tokens += tool_tokens
+
+            token_ratio = _coerce_float(stats.get("user_yield_ratio_tokens"))
             if token_ratio is None:
                 denom_tokens = int(stats.get("total_input_tokens") or 0)
                 if denom_tokens > 0:
                     output_tokens = int(stats.get("total_output_tokens") or 0)
-                    tool_tokens = sum(
-                        int(tool.get("total_tokens") or 0)
-                        for tool in (stats.get("tool_calls") or [])
-                    )
                     token_ratio = (output_tokens + tool_tokens) / denom_tokens
             if token_ratio is not None:
-                token_yield_ratios.append(float(token_ratio))
+                token_yield_ratios.append(token_ratio)
+                project_acc[project_path]["leverage_tokens_sum"] = (
+                    float(project_acc[project_path]["leverage_tokens_sum"]) + token_ratio
+                )
+                project_acc[project_path]["leverage_tokens_count"] = (
+                    int(project_acc[project_path]["leverage_tokens_count"]) + 1
+                )
 
-            char_ratio = stats.get("user_yield_ratio_chars")
+            char_ratio = _coerce_float(stats.get("user_yield_ratio_chars"))
             if char_ratio is None:
                 denom_chars = int(char_stats.get("user_chars") or 0)
                 if denom_chars > 0:
@@ -689,7 +719,13 @@ class SessionService:
                     )
                     char_ratio = output_chars / denom_chars
             if char_ratio is not None:
-                char_yield_ratios.append(float(char_ratio))
+                char_yield_ratios.append(char_ratio)
+                project_acc[project_path]["leverage_chars_sum"] = (
+                    float(project_acc[project_path]["leverage_chars_sum"]) + char_ratio
+                )
+                project_acc[project_path]["leverage_chars_count"] = (
+                    int(project_acc[project_path]["leverage_chars_count"]) + 1
+                )
 
             avg_tok_s = stats.get("avg_tokens_per_second")
             read_tok_s = stats.get("read_tokens_per_second")
@@ -801,6 +837,8 @@ class SessionService:
         for project_path, agg in project_acc.items():
             project_tokens = int(agg["total_tokens"])
             project_sessions = int(agg["sessions"])
+            leverage_tokens_count = int(agg["leverage_tokens_count"])
+            leverage_chars_count = int(agg["leverage_chars_count"])
             top_projects.append(
                 ProjectAggregate(
                     project_path=project_path,
@@ -810,6 +848,16 @@ class SessionService:
                     total_messages=int(agg["total_messages"]),
                     percent_sessions=(project_sessions / total_sessions * 100.0),
                     percent_tokens=(project_tokens / total_tokens * 100.0) if total_tokens else 0.0,
+                    leverage_tokens_mean=(
+                        float(agg["leverage_tokens_sum"]) / leverage_tokens_count
+                        if leverage_tokens_count > 0
+                        else None
+                    ),
+                    leverage_chars_mean=(
+                        float(agg["leverage_chars_sum"]) / leverage_chars_count
+                        if leverage_chars_count > 0
+                        else None
+                    ),
                 )
             )
         top_projects.sort(key=lambda item: (item.sessions, item.total_tokens), reverse=True)
@@ -885,6 +933,7 @@ class SessionService:
             total_tool_calls=total_tool_calls,
             total_input_tokens=total_input_tokens,
             total_output_tokens=total_output_tokens,
+            total_tool_output_tokens=total_tool_output_tokens,
             total_cache_read_tokens=total_cache_read_tokens,
             total_cache_creation_tokens=total_cache_creation_tokens,
             total_trajectory_file_size_bytes=total_trajectory_file_size_bytes,
@@ -901,6 +950,12 @@ class SessionService:
             yield_ratio_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
             yield_ratio_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
             yield_ratio_chars_p90=chars_p90,
+            leverage_tokens_mean=mean(token_yield_ratios) if token_yield_ratios else 0.0,
+            leverage_tokens_median=median(token_yield_ratios) if token_yield_ratios else 0.0,
+            leverage_tokens_p90=token_p90,
+            leverage_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
+            leverage_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
+            leverage_chars_p90=chars_p90,
             avg_tokens_per_second_mean=avg_tps_mean,
             avg_tokens_per_second_median=avg_tps_median,
             avg_tokens_per_second_p90=avg_tps_p90,
