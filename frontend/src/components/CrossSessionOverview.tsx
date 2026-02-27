@@ -18,6 +18,8 @@ import {
   useAnalyticsDistributionQuery,
   useAnalyticsOverviewQuery,
   useAnalyticsTimeseriesQuery,
+  useProjectComparisonQuery,
+  useProjectSwimlaneQuery,
 } from '../hooks/useSessionsQuery';
 import type { AnalyticsBucket } from '../types/session';
 import { truncateMiddle } from '../utils/display';
@@ -99,10 +101,20 @@ function formatSessionShareLabel(label: string): string {
   return truncateMiddle(label, 5, 4);
 }
 
+function buildSwimlaneColor(tokens: number, maxTokens: number): string {
+  if (tokens <= 0 || maxTokens <= 0) {
+    return '#f3f4f6';
+  }
+  const ratio = Math.min(1, tokens / maxTokens);
+  const alpha = 0.18 + ratio * 0.72;
+  return `rgba(37, 99, 235, ${alpha.toFixed(3)})`;
+}
+
 export function CrossSessionOverview() {
   const [preset, setPreset] = useState<RangePreset>('7d');
   const [codingFraction, setCodingFraction] = useState(0.3);
   const [tokensPerLine, setTokensPerLine] = useState(10);
+  const [projectSelection, setProjectSelection] = useState<Record<string, boolean>>({});
   const [customRange, setCustomRange] = useState<DateWindow>({
     startDate: null,
     endDate: null,
@@ -135,12 +147,32 @@ export function CrossSessionOverview() {
   const { data: timeseries, isLoading: timeseriesLoading, error: timeseriesError } =
     useAnalyticsTimeseriesQuery(interval, activeRange.startDate, activeRange.endDate);
 
-  const isLoading = overviewLoading || automationLoading || shareLoading || timeseriesLoading;
+  const {
+    data: projectComparison,
+    isLoading: projectComparisonLoading,
+    error: projectComparisonError,
+  } = useProjectComparisonQuery(activeRange.startDate, activeRange.endDate, 12);
+
+  const {
+    data: projectSwimlane,
+    isLoading: projectSwimlaneLoading,
+    error: projectSwimlaneError,
+  } = useProjectSwimlaneQuery(interval, activeRange.startDate, activeRange.endDate, 12);
+
+  const isLoading =
+    overviewLoading ||
+    automationLoading ||
+    shareLoading ||
+    timeseriesLoading ||
+    projectComparisonLoading ||
+    projectSwimlaneLoading;
   const errorMessage =
     overviewError?.message ||
     automationError?.message ||
     shareError?.message ||
     timeseriesError?.message ||
+    projectComparisonError?.message ||
+    projectSwimlaneError?.message ||
     null;
 
   const topSessionShare = useMemo(() => {
@@ -228,12 +260,50 @@ export function CrossSessionOverview() {
     );
   }
 
-  if (!overview || !automationDistribution || !timeseries) {
+  if (
+    !overview ||
+    !automationDistribution ||
+    !timeseries ||
+    !projectComparison ||
+    !projectSwimlane
+  ) {
     return null;
   }
 
   const topProjects = overview.top_projects.slice(0, 8);
   const topTools = overview.top_tools.slice(0, 8);
+  const comparisonProjects = projectComparison.projects;
+  const defaultProjectPaths = comparisonProjects.slice(0, 3).map((project) => project.project_path);
+  const selectedProjectPaths = comparisonProjects
+    .filter((project) => {
+      const overridden = projectSelection[project.project_path];
+      if (typeof overridden === 'boolean') {
+        return overridden;
+      }
+      return defaultProjectPaths.includes(project.project_path);
+    })
+    .map((project) => project.project_path);
+  const selectedComparisonProjects = comparisonProjects.filter((project) =>
+    selectedProjectPaths.includes(project.project_path)
+  );
+  const swimlaneProjects = projectSwimlane.projects.filter((project) =>
+    selectedProjectPaths.includes(project.project_path)
+  );
+  const swimlanePointMap = new Map<string, (typeof projectSwimlane.points)[number]>();
+  for (const point of projectSwimlane.points) {
+    swimlanePointMap.set(`${point.project_path}::${point.period}`, point);
+  }
+  const swimlaneMaxTokens =
+    projectSwimlane.points.length > 0
+      ? Math.max(...projectSwimlane.points.map((point) => point.tokens))
+      : 0;
+
+  const toggleProjectSelection = (projectPath: string) => {
+    setProjectSelection((prev) => {
+      const currentlySelected = selectedProjectPaths.includes(projectPath);
+      return { ...prev, [projectPath]: !currentlySelected };
+    });
+  };
 
   return (
     <section className="cross-session-overview" aria-label="Cross session overview">
@@ -492,6 +562,128 @@ export function CrossSessionOverview() {
                 </table>
               </div>
             </div>
+          )}
+        </section>
+      </div>
+
+      <div className="overview-grid two-columns">
+        <section className="overview-card">
+          <h4>Project comparison</h4>
+          {comparisonProjects.length === 0 ? (
+            <p className="empty-hint">No project-level comparison data in this range.</p>
+          ) : (
+            <>
+              <p className="project-compare-note">
+                Select projects to compare KPI rows (sessions, tokens, active ratio, leverage).
+              </p>
+              <div className="project-chip-group">
+                {comparisonProjects.map((project) => (
+                  <label key={project.project_path} className="project-chip">
+                    <input
+                      type="checkbox"
+                      checked={selectedProjectPaths.includes(project.project_path)}
+                      onChange={() => toggleProjectSelection(project.project_path)}
+                    />
+                    <span>{project.project_name}</span>
+                  </label>
+                ))}
+              </div>
+
+              {selectedComparisonProjects.length === 0 ? (
+                <p className="empty-hint">Select at least one project to compare.</p>
+              ) : (
+                <div className="table-wrapper">
+                  <table className="compact-table">
+                    <thead>
+                      <tr>
+                        <th>Project</th>
+                        <th>Sessions</th>
+                        <th>Tokens</th>
+                        <th>Active ratio</th>
+                        <th>Token leverage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedComparisonProjects.map((project) => (
+                        <tr key={project.project_path}>
+                          <td>{project.project_name}</td>
+                          <td>{formatNumber(project.sessions)}</td>
+                          <td>{formatNumber(project.total_tokens)}</td>
+                          <td>{formatPercent(project.active_ratio * 100)}</td>
+                          <td>{formatLeverage(project.leverage_tokens_mean)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+
+        <section className="overview-card">
+          <h4>Project swimlane</h4>
+          {projectSwimlane.truncated_project_count > 0 && (
+            <p className="project-compare-note">
+              Showing top {projectSwimlane.project_limit} projects by tokens.
+              {' '}
+              {projectSwimlane.truncated_project_count}
+              {' '}
+              additional project(s) are hidden for readability.
+            </p>
+          )}
+          {projectSwimlane.periods.length === 0 || swimlaneProjects.length === 0 ? (
+            <p className="empty-hint">No swimlane data for current filters.</p>
+          ) : (
+            <>
+              <div className="table-wrapper swimlane-wrapper">
+                <table className="compact-table swimlane-table">
+                  <thead>
+                    <tr>
+                      <th>Project</th>
+                      {projectSwimlane.periods.map((period) => (
+                        <th key={period}>{period}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {swimlaneProjects.map((project) => (
+                      <tr key={project.project_path}>
+                        <td>{project.project_name}</td>
+                        {projectSwimlane.periods.map((period) => {
+                          const point = swimlanePointMap.get(`${project.project_path}::${period}`);
+                          const tokens = point?.tokens ?? 0;
+                          const sessions = point?.sessions ?? 0;
+                          const activeRatio = point?.active_ratio ?? 0;
+                          const leverage = point?.leverage_tokens_mean;
+                          return (
+                            <td
+                              key={`${project.project_path}-${period}`}
+                              className="swimlane-cell"
+                              style={{ backgroundColor: buildSwimlaneColor(tokens, swimlaneMaxTokens) }}
+                              title={
+                                `Project: ${project.project_name}\nPeriod: ${period}\n` +
+                                `Tokens: ${formatNumber(tokens)}\nSessions: ${sessions}\n` +
+                                `Active ratio: ${formatPercent(activeRatio * 100)}\n` +
+                                `Token leverage: ${formatLeverage(leverage)}`
+                              }
+                            >
+                              <span>{tokens > 0 ? formatNumber(tokens) : '--'}</span>
+                              <small>{sessions > 0 ? `${sessions} sess` : ''}</small>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="swimlane-legend">
+                <span>Token density</span>
+                <div className="swimlane-gradient" />
+                <span>Low → High</span>
+              </div>
+            </>
           )}
         </section>
       </div>

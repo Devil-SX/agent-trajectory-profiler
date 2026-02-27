@@ -221,6 +221,76 @@
   padding: 0.75rem 0;
 }
 
+.project-compare-note {
+  margin: 0;
+  color: #4f6073;
+  font-size: 0.83rem;
+}
+
+.project-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.project-chip {
+  border: 1px solid #dbe3ea;
+  border-radius: 999px;
+  background: #f7fafc;
+  color: #243447;
+  padding: 0.2rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  min-height: 30px;
+}
+
+.swimlane-wrapper {
+  margin-top: 0.55rem;
+}
+
+.swimlane-table th,
+.swimlane-table td {
+  text-align: center;
+}
+
+.swimlane-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.swimlane-cell {
+  min-width: 80px;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.swimlane-cell small {
+  font-size: 0.7rem;
+  color: #1f2937;
+}
+
+.swimlane-legend {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #4f6073;
+  font-size: 0.78rem;
+}
+
+.swimlane-gradient {
+  width: 120px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f3f4f6 0%, #2563eb 100%);
+}
+
 .table-wrapper {
   overflow-x: auto;
 }

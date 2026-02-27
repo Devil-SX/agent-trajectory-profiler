@@ -23,6 +23,10 @@ from claude_vis.api.models import (
     AnalyticsTimeseriesPoint,
     AnalyticsTimeseriesResponse,
     ProjectAggregate,
+    ProjectComparisonItem,
+    ProjectComparisonResponse,
+    ProjectSwimlanePoint,
+    ProjectSwimlaneResponse,
     SessionSummary,
     ToolAggregate,
 )
@@ -1198,6 +1202,232 @@ class SessionService:
             interval=cast(AnalyticsInterval, interval),
             start_date=start_date,
             end_date=end_date,
+            points=points,
+        )
+
+    async def get_project_comparison(
+        self, start_date: str, end_date: str, limit: int = 10
+    ) -> ProjectComparisonResponse:
+        """Return cross-project KPI comparison for the selected range."""
+        rows = self._get_analytics_rows(start_date, end_date)
+
+        def _coerce_float(value: Any) -> float | None:
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        acc: dict[str, dict[str, float | int | str]] = {}
+        for row in rows:
+            project_path = row.get("project_path") or ""
+            project_name = Path(project_path).name if project_path else "(unknown)"
+            if project_path not in acc:
+                acc[project_path] = {
+                    "project_name": project_name,
+                    "sessions": 0,
+                    "total_tokens": 0,
+                    "active_ratio_sum": 0.0,
+                    "active_ratio_count": 0,
+                    "leverage_tokens_sum": 0.0,
+                    "leverage_tokens_count": 0,
+                    "leverage_chars_sum": 0.0,
+                    "leverage_chars_count": 0,
+                }
+
+            bucket = acc[project_path]
+            bucket["sessions"] = int(bucket["sessions"]) + 1
+            bucket["total_tokens"] = int(bucket["total_tokens"]) + int(row.get("total_tokens") or 0)
+
+            stats = row.get("statistics") or {}
+            time_breakdown = stats.get("time_breakdown") or {}
+            model_seconds = float(time_breakdown.get("total_model_time_seconds") or 0.0)
+            tool_seconds = float(time_breakdown.get("total_tool_time_seconds") or 0.0)
+            user_seconds = float(time_breakdown.get("total_user_time_seconds") or 0.0)
+            inactive_seconds = float(time_breakdown.get("total_inactive_time_seconds") or 0.0)
+            active_seconds = model_seconds + tool_seconds + user_seconds
+            span = active_seconds + inactive_seconds
+            if span > 0:
+                bucket["active_ratio_sum"] = (
+                    float(bucket["active_ratio_sum"]) + active_seconds / span
+                )
+                bucket["active_ratio_count"] = int(bucket["active_ratio_count"]) + 1
+
+            token_ratio = _coerce_float(stats.get("leverage_ratio_tokens"))
+            if token_ratio is None:
+                token_ratio = _coerce_float(stats.get("user_yield_ratio_tokens"))
+            if token_ratio is not None:
+                bucket["leverage_tokens_sum"] = float(bucket["leverage_tokens_sum"]) + token_ratio
+                bucket["leverage_tokens_count"] = int(bucket["leverage_tokens_count"]) + 1
+
+            char_ratio = _coerce_float(stats.get("leverage_ratio_chars"))
+            if char_ratio is None:
+                char_ratio = _coerce_float(stats.get("user_yield_ratio_chars"))
+            if char_ratio is not None:
+                bucket["leverage_chars_sum"] = float(bucket["leverage_chars_sum"]) + char_ratio
+                bucket["leverage_chars_count"] = int(bucket["leverage_chars_count"]) + 1
+
+        items: list[ProjectComparisonItem] = []
+        for project_path, bucket in acc.items():
+            active_ratio_count = int(bucket["active_ratio_count"])
+            token_leverage_count = int(bucket["leverage_tokens_count"])
+            char_leverage_count = int(bucket["leverage_chars_count"])
+            items.append(
+                ProjectComparisonItem(
+                    project_path=project_path,
+                    project_name=str(bucket["project_name"]),
+                    sessions=int(bucket["sessions"]),
+                    total_tokens=int(bucket["total_tokens"]),
+                    active_ratio=(
+                        float(bucket["active_ratio_sum"]) / active_ratio_count
+                        if active_ratio_count > 0
+                        else 0.0
+                    ),
+                    leverage_tokens_mean=(
+                        float(bucket["leverage_tokens_sum"]) / token_leverage_count
+                        if token_leverage_count > 0
+                        else None
+                    ),
+                    leverage_chars_mean=(
+                        float(bucket["leverage_chars_sum"]) / char_leverage_count
+                        if char_leverage_count > 0
+                        else None
+                    ),
+                )
+            )
+
+        items.sort(key=lambda item: (item.total_tokens, item.sessions), reverse=True)
+        if limit > 0:
+            items = items[:limit]
+
+        return ProjectComparisonResponse(
+            start_date=start_date,
+            end_date=end_date,
+            total_projects=len(acc),
+            projects=items,
+        )
+
+    async def get_project_swimlane(
+        self,
+        start_date: str,
+        end_date: str,
+        interval: str = "day",
+        project_limit: int = 12,
+    ) -> ProjectSwimlaneResponse:
+        """Return project x time swimlane points for cross-session exploration."""
+        if interval not in {"day", "week"}:
+            raise ValueError("interval must be one of: day, week")
+
+        comparison = await self.get_project_comparison(start_date, end_date, limit=0)
+        all_projects = comparison.projects
+        selected_projects = all_projects[:project_limit] if project_limit > 0 else all_projects
+        selected_paths = {project.project_path for project in selected_projects}
+        truncated_project_count = max(0, len(all_projects) - len(selected_projects))
+
+        def _coerce_float(value: Any) -> float | None:
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        rows = self._get_analytics_rows(start_date, end_date)
+        bucketed: dict[tuple[str, str], dict[str, float | int | str]] = {}
+        periods: set[str] = set()
+
+        for row in rows:
+            project_path = row.get("project_path") or ""
+            if project_path not in selected_paths:
+                continue
+
+            created = self._parse_created_date(row.get("created_at"))
+            if created is None:
+                continue
+
+            if interval == "week":
+                iso_year, iso_week, _ = created.isocalendar()
+                period = f"{iso_year}-W{iso_week:02d}"
+            else:
+                period = created.isoformat()
+
+            key = (project_path, period)
+            if key not in bucketed:
+                project_name = Path(project_path).name if project_path else "(unknown)"
+                bucketed[key] = {
+                    "project_name": project_name,
+                    "sessions": 0,
+                    "tokens": 0,
+                    "active_ratio_sum": 0.0,
+                    "active_ratio_count": 0,
+                    "leverage_sum": 0.0,
+                    "leverage_count": 0,
+                }
+
+            periods.add(period)
+            bucket = bucketed[key]
+            bucket["sessions"] = int(bucket["sessions"]) + 1
+            bucket["tokens"] = int(bucket["tokens"]) + int(row.get("total_tokens") or 0)
+
+            stats = row.get("statistics") or {}
+            time_breakdown = stats.get("time_breakdown") or {}
+            model_seconds = float(time_breakdown.get("total_model_time_seconds") or 0.0)
+            tool_seconds = float(time_breakdown.get("total_tool_time_seconds") or 0.0)
+            user_seconds = float(time_breakdown.get("total_user_time_seconds") or 0.0)
+            inactive_seconds = float(time_breakdown.get("total_inactive_time_seconds") or 0.0)
+            active_seconds = model_seconds + tool_seconds + user_seconds
+            span = active_seconds + inactive_seconds
+            if span > 0:
+                bucket["active_ratio_sum"] = (
+                    float(bucket["active_ratio_sum"]) + active_seconds / span
+                )
+                bucket["active_ratio_count"] = int(bucket["active_ratio_count"]) + 1
+
+            leverage_value = _coerce_float(stats.get("leverage_ratio_tokens"))
+            if leverage_value is None:
+                leverage_value = _coerce_float(stats.get("user_yield_ratio_tokens"))
+            if leverage_value is not None:
+                bucket["leverage_sum"] = float(bucket["leverage_sum"]) + leverage_value
+                bucket["leverage_count"] = int(bucket["leverage_count"]) + 1
+
+        sorted_periods = sorted(periods)
+        points: list[ProjectSwimlanePoint] = []
+        for project in selected_projects:
+            for period in sorted_periods:
+                bucket = bucketed.get((project.project_path, period))
+                if bucket is None:
+                    continue
+                active_ratio_count = int(bucket["active_ratio_count"])
+                leverage_count = int(bucket["leverage_count"])
+                points.append(
+                    ProjectSwimlanePoint(
+                        period=period,
+                        project_path=project.project_path,
+                        project_name=str(bucket["project_name"]),
+                        sessions=int(bucket["sessions"]),
+                        tokens=int(bucket["tokens"]),
+                        active_ratio=(
+                            float(bucket["active_ratio_sum"]) / active_ratio_count
+                            if active_ratio_count > 0
+                            else 0.0
+                        ),
+                        leverage_tokens_mean=(
+                            float(bucket["leverage_sum"]) / leverage_count
+                            if leverage_count > 0
+                            else None
+                        ),
+                    )
+                )
+
+        return ProjectSwimlaneResponse(
+            interval=cast(AnalyticsInterval, interval),
+            start_date=start_date,
+            end_date=end_date,
+            project_limit=project_limit,
+            truncated_project_count=truncated_project_count,
+            periods=sorted_periods,
+            projects=selected_projects,
             points=points,
         )
 

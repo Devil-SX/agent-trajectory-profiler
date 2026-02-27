@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Playwright smoke coverage for day/night analytics rendering and chart/table consistency checks (`tests/day-night-analytics.spec.ts`).
 - Leverage analytics API fields for session/cross-session views (`leverage_ratio_*`, `leverage_*_mean|median|p90`) plus aggregated `total_tool_output_tokens`.
 - Project-level leverage aggregates in cross-session overview (`top_projects[*].leverage_tokens_mean`, `leverage_chars_mean`) for per-project comparison.
+- New analytics APIs for project-level exploration: `GET /api/analytics/project-comparison` and `GET /api/analytics/project-swimlane`.
+- Cross-session project swimlane E2E coverage with project filtering and mobile usability assertions (`tests/project-swimlane.spec.ts`).
 
 ### Changed
 
@@ -59,6 +61,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-session token-share chart now truncates long session labels for readability while preserving full values in tooltip context.
 - Cross-session overview now includes a dedicated Day vs Night section (stacked chart + table) with explicit local-time night-window labeling.
 - Session and cross-session UI copy now uses "Leverage" terminology, with a configurable code-capacity estimate card (assumption-based, non-exact).
+- Cross-session analytics now includes interactive multi-project comparison controls and a project swimlane heatmap with tooltip, no-data state, and large-project truncation hint.
 
 ### Fixed
 

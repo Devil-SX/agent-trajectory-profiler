@@ -136,6 +136,98 @@ export async function setupMockApi(page: Page) {
     ],
   };
 
+  const mockProjectComparison = {
+    start_date: '2026-02-20',
+    end_date: '2026-02-27',
+    total_projects: 3,
+    projects: [
+      {
+        project_path: '/home/user/project',
+        project_name: 'project',
+        sessions: 2,
+        total_tokens: 40000,
+        total_messages: 65,
+        percent_sessions: 100,
+        percent_tokens: 100,
+        leverage_tokens_mean: 2.5,
+        leverage_chars_mean: 2.7,
+        active_ratio: 0.93,
+      },
+      {
+        project_path: '/home/user/design-system',
+        project_name: 'design-system',
+        sessions: 1,
+        total_tokens: 12000,
+        total_messages: 22,
+        percent_sessions: 50,
+        percent_tokens: 30,
+        leverage_tokens_mean: 1.6,
+        leverage_chars_mean: 1.9,
+        active_ratio: 0.82,
+      },
+      {
+        project_path: '/home/user/infra',
+        project_name: 'infra',
+        sessions: 1,
+        total_tokens: 8000,
+        total_messages: 18,
+        percent_sessions: 50,
+        percent_tokens: 20,
+        leverage_tokens_mean: 1.2,
+        leverage_chars_mean: 1.4,
+        active_ratio: 0.74,
+      },
+    ],
+  };
+
+  const mockProjectSwimlane = {
+    interval: 'day',
+    start_date: '2026-02-20',
+    end_date: '2026-02-27',
+    project_limit: 12,
+    truncated_project_count: 0,
+    periods: ['2026-02-26', '2026-02-27'],
+    projects: mockProjectComparison.projects,
+    points: [
+      {
+        period: '2026-02-26',
+        project_path: '/home/user/project',
+        project_name: 'project',
+        sessions: 1,
+        tokens: 17000,
+        active_ratio: 0.91,
+        leverage_tokens_mean: 2.2,
+      },
+      {
+        period: '2026-02-27',
+        project_path: '/home/user/project',
+        project_name: 'project',
+        sessions: 1,
+        tokens: 23000,
+        active_ratio: 0.94,
+        leverage_tokens_mean: 2.8,
+      },
+      {
+        period: '2026-02-27',
+        project_path: '/home/user/design-system',
+        project_name: 'design-system',
+        sessions: 1,
+        tokens: 12000,
+        active_ratio: 0.82,
+        leverage_tokens_mean: 1.6,
+      },
+      {
+        period: '2026-02-26',
+        project_path: '/home/user/infra',
+        project_name: 'infra',
+        sessions: 1,
+        tokens: 8000,
+        active_ratio: 0.74,
+        leverage_tokens_mean: 1.2,
+      },
+    ],
+  };
+
   const mockSyncStatus = {
     total_files: 22,
     total_sessions: 2,
@@ -272,6 +364,22 @@ export async function setupMockApi(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(mockAnalyticsTimeseries),
+    });
+  });
+
+  await page.route(/\/api\/analytics\/project-comparison(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockProjectComparison),
+    });
+  });
+
+  await page.route(/\/api\/analytics\/project-swimlane(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockProjectSwimlane),
     });
   });
 }

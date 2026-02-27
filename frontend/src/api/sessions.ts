@@ -8,6 +8,8 @@ import type {
   AnalyticsInterval,
   AnalyticsOverviewResponse,
   AnalyticsTimeseriesResponse,
+  ProjectComparisonResponse,
+  ProjectSwimlaneResponse,
   SyncRunDetail,
   SyncStatusResponse,
   SessionListResponse,
@@ -304,6 +306,68 @@ export async function fetchAnalyticsTimeseries(
   } catch (error) {
     if (import.meta.env.DEV) {
       console.error('Failed to fetch analytics timeseries:', error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch project comparison KPI rows for cross-session analytics.
+ */
+export async function fetchProjectComparison(
+  startDate: string | null = null,
+  endDate: string | null = null,
+  limit: number = 10
+): Promise<ProjectComparisonResponse> {
+  try {
+    const params = new URLSearchParams({
+      limit: String(limit),
+    });
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/api/analytics/project-comparison?${params.toString()}`
+    );
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to fetch project comparison:', error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch swimlane points for cross-session project activity.
+ */
+export async function fetchProjectSwimlane(
+  interval: AnalyticsInterval = 'day',
+  startDate: string | null = null,
+  endDate: string | null = null,
+  projectLimit: number = 12
+): Promise<ProjectSwimlaneResponse> {
+  try {
+    const params = new URLSearchParams({
+      interval,
+      project_limit: String(projectLimit),
+    });
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/api/analytics/project-swimlane?${params.toString()}`
+    );
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to fetch project swimlane:', error);
     }
     throw error;
   }

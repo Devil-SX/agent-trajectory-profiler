@@ -429,6 +429,42 @@ class TestAnalyticsAPI:
         assert "points" in payload
         assert isinstance(payload["points"], list)
 
+    def test_project_comparison_endpoint(self, test_client: TestClient) -> None:
+        """Project comparison endpoint should return project KPI rows."""
+        response = test_client.get(
+            "/api/analytics/project-comparison?start_date=2026-02-01&end_date=2026-02-10&limit=5"
+        )
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert "total_projects" in payload
+        assert "projects" in payload
+        assert isinstance(payload["projects"], list)
+        if payload["projects"]:
+            first = payload["projects"][0]
+            assert "project_name" in first
+            assert "sessions" in first
+            assert "total_tokens" in first
+            assert "active_ratio" in first
+            assert "leverage_tokens_mean" in first
+            assert "leverage_chars_mean" in first
+
+    def test_project_swimlane_endpoint(self, test_client: TestClient) -> None:
+        """Project swimlane endpoint should return period/project points."""
+        response = test_client.get(
+            "/api/analytics/project-swimlane?start_date=2026-02-01&end_date=2026-02-10"
+            "&interval=day&project_limit=3"
+        )
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert payload["interval"] == "day"
+        assert "periods" in payload
+        assert "projects" in payload
+        assert "points" in payload
+        assert "truncated_project_count" in payload
+        assert isinstance(payload["points"], list)
+
     def test_analytics_invalid_date_range(self, test_client: TestClient) -> None:
         """Invalid date range should return HTTP 400."""
         response = test_client.get(

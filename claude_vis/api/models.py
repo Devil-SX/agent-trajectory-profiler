@@ -144,6 +144,30 @@ class ToolAggregate(BaseModel):
     percent_of_tool_calls: float
 
 
+class ProjectComparisonItem(BaseModel):
+    """Per-project KPI row for cross-session comparison."""
+
+    project_path: str
+    project_name: str
+    sessions: int
+    total_tokens: int
+    active_ratio: float
+    leverage_tokens_mean: float | None
+    leverage_chars_mean: float | None
+
+
+class ProjectSwimlanePoint(BaseModel):
+    """One swimlane cell (project x period)."""
+
+    period: str
+    project_path: str
+    project_name: str
+    sessions: int
+    tokens: int
+    active_ratio: float
+    leverage_tokens_mean: float | None
+
+
 class AnalyticsTimeseriesPoint(BaseModel):
     """Time-series point for aggregated analytics."""
 
@@ -226,6 +250,28 @@ class AnalyticsOverviewResponse(BaseModel):
     bottleneck_distribution: list[AnalyticsBucket]
     top_projects: list[ProjectAggregate]
     top_tools: list[ToolAggregate]
+
+
+class ProjectComparisonResponse(BaseModel):
+    """Response model for GET /api/analytics/project-comparison."""
+
+    start_date: str
+    end_date: str
+    total_projects: int
+    projects: list[ProjectComparisonItem]
+
+
+class ProjectSwimlaneResponse(BaseModel):
+    """Response model for GET /api/analytics/project-swimlane."""
+
+    interval: Literal["day", "week"]
+    start_date: str
+    end_date: str
+    project_limit: int
+    truncated_project_count: int
+    periods: list[str]
+    projects: list[ProjectComparisonItem]
+    points: list[ProjectSwimlanePoint]
 
 
 class AnalyticsDistributionResponse(BaseModel):

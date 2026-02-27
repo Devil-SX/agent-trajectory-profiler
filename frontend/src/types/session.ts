@@ -491,3 +491,41 @@ export interface AnalyticsTimeseriesResponse {
   end_date: string;
   points: AnalyticsTimeseriesPoint[];
 }
+
+export interface ProjectComparisonResponse {
+  start_date: string;
+  end_date: string;
+  total_projects: number;
+  projects: ProjectComparisonItem[];
+}
+
+export interface ProjectComparisonItem {
+  project_path: string;
+  project_name: string;
+  sessions: number;
+  total_tokens: number;
+  active_ratio: number;
+  leverage_tokens_mean: number | null;
+  leverage_chars_mean: number | null;
+}
+
+export interface ProjectSwimlanePoint {
+  period: string;
+  project_path: string;
+  project_name: string;
+  sessions: number;
+  tokens: number;
+  active_ratio: number;
+  leverage_tokens_mean: number | null;
+}
+
+export interface ProjectSwimlaneResponse {
+  interval: AnalyticsInterval;
+  start_date: string;
+  end_date: string;
+  project_limit: number;
+  truncated_project_count: number;
+  periods: string[];
+  projects: ProjectComparisonItem[];
+  points: ProjectSwimlanePoint[];
+}

@@ -12,6 +12,8 @@ import {
   fetchAnalyticsDistribution,
   fetchAnalyticsOverview,
   fetchAnalyticsTimeseries,
+  fetchProjectComparison,
+  fetchProjectSwimlane,
   fetchSyncStatus,
   fetchSessions,
   fetchSessionDetail,
@@ -24,6 +26,8 @@ import type {
   AnalyticsInterval,
   AnalyticsOverviewResponse,
   AnalyticsTimeseriesResponse,
+  ProjectComparisonResponse,
+  ProjectSwimlaneResponse,
   SyncRunDetail,
   SyncStatusResponse,
   SessionListResponse,
@@ -58,6 +62,19 @@ export const sessionKeys = {
     endDate: string | null,
   ) =>
     [...sessionKeys.analytics(), 'timeseries', { interval, startDate, endDate }] as const,
+  projectComparison: (startDate: string | null, endDate: string | null, limit: number) =>
+    [...sessionKeys.analytics(), 'project-comparison', { startDate, endDate, limit }] as const,
+  projectSwimlane: (
+    interval: AnalyticsInterval,
+    startDate: string | null,
+    endDate: string | null,
+    projectLimit: number,
+  ) =>
+    [
+      ...sessionKeys.analytics(),
+      'project-swimlane',
+      { interval, startDate, endDate, projectLimit },
+    ] as const,
   syncStatus: () => [...sessionKeys.all, 'sync-status'] as const,
 };
 
@@ -146,6 +163,37 @@ export function useAnalyticsTimeseriesQuery(
     queryKey: sessionKeys.analyticsTimeseries(interval, startDate, endDate),
     queryFn: () => fetchAnalyticsTimeseries(interval, startDate, endDate),
     staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+/**
+ * Hook to fetch cross-session project comparison rows.
+ */
+export function useProjectComparisonQuery(
+  startDate: string | null = null,
+  endDate: string | null = null,
+  limit: number = 10,
+): UseQueryResult<ProjectComparisonResponse, Error> {
+  return useQuery({
+    queryKey: sessionKeys.projectComparison(startDate, endDate, limit),
+    queryFn: () => fetchProjectComparison(startDate, endDate, limit),
+    staleTime: 60 * 1000,
+  });
+}
+
+/**
+ * Hook to fetch cross-session project swimlane points.
+ */
+export function useProjectSwimlaneQuery(
+  interval: AnalyticsInterval = 'day',
+  startDate: string | null = null,
+  endDate: string | null = null,
+  projectLimit: number = 12,
+): UseQueryResult<ProjectSwimlaneResponse, Error> {
+  return useQuery({
+    queryKey: sessionKeys.projectSwimlane(interval, startDate, endDate, projectLimit),
+    queryFn: () => fetchProjectSwimlane(interval, startDate, endDate, projectLimit),
+    staleTime: 60 * 1000,
   });
 }
 

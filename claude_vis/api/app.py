@@ -23,6 +23,8 @@ from claude_vis.api.models import (
     AnalyticsOverviewResponse,
     AnalyticsTimeseriesResponse,
     ErrorResponse,
+    ProjectComparisonResponse,
+    ProjectSwimlaneResponse,
     SessionDetailResponse,
     SessionListResponse,
     SessionStatisticsResponse,
@@ -419,6 +421,73 @@ async def get_analytics_timeseries(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to compute timeseries: {str(e)}"
+        ) from e
+
+
+@app.get(
+    "/api/analytics/project-comparison",
+    response_model=ProjectComparisonResponse,
+    tags=["Analytics"],
+    summary="Get cross-project comparison metrics",
+    description="Returns project-level KPI comparison for selected date range.",
+)
+async def get_project_comparison(
+    response: Response,
+    start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
+    limit: int = Query(default=10, ge=1, le=50, description="Maximum projects to return"),
+) -> ProjectComparisonResponse:
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    start_date, end_date = _normalize_date_range(start_date, end_date, default_last_days=7)
+    assert start_date is not None and end_date is not None
+
+    try:
+        result = await session_service.get_project_comparison(start_date, end_date, limit)
+        response.headers["Cache-Control"] = "public, max-age=60"
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to compute project comparison: {str(e)}"
+        ) from e
+
+
+@app.get(
+    "/api/analytics/project-swimlane",
+    response_model=ProjectSwimlaneResponse,
+    tags=["Analytics"],
+    summary="Get project swimlane points",
+    description="Returns project x time points for swimlane visualizations.",
+)
+async def get_project_swimlane(
+    response: Response,
+    interval: Literal["day", "week"] = Query(default="day"),
+    start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
+    project_limit: int = Query(default=12, ge=1, le=50),
+) -> ProjectSwimlaneResponse:
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    start_date, end_date = _normalize_date_range(start_date, end_date, default_last_days=7)
+    assert start_date is not None and end_date is not None
+
+    try:
+        result = await session_service.get_project_swimlane(
+            start_date, end_date, interval, project_limit
+        )
+        response.headers["Cache-Control"] = "public, max-age=60"
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to compute project swimlane: {str(e)}"
         ) from e
 
 
