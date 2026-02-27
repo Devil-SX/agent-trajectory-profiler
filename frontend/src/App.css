@@ -7,19 +7,50 @@
   flex-direction: column;
   min-width: 320px;
   box-sizing: border-box;
+  color: var(--color-text-primary);
 }
 
 .app header {
   margin-bottom: 2rem;
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
 .app header h1 {
   font-size: 2rem;
   margin: 0;
-  color: #333;
+  color: var(--color-text-primary);
   line-height: 1.2;
+}
+
+.header-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.header-controls label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.header-controls select {
+  min-height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0 0.55rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
 }
 
 .app main {
@@ -40,9 +71,9 @@
 
 .session-content {
   padding: 0;
-  background-color: #ffffff;
+  background-color: var(--color-surface);
   border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   flex: 1;
   min-width: 0;
   overflow: visible;
@@ -53,17 +84,17 @@
 }
 
 .placeholder-text {
-  color: #666;
+  color: var(--color-text-muted);
   font-style: italic;
 }
 
 .no-session {
   padding: 2rem;
   text-align: center;
-  color: #999;
-  background-color: #f9f9f9;
+  color: var(--color-text-muted);
+  background-color: var(--color-surface-muted);
   border-radius: 8px;
-  border: 1px dashed #ccc;
+  border: 1px dashed var(--color-border-strong);
   flex: 1;
   display: flex;
   align-items: center;
@@ -78,12 +109,12 @@
 
 .view-tabs--primary {
   margin-bottom: 0.25rem;
-  border-bottom: 2px solid #d8e2f0;
+  border-bottom: 2px solid var(--color-border);
 }
 
 .view-tabs--secondary {
   margin-bottom: 1rem;
-  border-bottom: 2px solid #e0e0e0;
+  border-bottom: 2px solid var(--color-border);
 }
 
 .tab-button {
@@ -93,7 +124,7 @@
   border-bottom: 3px solid transparent;
   font-size: 1rem;
   font-weight: 500;
-  color: #666;
+  color: var(--color-text-muted);
   cursor: pointer;
   transition: all 0.2s;
   position: relative;
@@ -103,13 +134,13 @@
 }
 
 .tab-button:hover {
-  color: #1976d2;
-  background-color: #f5f5f5;
+  color: var(--color-accent);
+  background-color: var(--color-surface-muted);
 }
 
 .tab-button.active {
-  color: #1976d2;
-  border-bottom-color: #1976d2;
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
 }
 
 .tab-button.mobile-sidebar-toggle {
@@ -181,10 +212,20 @@
 
   .app header {
     margin-bottom: 1rem;
+    align-items: flex-start;
   }
 
   .app header h1 {
     font-size: 1.5rem;
+  }
+
+  .header-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .header-controls select {
+    flex: 1;
   }
 
   .main-content {
@@ -241,7 +282,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgb(0 0 0 / 50%);
     z-index: 999;
     opacity: 0;
     animation: fadeIn 0.3s forwards;
@@ -288,26 +329,5 @@
 
   .app {
     overflow-x: clip;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .app header h1 {
-    color: #e0e0e0;
-  }
-
-  .session-content {
-    background-color: #1a1a1a;
-    border-color: #444;
-  }
-
-  .placeholder-text {
-    color: #999;
-  }
-
-  .no-session {
-    background-color: #2a2a2a;
-    border-color: #444;
-    color: #666;
   }
 }

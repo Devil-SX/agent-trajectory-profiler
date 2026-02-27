@@ -37,6 +37,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Project-level leverage aggregates in cross-session overview (`top_projects[*].leverage_tokens_mean`, `leverage_chars_mean`) for per-project comparison.
 - New analytics APIs for project-level exploration: `GET /api/analytics/project-comparison` and `GET /api/analytics/project-swimlane`.
 - Cross-session project swimlane E2E coverage with project filtering and mobile usability assertions (`tests/project-swimlane.spec.ts`).
+- Theme-mode persistence and runtime resolution (`system` / `light` / `dark`) via app-level controls and `localStorage`.
+- New Playwright theme regressions (`@visual`) with light and dark baselines, plus accessibility assertions (`@a11y`) for keyboard focus visibility and text contrast.
+- Nightly frontend workflow (`frontend-e2e-full`, `frontend-visual-regression`, `frontend-a11y`) to enforce non-smoke quality gates.
 
 ### Changed
 
@@ -62,6 +65,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-session overview now includes a dedicated Day vs Night section (stacked chart + table) with explicit local-time night-window labeling.
 - Session and cross-session UI copy now uses "Leverage" terminology, with a configurable code-capacity estimate card (assumption-based, non-exact).
 - Cross-session analytics now includes interactive multi-project comparison controls and a project swimlane heatmap with tooltip, no-data state, and large-project truncation hint.
+- Unified design-token theming across app shell and critical analytics surfaces (`App`, `SessionBrowser`, `StatisticsDashboard`, `CrossSessionOverview`) with consistent light/dark contrast behavior.
 
 ### Fixed
 

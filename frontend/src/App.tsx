@@ -11,6 +11,28 @@ const AdvancedAnalytics = lazy(() => import('./components/AdvancedAnalytics').th
 
 type PrimaryView = 'session-detail' | 'cross-session';
 type SessionDetailTab = 'timeline' | 'statistics';
+type ThemeMode = 'system' | 'light' | 'dark';
+type ResolvedTheme = 'light' | 'dark';
+
+const THEME_MODE_STORAGE_KEY = 'agent-vis:theme-mode';
+
+function readInitialThemeMode(): ThemeMode {
+  if (typeof window === 'undefined') {
+    return 'system';
+  }
+  const saved = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
+  if (saved === 'light' || saved === 'dark' || saved === 'system') {
+    return saved;
+  }
+  return 'system';
+}
+
+function readSystemThemePreference(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
 
 function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -19,6 +41,37 @@ function App() {
   const [sessionDetailTab, setSessionDetailTab] = useState<SessionDetailTab>('timeline');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(readInitialThemeMode);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(readSystemThemePreference);
+
+  const resolvedTheme: ResolvedTheme =
+    themeMode === 'system' ? (systemPrefersDark ? 'dark' : 'light') : themeMode;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (event: MediaQueryListEvent) => {
+      setSystemPrefersDark(event.matches);
+    };
+
+    media.addEventListener('change', handleChange);
+
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+  }, [resolvedTheme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
+  }, [themeMode]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -65,27 +118,42 @@ function App() {
         toastOptions={{
           duration: 4000,
           style: {
-            background: '#333',
-            color: '#fff',
+            background: 'var(--color-surface)',
+            color: 'var(--color-text-primary)',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-medium)',
           },
           success: {
             duration: 3000,
             iconTheme: {
-              primary: '#10b981',
-              secondary: '#fff',
+              primary: '#16a34a',
+              secondary: '#ffffff',
             },
           },
           error: {
             duration: 5000,
             iconTheme: {
-              primary: '#ef4444',
-              secondary: '#fff',
+              primary: '#dc2626',
+              secondary: '#ffffff',
             },
           },
         }}
       />
       <header>
         <h1>Claude Code Session Visualizer</h1>
+        <div className="header-controls">
+          <label htmlFor="theme-mode-select">Theme</label>
+          <select
+            id="theme-mode-select"
+            value={themeMode}
+            onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+            aria-label="Theme mode"
+          >
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
       </header>
       <main>
         <SessionBrowser
