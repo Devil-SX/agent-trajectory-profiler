@@ -2,7 +2,6 @@
 
 from claude_vis.parsers.base import TrajectoryParser
 
-
 _registry: dict[str, type[TrajectoryParser]] = {}
 
 
@@ -68,8 +67,10 @@ def list_ecosystems() -> list[str]:
 
 def _register_builtins() -> None:
     from claude_vis.parsers.claude_code import ClaudeCodeParser
+    from claude_vis.parsers.codex import CodexParser
 
     register_parser(ClaudeCodeParser)
+    register_parser(CodexParser)
 
 
 _register_builtins()

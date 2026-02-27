@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     session_service = SessionService(
         session_path=settings.session_path,
+        codex_session_path=settings.codex_session_path,
         single_session=settings.single_session,
         db_path=settings.db_path,
         inactivity_threshold=settings.inactivity_threshold,
@@ -175,6 +176,10 @@ async def list_sessions(
     page_size: int = 50,
     start_date: str | None = Query(default=None, description="Filter sessions created on or after this date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="Filter sessions created on or before this date (YYYY-MM-DD)"),
+    ecosystem: str | None = Query(
+        default=None,
+        description="Filter sessions by ecosystem (e.g. claude_code, codex)",
+    ),
 ) -> SessionListResponse:
     """
     List all available sessions with pagination and optional date filtering.
@@ -201,7 +206,11 @@ async def list_sessions(
 
     try:
         sessions, total_count = await session_service.list_sessions(
-            page, page_size, start_date=start_date, end_date=end_date,
+            page,
+            page_size,
+            start_date=start_date,
+            end_date=end_date,
+            ecosystem=ecosystem,
         )
         total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
 

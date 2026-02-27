@@ -21,6 +21,7 @@ class SessionSummary(BaseModel):
     """
 
     session_id: str
+    ecosystem: str = "claude_code"
     project_path: str
     created_at: datetime | str
     updated_at: datetime | str | None = None

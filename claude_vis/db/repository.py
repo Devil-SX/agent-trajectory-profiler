@@ -141,6 +141,7 @@ class SessionRepository:
         offset: int = 0,
         start_date: str | None = None,
         end_date: str | None = None,
+        ecosystem: str | None = None,
     ) -> list[sqlite3.Row]:
         """
         List session summaries with sorting, pagination, and optional date filtering.
@@ -162,7 +163,11 @@ class SessionRepository:
         if sort_order.upper() not in ("ASC", "DESC"):
             sort_order = "DESC"
 
-        where_clauses, params = self._build_date_filter(start_date, end_date)
+        where_clauses, params = self._build_date_filter(
+            start_date,
+            end_date,
+            ecosystem=ecosystem,
+        )
         where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
 
         params.extend([limit, offset])
@@ -172,26 +177,43 @@ class SessionRepository:
         )
         return cur.fetchall()
 
-    def count_sessions(self, start_date: str | None = None, end_date: str | None = None) -> int:
+    def count_sessions(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        ecosystem: str | None = None,
+    ) -> int:
         """Return total number of sessions, optionally filtered by date range."""
-        where_clauses, params = self._build_date_filter(start_date, end_date)
+        where_clauses, params = self._build_date_filter(
+            start_date,
+            end_date,
+            ecosystem=ecosystem,
+        )
         where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
 
         cur = self._conn.execute(f"SELECT COUNT(*) FROM sessions {where_sql}", params)
         return cur.fetchone()[0]
 
     def list_sessions_for_analytics(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        ecosystem: str | None = None,
     ) -> list[sqlite3.Row]:
         """Return all session summary rows used by analytics endpoints."""
         where_clauses, params = self._build_date_filter(
-            start_date, end_date, created_col="s.created_at"
+            start_date,
+            end_date,
+            ecosystem=ecosystem,
+            created_col="s.created_at",
+            ecosystem_col="s.ecosystem",
         )
         where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
         cur = self._conn.execute(
             f"""\
             SELECT
                 s.session_id,
+                s.ecosystem,
                 s.project_path,
                 s.git_branch,
                 s.created_at,
@@ -212,17 +234,25 @@ class SessionRepository:
         return cur.fetchall()
 
     def list_statistics_for_analytics(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        ecosystem: str | None = None,
     ) -> list[sqlite3.Row]:
         """Return session rows joined with statistics JSON for analytics."""
         where_clauses, params = self._build_date_filter(
-            start_date, end_date, created_col="s.created_at"
+            start_date,
+            end_date,
+            ecosystem=ecosystem,
+            created_col="s.created_at",
+            ecosystem_col="s.ecosystem",
         )
         where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
         cur = self._conn.execute(
             f"""\
             SELECT
                 s.session_id,
+                s.ecosystem,
                 s.project_path,
                 s.git_branch,
                 s.created_at,
@@ -250,7 +280,9 @@ class SessionRepository:
         start_date: str | None,
         end_date: str | None,
         *,
+        ecosystem: str | None = None,
         created_col: str = "created_at",
+        ecosystem_col: str = "ecosystem",
     ) -> tuple[list[str], list[str]]:
         """Build WHERE clause fragments for date filtering on created_at.
 
@@ -272,6 +304,10 @@ class SessionRepository:
             next_day = (end_dt + timedelta(days=1)).isoformat()[:10]
             clauses.append(f"{created_col} < ?")
             params.append(next_day)
+
+        if ecosystem:
+            clauses.append(f"{ecosystem_col} = ?")
+            params.append(ecosystem)
 
         return clauses, params
 

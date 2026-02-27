@@ -29,6 +29,7 @@ Core parser layer with ecosystem extensibility.
   - adapter registry (`register_adapter()`, `get_adapter()`, `list_adapters()`)
   - conversion helpers: `parse_jsonl_to_canonical()` and `canonical_to_messages()`
 - `claude_code.py` — `ClaudeCodeParser` class implementing the ABC. Contains all parsing logic as module-level functions (single-pass loop, tool tracking, time attribution, bash breakdown, compact event extraction)
+- `codex.py` — `CodexParser` class for local Codex rollout logs (`~/.codex/sessions/**/rollout-*.jsonl`) mapped into the same internal analytics model
 - `registry.py` — Parser registry with `register_parser()` / `get_parser(ecosystem)` factory. Auto-registers `ClaudeCodeParser` for `"claude_code"` ecosystem
 - `session_parser.py` — Backward-compatibility shim re-exporting from `claude_code.py`
 - `__init__.py` — Public API: `parse_session_file()`, `parse_session_directory()`, `SessionParseError`, `ClaudeCodeParser`
@@ -70,10 +71,11 @@ FastAPI application layer.
 - `app.py` — FastAPI app with lifespan (DB initialization + auto-sync), endpoints, SPA catch-all fallback
 - `config.py` — `Settings` class (env var prefix `CLAUDE_VIS_`), `@lru_cache get_settings()`. Includes `db_path` setting.
 - `service.py` — `SessionService`: reads from SQLite with in-memory fallback. Provides paginated listing with sort, on-demand session detail parsing, statistics lookup.
+  - auto-syncs mixed local sources (`~/.claude/projects` + `~/.codex/sessions`) using parser registry
 - `models.py` — API response models (`SessionSummary`, `SessionListResponse`, `SyncStatusResponse`, `ErrorResponse`)
 
 Endpoints:
-- `GET /api/sessions` — paginated session list (from DB)
+- `GET /api/sessions` — paginated session list (from DB), includes `ecosystem` and supports `ecosystem` query filtering
 - `GET /api/sessions/{id}` — full session detail with messages
 - `GET /api/sessions/{id}/statistics` — computed statistics
 - `GET /api/sync/status` — sync database status
