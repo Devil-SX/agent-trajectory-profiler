@@ -460,6 +460,74 @@ class TestCalculateSessionStatistics:
         assert stats.user_yield_ratio_tokens is None
         assert stats.user_yield_ratio_chars is None
 
+    def test_model_throughput_rates(self, temp_session_dir: Path) -> None:
+        """Model throughput rates should use model active seconds as denominator."""
+        file_path = temp_session_dir / "throughput.jsonl"
+        messages = [
+            {
+                "type": "user",
+                "sessionId": "throughput-session",
+                "uuid": "msg-1",
+                "timestamp": "2026-02-03T10:00:00.000Z",
+                "message": {"role": "user", "content": "start"},
+            },
+            {
+                "type": "assistant",
+                "sessionId": "throughput-session",
+                "uuid": "msg-2",
+                "timestamp": "2026-02-03T10:00:10.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "done"}],
+                    "usage": {
+                        "input_tokens": 100,
+                        "output_tokens": 50,
+                        "cache_read_input_tokens": 20,
+                        "cache_creation_input_tokens": 10,
+                    },
+                },
+            },
+        ]
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in messages:
+                f.write(json.dumps(data) + "\n")
+
+        parsed = parse_jsonl_file(file_path)
+        stats = calculate_session_statistics(parsed)
+        assert stats.avg_tokens_per_second == pytest.approx(15.0, abs=1e-6)
+        assert stats.read_tokens_per_second == pytest.approx(10.0, abs=1e-6)
+        assert stats.output_tokens_per_second == pytest.approx(5.0, abs=1e-6)
+        assert stats.cache_read_tokens_per_second == pytest.approx(2.0, abs=1e-6)
+        assert stats.cache_creation_tokens_per_second == pytest.approx(1.0, abs=1e-6)
+        assert stats.cache_tokens_per_second == pytest.approx(3.0, abs=1e-6)
+
+    def test_model_throughput_zero_model_time(self, temp_session_dir: Path) -> None:
+        """Throughput rates should be None when model active time is zero."""
+        file_path = temp_session_dir / "throughput-zero.jsonl"
+        messages = [
+            {
+                "type": "assistant",
+                "sessionId": "throughput-zero-session",
+                "uuid": "msg-1",
+                "timestamp": "2026-02-03T10:00:00.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "standalone output"}],
+                    "usage": {"input_tokens": 80, "output_tokens": 30},
+                },
+            }
+        ]
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in messages:
+                f.write(json.dumps(data) + "\n")
+
+        parsed = parse_jsonl_file(file_path)
+        stats = calculate_session_statistics(parsed)
+        assert stats.avg_tokens_per_second is None
+        assert stats.read_tokens_per_second is None
+        assert stats.output_tokens_per_second is None
+        assert stats.cache_tokens_per_second is None
+
     def test_session_duration(
         self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
     ) -> None:

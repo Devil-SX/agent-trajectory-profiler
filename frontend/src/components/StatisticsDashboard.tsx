@@ -79,6 +79,11 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
 }
 
+function formatTokenRate(value: number | null | undefined): string {
+  if (typeof value !== 'number') return 'N/A';
+  return `${value.toFixed(2)} tok/s`;
+}
+
 function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -586,6 +591,39 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                   {statistics.time_breakdown
                     ? formatDuration(statistics.time_breakdown.total_inactive_time_seconds)
                     : 'N/A'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="stat-card">
+            <h4
+              className="card-title"
+              title="Rates use model active seconds as denominator: tokens / model_time_seconds"
+            >
+              Model Throughput
+            </h4>
+            <div className="stat-value large">
+              {formatTokenRate(statistics.avg_tokens_per_second)}
+            </div>
+            <div className="stat-breakdown">
+              <div className="breakdown-item">
+                <span className="breakdown-label">Read / Output</span>
+                <span className="breakdown-value">
+                  {formatTokenRate(statistics.read_tokens_per_second)}
+                  {' / '}
+                  {formatTokenRate(statistics.output_tokens_per_second)}
+                </span>
+              </div>
+              <div className="breakdown-item">
+                <span className="breakdown-label">Cache total (read/create)</span>
+                <span className="breakdown-value">
+                  {formatTokenRate(statistics.cache_tokens_per_second)}
+                  {' ('}
+                  {formatTokenRate(statistics.cache_read_tokens_per_second)}
+                  {' / '}
+                  {formatTokenRate(statistics.cache_creation_tokens_per_second)}
+                  {')'}
                 </span>
               </div>
             </div>

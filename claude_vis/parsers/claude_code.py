@@ -831,6 +831,22 @@ def calculate_session_statistics(
     if user_chars > 0:
         user_yield_ratio_chars = (model_chars + tool_chars) / user_chars
 
+    avg_tokens_per_second = None
+    read_tokens_per_second = None
+    output_tokens_per_second = None
+    cache_tokens_per_second = None
+    cache_read_tokens_per_second = None
+    cache_creation_tokens_per_second = None
+    if total_model_time > 0:
+        avg_tokens_per_second = total_tokens / total_model_time
+        read_tokens_per_second = total_input_tokens / total_model_time
+        output_tokens_per_second = total_output_tokens / total_model_time
+        cache_read_tokens_per_second = cache_read_tokens / total_model_time
+        cache_creation_tokens_per_second = cache_creation_tokens / total_model_time
+        cache_tokens_per_second = (
+            cache_read_tokens + cache_creation_tokens
+        ) / total_model_time
+
     return SessionStatistics(
         message_count=len(messages),
         user_message_count=user_count,
@@ -855,6 +871,12 @@ def calculate_session_statistics(
         ),
         user_yield_ratio_tokens=user_yield_ratio_tokens,
         user_yield_ratio_chars=user_yield_ratio_chars,
+        avg_tokens_per_second=avg_tokens_per_second,
+        read_tokens_per_second=read_tokens_per_second,
+        output_tokens_per_second=output_tokens_per_second,
+        cache_tokens_per_second=cache_tokens_per_second,
+        cache_read_tokens_per_second=cache_read_tokens_per_second,
+        cache_creation_tokens_per_second=cache_creation_tokens_per_second,
         tool_calls=tool_call_list,
         tool_groups=tool_group_list,
         total_tool_calls=sum(int(tool_stats[t]["count"]) for t in tool_stats),

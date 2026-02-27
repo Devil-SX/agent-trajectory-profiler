@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Active-time analytics enhancements: explicit `active_time_ratio` in session time breakdown and cross-session overview API payloads.
 - Trajectory file-size and character analytics (`character_breakdown`) for per-session statistics and cross-session aggregates.
 - User-efficiency yield ratios for tokens/chars (`user_yield_ratio_tokens`, `user_yield_ratio_chars`) with cross-session mean/median/p90 aggregates.
+- Model throughput metrics (`tok/s`) for average/read/output/cache rates plus cache-read/cache-creation splits at session and cross-session levels.
 
 ### Changed
 
@@ -37,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Time breakdown visualization now presents Model/Tool/User metric cards, excludes inactive time from pie-chart denominator, and displays active-time ratio directly.
 - Resource views now surface trajectory bytes and mixed-language character metrics (CJK/Latin plus user/model/tool attribution) in both session and cross-session dashboards.
 - Automation panels now expose per-session and aggregated token/char yield ratios to measure output efficiency per unit of user input.
+- Model analytics panels now expose mean/median/p90 throughput with explicit `tok/s` units and denominator semantics (model active time).
 
 ## [0.6.0] - 2026-02-26
 

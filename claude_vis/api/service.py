@@ -387,6 +387,24 @@ class SessionService:
                 yield_ratio_chars_mean=0.0,
                 yield_ratio_chars_median=0.0,
                 yield_ratio_chars_p90=0.0,
+                avg_tokens_per_second_mean=0.0,
+                avg_tokens_per_second_median=0.0,
+                avg_tokens_per_second_p90=0.0,
+                read_tokens_per_second_mean=0.0,
+                read_tokens_per_second_median=0.0,
+                read_tokens_per_second_p90=0.0,
+                output_tokens_per_second_mean=0.0,
+                output_tokens_per_second_median=0.0,
+                output_tokens_per_second_p90=0.0,
+                cache_tokens_per_second_mean=0.0,
+                cache_tokens_per_second_median=0.0,
+                cache_tokens_per_second_p90=0.0,
+                cache_read_tokens_per_second_mean=0.0,
+                cache_read_tokens_per_second_median=0.0,
+                cache_read_tokens_per_second_p90=0.0,
+                cache_creation_tokens_per_second_mean=0.0,
+                cache_creation_tokens_per_second_median=0.0,
+                cache_creation_tokens_per_second_p90=0.0,
                 avg_automation_ratio=0.0,
                 avg_session_duration_seconds=0.0,
                 model_time_seconds=0.0,
@@ -437,6 +455,14 @@ class SessionService:
         model_timeout_count = 0
         token_yield_ratios: list[float] = []
         char_yield_ratios: list[float] = []
+        throughput_values: dict[str, list[float]] = {
+            "avg": [],
+            "read": [],
+            "output": [],
+            "cache": [],
+            "cache_read": [],
+            "cache_creation": [],
+        }
 
         tool_acc: dict[str, dict[str, float | int | set[str]]] = defaultdict(
             lambda: {
@@ -511,7 +537,47 @@ class SessionService:
             if char_ratio is not None:
                 char_yield_ratios.append(float(char_ratio))
 
+            avg_tok_s = stats.get("avg_tokens_per_second")
+            read_tok_s = stats.get("read_tokens_per_second")
+            out_tok_s = stats.get("output_tokens_per_second")
+            cache_tok_s = stats.get("cache_tokens_per_second")
+            cache_read_tok_s = stats.get("cache_read_tokens_per_second")
+            cache_create_tok_s = stats.get("cache_creation_tokens_per_second")
+
             time_breakdown = stats.get("time_breakdown") or {}
+            model_seconds = float(time_breakdown.get("total_model_time_seconds") or 0.0)
+            if model_seconds > 0:
+                if avg_tok_s is None:
+                    avg_tok_s = int(stats.get("total_tokens") or 0) / model_seconds
+                if read_tok_s is None:
+                    read_tok_s = int(stats.get("total_input_tokens") or 0) / model_seconds
+                if out_tok_s is None:
+                    out_tok_s = int(stats.get("total_output_tokens") or 0) / model_seconds
+                if cache_read_tok_s is None:
+                    cache_read_tok_s = int(stats.get("cache_read_tokens") or 0) / model_seconds
+                if cache_create_tok_s is None:
+                    cache_create_tok_s = (
+                        int(stats.get("cache_creation_tokens") or 0) / model_seconds
+                    )
+                if cache_tok_s is None:
+                    cache_tok_s = (
+                        int(stats.get("cache_read_tokens") or 0)
+                        + int(stats.get("cache_creation_tokens") or 0)
+                    ) / model_seconds
+
+            if avg_tok_s is not None:
+                throughput_values["avg"].append(float(avg_tok_s))
+            if read_tok_s is not None:
+                throughput_values["read"].append(float(read_tok_s))
+            if out_tok_s is not None:
+                throughput_values["output"].append(float(out_tok_s))
+            if cache_tok_s is not None:
+                throughput_values["cache"].append(float(cache_tok_s))
+            if cache_read_tok_s is not None:
+                throughput_values["cache_read"].append(float(cache_read_tok_s))
+            if cache_create_tok_s is not None:
+                throughput_values["cache_creation"].append(float(cache_create_tok_s))
+
             model_time_seconds += float(time_breakdown.get("total_model_time_seconds") or 0.0)
             tool_time_seconds += float(time_breakdown.get("total_tool_time_seconds") or 0.0)
             user_time_seconds += float(time_breakdown.get("total_user_time_seconds") or 0.0)
@@ -607,6 +673,24 @@ class SessionService:
             idx = max(0, math.ceil(0.9 * len(sorted_char_ratios)) - 1)
             chars_p90 = sorted_char_ratios[idx]
 
+        def summarize(values: list[float]) -> tuple[float, float, float]:
+            if not values:
+                return (0.0, 0.0, 0.0)
+            sorted_values = sorted(values)
+            idx = max(0, math.ceil(0.9 * len(sorted_values)) - 1)
+            return (mean(values), median(values), sorted_values[idx])
+
+        avg_tps_mean, avg_tps_median, avg_tps_p90 = summarize(throughput_values["avg"])
+        read_tps_mean, read_tps_median, read_tps_p90 = summarize(throughput_values["read"])
+        out_tps_mean, out_tps_median, out_tps_p90 = summarize(throughput_values["output"])
+        cache_tps_mean, cache_tps_median, cache_tps_p90 = summarize(throughput_values["cache"])
+        cache_read_tps_mean, cache_read_tps_median, cache_read_tps_p90 = summarize(
+            throughput_values["cache_read"]
+        )
+        cache_create_tps_mean, cache_create_tps_median, cache_create_tps_p90 = summarize(
+            throughput_values["cache_creation"]
+        )
+
         return AnalyticsOverviewResponse(
             start_date=start_date,
             end_date=end_date,
@@ -632,6 +716,24 @@ class SessionService:
             yield_ratio_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
             yield_ratio_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
             yield_ratio_chars_p90=chars_p90,
+            avg_tokens_per_second_mean=avg_tps_mean,
+            avg_tokens_per_second_median=avg_tps_median,
+            avg_tokens_per_second_p90=avg_tps_p90,
+            read_tokens_per_second_mean=read_tps_mean,
+            read_tokens_per_second_median=read_tps_median,
+            read_tokens_per_second_p90=read_tps_p90,
+            output_tokens_per_second_mean=out_tps_mean,
+            output_tokens_per_second_median=out_tps_median,
+            output_tokens_per_second_p90=out_tps_p90,
+            cache_tokens_per_second_mean=cache_tps_mean,
+            cache_tokens_per_second_median=cache_tps_median,
+            cache_tokens_per_second_p90=cache_tps_p90,
+            cache_read_tokens_per_second_mean=cache_read_tps_mean,
+            cache_read_tokens_per_second_median=cache_read_tps_median,
+            cache_read_tokens_per_second_p90=cache_read_tps_p90,
+            cache_creation_tokens_per_second_mean=cache_create_tps_mean,
+            cache_creation_tokens_per_second_median=cache_create_tps_median,
+            cache_creation_tokens_per_second_p90=cache_create_tps_p90,
             avg_automation_ratio=mean(automation_values) if automation_values else 0.0,
             avg_session_duration_seconds=mean(duration_values) if duration_values else 0.0,
             model_time_seconds=model_time_seconds,
