@@ -75,6 +75,28 @@ export async function setupMockApi(page: Page) {
     night_inactive_time_seconds: 300,
     active_time_ratio: 0.93,
     model_timeout_count: 1,
+    source_breakdown: [
+      {
+        ecosystem: 'claude_code',
+        label: 'Claude Code',
+        sessions: 1,
+        total_tokens: 23000,
+        total_tool_calls: 11,
+        active_time_seconds: 6200,
+        percent_sessions: 50,
+        percent_tokens: 57.5,
+      },
+      {
+        ecosystem: 'codex',
+        label: 'Codex',
+        sessions: 1,
+        total_tokens: 17000,
+        total_tool_calls: 7,
+        active_time_seconds: 3800,
+        percent_sessions: 50,
+        percent_tokens: 42.5,
+      },
+    ],
     bottleneck_distribution: [
       { key: 'model', label: 'Model', count: 1, value: 1, percent: 50 },
       { key: 'tool', label: 'Tool', count: 1, value: 1, percent: 50 },

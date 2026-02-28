@@ -144,6 +144,19 @@ class ToolAggregate(BaseModel):
     percent_of_tool_calls: float
 
 
+class EcosystemAggregate(BaseModel):
+    """Aggregated metrics grouped by source ecosystem."""
+
+    ecosystem: str
+    label: str
+    sessions: int
+    total_tokens: int
+    total_tool_calls: int
+    active_time_seconds: float
+    percent_sessions: float
+    percent_tokens: float
+
+
 class ProjectComparisonItem(BaseModel):
     """Per-project KPI row for cross-session comparison."""
 
@@ -247,6 +260,7 @@ class AnalyticsOverviewResponse(BaseModel):
     night_inactive_time_seconds: float
     active_time_ratio: float
     model_timeout_count: int
+    source_breakdown: list[EcosystemAggregate]
     bottleneck_distribution: list[AnalyticsBucket]
     top_projects: list[ProjectAggregate]
     top_tools: list[ToolAggregate]

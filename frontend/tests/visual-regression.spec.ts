@@ -56,4 +56,16 @@ test.describe('Theme visual baselines', () => {
       maxDiffPixelRatio: 0.015,
     });
   });
+
+  test('@visual source ecosystem comparison baseline', async ({ page }) => {
+    await openWithTheme(page, 'light');
+
+    const sourceCard = page.locator('.overview-card:has-text("Source comparison table")');
+    await expect(sourceCard).toHaveScreenshot('source-comparison-table.png', {
+      animations: 'disabled',
+      caret: 'hide',
+      scale: 'css',
+      maxDiffPixelRatio: 0.015,
+    });
+  });
 });

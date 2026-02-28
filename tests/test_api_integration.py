@@ -360,6 +360,8 @@ class TestAnalyticsAPI:
         assert "night_tool_time_seconds" in payload
         assert "night_user_time_seconds" in payload
         assert "night_inactive_time_seconds" in payload
+        assert "source_breakdown" in payload
+        assert isinstance(payload["source_breakdown"], list)
 
         start = date.fromisoformat(payload["start_date"])
         end = date.fromisoformat(payload["end_date"])
@@ -404,6 +406,55 @@ class TestAnalyticsAPI:
             + payload["night_inactive_time_seconds"]
         )
         assert day_total + night_total == pytest.approx(span, abs=1e-3)
+
+    def test_analytics_overview_source_breakdown_with_mixed_sources(
+        self,
+        tmp_path: Path,
+        multi_session_directory: Path,
+        codex_session_root: Path,
+        sample_codex_rollout_file: Path,
+    ) -> None:
+        """Overview API should include per-ecosystem aggregates for Codex and Claude Code."""
+        from unittest.mock import patch
+
+        _ = sample_codex_rollout_file
+        settings = Settings(
+            session_path=multi_session_directory,
+            codex_session_path=codex_session_root,
+            db_path=tmp_path / "mixed_overview_sources.db",
+            api_host="127.0.0.1",
+            api_port=8000,
+            api_reload=False,
+            log_level="INFO",
+            cors_origins=["http://localhost:5173"],
+        )
+
+        get_settings.cache_clear()
+        try:
+            with patch("claude_vis.api.app.get_settings", return_value=settings):
+                with TestClient(app) as client:
+                    response = client.get(
+                        "/api/analytics/overview?start_date=2000-01-01&end_date=2100-12-31"
+                    )
+                    assert response.status_code == 200
+
+                    payload = response.json()
+                    source_breakdown = payload["source_breakdown"]
+                    assert len(source_breakdown) >= 2
+                    ecosystems = {row["ecosystem"] for row in source_breakdown}
+                    assert "claude_code" in ecosystems
+                    assert "codex" in ecosystems
+
+                    for row in source_breakdown:
+                        assert "label" in row
+                        assert "sessions" in row
+                        assert "total_tokens" in row
+                        assert "total_tool_calls" in row
+                        assert "active_time_seconds" in row
+                        assert "percent_sessions" in row
+                        assert "percent_tokens" in row
+        finally:
+            get_settings.cache_clear()
 
     def test_analytics_distribution_tool(self, test_client: TestClient) -> None:
         """Tool distribution endpoint should return bucketed results."""

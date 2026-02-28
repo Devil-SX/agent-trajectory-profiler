@@ -272,6 +272,7 @@ export function CrossSessionOverview() {
 
   const topProjects = overview.top_projects.slice(0, 8);
   const topTools = overview.top_tools.slice(0, 8);
+  const sourceBreakdown = overview.source_breakdown || [];
   const comparisonProjects = projectComparison.projects;
   const defaultProjectPaths = comparisonProjects.slice(0, 3).map((project) => project.project_path);
   const selectedProjectPaths = comparisonProjects
@@ -498,6 +499,59 @@ export function CrossSessionOverview() {
             Estimate only. Real leverage depends on docs quality, skills, tooling, and model fit.
           </p>
         </article>
+      </div>
+
+      <div className="overview-grid two-columns">
+        <section className="overview-card">
+          <h4>Source ecosystem distribution</h4>
+          {sourceBreakdown.length === 0 ? (
+            <p className="empty-hint">No source ecosystem data in this range.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={sourceBreakdown}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <Tooltip formatter={(value) => formatNumber(Number(value))} />
+                <Legend />
+                <Bar dataKey="sessions" fill="#2563eb" name="Sessions" />
+                <Bar dataKey="total_tokens" fill="#ea580c" name="Tokens" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </section>
+
+        <section className="overview-card">
+          <h4>Source comparison table</h4>
+          {sourceBreakdown.length === 0 ? (
+            <p className="empty-hint">No source ecosystem data in this range.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table className="compact-table">
+                <thead>
+                  <tr>
+                    <th>Source</th>
+                    <th>Sessions</th>
+                    <th>Token share</th>
+                    <th>Tool calls</th>
+                    <th>Active time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sourceBreakdown.map((source) => (
+                    <tr key={source.ecosystem}>
+                      <td>{source.label}</td>
+                      <td>{formatNumber(source.sessions)}</td>
+                      <td>{formatPercent(source.percent_tokens)}</td>
+                      <td>{formatNumber(source.total_tool_calls)}</td>
+                      <td>{formatDuration(source.active_time_seconds)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
 
       <div className="overview-grid">

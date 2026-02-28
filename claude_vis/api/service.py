@@ -22,6 +22,7 @@ from claude_vis.api.models import (
     AnalyticsOverviewResponse,
     AnalyticsTimeseriesPoint,
     AnalyticsTimeseriesResponse,
+    EcosystemAggregate,
     ProjectAggregate,
     ProjectComparisonItem,
     ProjectComparisonResponse,
@@ -570,6 +571,7 @@ class SessionService:
                 night_inactive_time_seconds=0.0,
                 active_time_ratio=0.0,
                 model_timeout_count=0,
+                source_breakdown=[],
                 bottleneck_distribution=[],
                 top_projects=[],
                 top_tools=[],
@@ -591,6 +593,7 @@ class SessionService:
         ]
 
         bottleneck_counter: dict[str, int] = {"Model": 0, "Tool": 0, "User": 0, "Unknown": 0}
+        ecosystem_acc: dict[str, dict[str, float | int | str]] = {}
         project_acc: dict[str, dict[str, float | int | str]] = {}
 
         total_input_tokens = 0
@@ -649,6 +652,29 @@ class SessionService:
         )
 
         for row in rows:
+            ecosystem = str(row.get("ecosystem") or "claude_code").strip() or "claude_code"
+            if ecosystem not in ecosystem_acc:
+                ecosystem_acc[ecosystem] = {
+                    "label": (
+                        "Claude Code"
+                        if ecosystem == "claude_code"
+                        else (
+                            "Codex" if ecosystem == "codex" else ecosystem.replace("_", " ").title()
+                        )
+                    ),
+                    "sessions": 0,
+                    "total_tokens": 0,
+                    "total_tool_calls": 0,
+                    "active_time_seconds": 0.0,
+                }
+            ecosystem_acc[ecosystem]["sessions"] = int(ecosystem_acc[ecosystem]["sessions"]) + 1
+            ecosystem_acc[ecosystem]["total_tokens"] = int(
+                ecosystem_acc[ecosystem]["total_tokens"]
+            ) + int(row.get("total_tokens") or 0)
+            ecosystem_acc[ecosystem]["total_tool_calls"] = int(
+                ecosystem_acc[ecosystem]["total_tool_calls"]
+            ) + int(row.get("total_tool_calls") or 0)
+
             bottleneck = (row.get("bottleneck") or "Unknown").strip().title()
             if bottleneck not in bottleneck_counter:
                 bottleneck = "Unknown"
@@ -782,6 +808,12 @@ class SessionService:
             user_time_seconds += user_seconds
             inactive_time_seconds += inactive_seconds
             model_timeout_count += int(time_breakdown.get("model_timeout_count") or 0)
+            ecosystem_acc[ecosystem]["active_time_seconds"] = (
+                float(ecosystem_acc[ecosystem]["active_time_seconds"])
+                + model_seconds
+                + tool_seconds
+                + user_seconds
+            )
 
             span_seconds = float(row.get("duration_seconds") or 0.0)
             component_span = model_seconds + tool_seconds + user_seconds + inactive_seconds
@@ -895,6 +927,26 @@ class SessionService:
         top_tools.sort(key=lambda item: item.total_calls, reverse=True)
         top_tools = top_tools[:15]
 
+        source_breakdown: list[EcosystemAggregate] = []
+        for ecosystem, values in ecosystem_acc.items():
+            sessions_count = int(values["sessions"])
+            tokens_count = int(values["total_tokens"])
+            source_breakdown.append(
+                EcosystemAggregate(
+                    ecosystem=ecosystem,
+                    label=str(values["label"]),
+                    sessions=sessions_count,
+                    total_tokens=tokens_count,
+                    total_tool_calls=int(values["total_tool_calls"]),
+                    active_time_seconds=float(values["active_time_seconds"]),
+                    percent_sessions=(
+                        sessions_count / total_sessions * 100.0 if total_sessions else 0.0
+                    ),
+                    percent_tokens=(tokens_count / total_tokens * 100.0 if total_tokens else 0.0),
+                )
+            )
+        source_breakdown.sort(key=lambda item: (item.total_tokens, item.sessions), reverse=True)
+
         total_active_time = model_time_seconds + tool_time_seconds + user_time_seconds
         total_span_time = total_active_time + inactive_time_seconds
         active_time_ratio = total_active_time / total_span_time if total_span_time > 0 else 0.0
@@ -994,6 +1046,7 @@ class SessionService:
             night_inactive_time_seconds=night_inactive_time_seconds,
             active_time_ratio=active_time_ratio,
             model_timeout_count=model_timeout_count,
+            source_breakdown=source_breakdown,
             bottleneck_distribution=bottleneck_distribution,
             top_projects=top_projects,
             top_tools=top_tools,

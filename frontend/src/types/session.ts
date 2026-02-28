@@ -387,6 +387,17 @@ export interface ToolAggregate {
   percent_of_tool_calls: number;
 }
 
+export interface EcosystemAggregate {
+  ecosystem: string;
+  label: string;
+  sessions: number;
+  total_tokens: number;
+  total_tool_calls: number;
+  active_time_seconds: number;
+  percent_sessions: number;
+  percent_tokens: number;
+}
+
 export interface AnalyticsOverviewResponse {
   start_date: string;
   end_date: string;
@@ -453,6 +464,7 @@ export interface AnalyticsOverviewResponse {
   night_inactive_time_seconds: number;
   active_time_ratio: number;
   model_timeout_count: number;
+  source_breakdown: EcosystemAggregate[];
   bottleneck_distribution: AnalyticsBucket[];
   top_projects: ProjectAggregate[];
   top_tools: ToolAggregate[];
