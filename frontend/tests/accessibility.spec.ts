@@ -158,4 +158,23 @@ test.describe('Accessibility contracts', () => {
     expect(darkBottleneckContrast).toBeGreaterThanOrEqual(4.5);
     expect(darkAutomationContrast).toBeGreaterThanOrEqual(4.5);
   });
+
+  test('@a11y density mode toggle is keyboard-accessible and keeps table navigation usable', async ({
+    page,
+  }) => {
+    await setupMockApi(page);
+    await page.goto('/');
+    await page.waitForSelector('.session-table tbody tr[data-session-id]', { timeout: 5000 });
+
+    const densitySelect = page.locator('#density-mode-select');
+    await densitySelect.focus();
+    await expect(densitySelect).toBeFocused();
+    await densitySelect.selectOption('compact');
+    await expect(page.locator('html')).toHaveAttribute('data-density', 'compact');
+
+    const firstRow = page.locator('.session-table tbody tr[data-session-id]').first();
+    await firstRow.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Session Detail' })).toHaveClass(/active/);
+  });
 });

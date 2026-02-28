@@ -13,6 +13,7 @@ type PrimaryView = 'session-detail' | 'cross-session';
 type SessionDetailTab = 'timeline' | 'statistics';
 type ThemeMode = 'system' | 'light' | 'dark';
 type ResolvedTheme = 'light' | 'dark';
+type DensityMode = 'comfortable' | 'compact';
 
 interface RouteState {
   view: PrimaryView;
@@ -21,6 +22,7 @@ interface RouteState {
 }
 
 const THEME_MODE_STORAGE_KEY = 'agent-vis:theme-mode';
+const DENSITY_MODE_STORAGE_KEY = 'agent-vis:density-mode';
 
 function readInitialThemeMode(): ThemeMode {
   if (typeof window === 'undefined') {
@@ -31,6 +33,17 @@ function readInitialThemeMode(): ThemeMode {
     return saved;
   }
   return 'system';
+}
+
+function readInitialDensityMode(): DensityMode {
+  if (typeof window === 'undefined') {
+    return 'comfortable';
+  }
+  const saved = window.localStorage.getItem(DENSITY_MODE_STORAGE_KEY);
+  if (saved === 'compact' || saved === 'comfortable') {
+    return saved;
+  }
+  return 'comfortable';
 }
 
 function readSystemThemePreference(): boolean {
@@ -103,6 +116,7 @@ function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(readInitialThemeMode);
+  const [densityMode, setDensityMode] = useState<DensityMode>(readInitialDensityMode);
   const [systemPrefersDark, setSystemPrefersDark] = useState(readSystemThemePreference);
 
   const resolvedTheme: ResolvedTheme =
@@ -154,11 +168,22 @@ function App() {
   }, [resolvedTheme]);
 
   useEffect(() => {
+    document.documentElement.dataset.density = densityMode;
+  }, [densityMode]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
     window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(DENSITY_MODE_STORAGE_KEY, densityMode);
+  }, [densityMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -287,18 +312,32 @@ function App() {
       />
       <header>
         <h1>Agent Trajectory Visualizer</h1>
-        <div className="header-controls">
-          <label htmlFor="theme-mode-select">Theme</label>
-          <select
-            id="theme-mode-select"
-            value={themeMode}
-            onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
-            aria-label="Theme mode"
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
+        <div className="header-controls" role="group" aria-label="Display preferences">
+          <div className="header-control-group">
+            <label htmlFor="theme-mode-select">Theme</label>
+            <select
+              id="theme-mode-select"
+              value={themeMode}
+              onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+              aria-label="Theme mode"
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+          <div className="header-control-group">
+            <label htmlFor="density-mode-select">Density</label>
+            <select
+              id="density-mode-select"
+              value={densityMode}
+              onChange={(event) => setDensityMode(event.target.value as DensityMode)}
+              aria-label="Density mode"
+            >
+              <option value="comfortable">Comfortable</option>
+              <option value="compact">Compact</option>
+            </select>
+          </div>
         </div>
       </header>
       <main>

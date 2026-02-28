@@ -25,6 +25,21 @@
   --color-danger-soft: #ffe8e8;
   --shadow-medium: 0 10px 30px rgb(15 23 42 / 18%);
   --focus-ring: 0 0 0 3px rgb(37 99 235 / 35%);
+  --density-font-scale: 1;
+  --density-app-padding: 2rem;
+  --density-section-gap: 1.5rem;
+  --density-surface-padding: 1rem;
+  --density-overview-padding: 1.25rem;
+  --density-tab-padding-y: 0.75rem;
+  --density-tab-padding-x: 1.5rem;
+  --density-control-min-height: 44px;
+  --density-list-height: clamp(320px, 44vh, 720px);
+  --density-list-min-height: 320px;
+  --density-table-cell-y: 0.55rem;
+  --density-table-cell-x: 0.7rem;
+  --density-chip-min-height: 1.5rem;
+  --density-item-padding-y: 0.6rem;
+  --density-item-padding-x: 0.75rem;
 
   color: var(--color-text-primary);
   background-color: var(--color-bg-page);
@@ -58,6 +73,24 @@
   --shadow-medium: 0 10px 28px rgb(2 6 23 / 45%);
   --focus-ring: 0 0 0 3px rgb(96 165 250 / 35%);
   color-scheme: dark;
+}
+
+:root[data-density='compact'] {
+  --density-font-scale: 0.93;
+  --density-app-padding: 1.2rem;
+  --density-section-gap: 0.95rem;
+  --density-surface-padding: 0.72rem;
+  --density-overview-padding: 0.85rem;
+  --density-tab-padding-y: 0.5rem;
+  --density-tab-padding-x: 1rem;
+  --density-control-min-height: 36px;
+  --density-list-height: clamp(280px, 38vh, 560px);
+  --density-list-min-height: 260px;
+  --density-table-cell-y: 0.4rem;
+  --density-table-cell-x: 0.55rem;
+  --density-chip-min-height: 1.3rem;
+  --density-item-padding-y: 0.4rem;
+  --density-item-padding-x: 0.5rem;
 }
 
 a {
@@ -101,7 +134,7 @@ button {
   color: var(--color-text-primary);
   cursor: pointer;
   transition: border-color 0.2s ease, background-color 0.2s ease;
-  min-height: 44px;
+  min-height: var(--density-control-min-height);
   -webkit-tap-highlight-color: transparent;
 }
 
