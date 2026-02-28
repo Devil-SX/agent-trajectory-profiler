@@ -30,6 +30,24 @@ test.describe('@smoke Navigation IA - Overview then Session Detail', () => {
     expect(url).toContain('view=overview');
   });
 
+  test('renders advanced analytics block above session table block on overview', async ({ page }) => {
+    const analyticsBlock = page.locator('.overview-analytics-block');
+    const sessionsBlock = page.locator('.overview-sessions-block');
+
+    await expect(analyticsBlock).toBeVisible();
+    await expect(sessionsBlock).toBeVisible();
+
+    const analyticsBox = await analyticsBlock.boundingBox();
+    const sessionsBox = await sessionsBlock.boundingBox();
+
+    expect(analyticsBox).not.toBeNull();
+    expect(sessionsBox).not.toBeNull();
+
+    expect((analyticsBox?.y ?? 0) + (analyticsBox?.height ?? 0)).toBeLessThan(
+      (sessionsBox?.y ?? 0) + 1
+    );
+  });
+
   test('drills down from table row into session detail and supports in-page back', async ({ page }) => {
     await page.locator('tr[data-session-id="test-session-002"]').click();
 

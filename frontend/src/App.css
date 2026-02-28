@@ -74,6 +74,11 @@
   align-items: stretch;
 }
 
+.overview-analytics-block,
+.overview-sessions-block {
+  width: 100%;
+}
+
 .session-content {
   padding: 0;
   background-color: var(--color-surface);

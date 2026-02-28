@@ -109,6 +109,9 @@ function App() {
     themeMode === 'system' ? (systemPrefersDark ? 'dark' : 'light') : themeMode;
 
   const applyRouteState = (next: RouteState, mode: 'push' | 'replace' = 'push') => {
+    const shouldResetScroll =
+      primaryView !== next.view || selectedSessionId !== next.sessionId;
+
     setPrimaryView(next.view);
     setSelectedSessionId(next.sessionId);
     setSessionDetailTab(next.tab);
@@ -123,6 +126,10 @@ function App() {
         window.history.replaceState(null, '', nextUrl);
       } else {
         window.history.pushState(null, '', nextUrl);
+      }
+
+      if (shouldResetScroll) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
       }
     }
   };
@@ -313,17 +320,19 @@ function App() {
 
         {showCrossSession && (
           <div className="main-content main-content--overview">
-            <SessionBrowser
-              onSessionChange={handleSessionOpenFromOverview}
-              selectedSessionId={selectedSessionId}
-              autoSelectFirst={false}
-            />
-
             <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
-              <div className="session-content">
+              <div className="session-content overview-analytics-block">
                 <AdvancedAnalytics sessionId={null} />
               </div>
             </Suspense>
+
+            <div className="overview-sessions-block">
+              <SessionBrowser
+                onSessionChange={handleSessionOpenFromOverview}
+                selectedSessionId={selectedSessionId}
+                autoSelectFirst={false}
+              />
+            </div>
           </div>
         )}
 
