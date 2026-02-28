@@ -1,0 +1,69 @@
+.metric-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.metric-help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.metric-help__trigger {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-secondary, #334155);
+  font-size: 0.72rem;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.metric-help__trigger:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.metric-help__panel {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 10;
+  width: min(30rem, 88vw);
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 10px;
+  background: var(--color-surface, #ffffff);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.22);
+  padding: 0.8rem 0.9rem;
+}
+
+.metric-help__term {
+  margin: 0 0 0.3rem;
+  font-weight: 700;
+}
+
+.metric-help__summary {
+  margin: 0 0 0.55rem;
+}
+
+.metric-help__panel p {
+  margin: 0 0 0.5rem;
+  line-height: 1.35;
+  font-size: 0.86rem;
+}
+
+.metric-help__close {
+  margin-top: 0.3rem;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: var(--color-surface-muted, #f8fafc);
+  color: inherit;
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}

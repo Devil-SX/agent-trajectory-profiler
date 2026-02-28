@@ -47,6 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Playwright coverage for density mode across smoke, visual baseline, and accessibility keyboard interaction checks.
 - Global EN/ZH i18n layer for dashboard UI with persisted locale preference (`agent-vis:locale`) and key workflow coverage (app shell, session browser, date filter, sync panel, cross-session overview).
 - Playwright smoke coverage for language switch behavior (`EN -> ZH`), key label assertions, and reload persistence (`tests/language-switch.spec.ts`).
+- Metric glossary framework (`MetricHelp`) with keyboard-accessible popovers, formula/input/notes fields, and bilingual (`EN/ZH`) definitions for leverage, yield, active ratio, token/s, and bottleneck.
+- Playwright smoke coverage for glossary interactions: tooltip hint presence, expandable details, keyboard activation, and Chinese-content rendering (`tests/metric-glossary.spec.ts`).
 
 ### Changed
 
@@ -79,6 +81,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session table rows now render semantic color tags for ecosystem, bottleneck, and automation bands with theme-safe contrast in light/dark modes.
 - Cross-session overview now exposes and visualizes source-level aggregates with dedicated ecosystem distribution chart and comparison table.
 - Session-list timestamp and number rendering now follow selected locale formatting instead of fixed English-only defaults.
+- Derived metric labels in cross-session and session dashboards now include contextual help entry points that map directly to backend formula semantics.
 
 ### Fixed
 

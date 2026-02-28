@@ -6,6 +6,7 @@
  */
 
 import type { TimeBreakdown } from '../types/session';
+import { MetricTerm } from './MetricHelp';
 import './BottleneckInsight.css';
 
 interface BottleneckInsightProps {
@@ -69,7 +70,9 @@ export function BottleneckInsight({ timeBreakdown }: BottleneckInsightProps) {
       </div>
 
       <div className="bottleneck-content">
-        <p className="bottleneck-title">Bottleneck Analysis</p>
+        <p className="bottleneck-title">
+          <MetricTerm metricId="bottleneck">Bottleneck Analysis</MetricTerm>
+        </p>
         <p className="bottleneck-suggestion">{config.suggestion}</p>
 
         <div className="bottleneck-metrics">

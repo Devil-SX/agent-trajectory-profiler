@@ -24,6 +24,7 @@ import {
 import type { AnalyticsBucket } from '../types/session';
 import { truncateMiddle } from '../utils/display';
 import { useI18n } from '../i18n';
+import { MetricTerm } from './MetricHelp';
 import './CrossSessionOverview.css';
 
 type RangePreset = '7d' | '30d' | '90d' | 'custom';
@@ -380,7 +381,7 @@ export function CrossSessionOverview() {
           <h4>{t('cross.kpi.totalSessions')}</h4>
           <div className="kpi-value">{formatNumber(overview.total_sessions)}</div>
           <p>
-            {t('cross.kpi.primaryBottleneck')}
+            <MetricTerm metricId="bottleneck">{t('cross.kpi.primaryBottleneck')}</MetricTerm>
             : {getLeadingBucket(overview.bottleneck_distribution)}
           </p>
         </article>
@@ -389,11 +390,11 @@ export function CrossSessionOverview() {
           <h4>{t('cross.kpi.automationEfficiency')}</h4>
           <div className="kpi-value">{overview.avg_automation_ratio.toFixed(2)}x</div>
           <p>
-            {t('cross.kpi.activeRatio')}
+            <MetricTerm metricId="active_ratio">{t('cross.kpi.activeRatio')}</MetricTerm>
             : {formatPercentPoint(overview.active_time_ratio)}
           </p>
           <p>
-            {t('cross.kpi.tokenLeverage')}
+            <MetricTerm metricId="leverage">{t('cross.kpi.tokenLeverage')}</MetricTerm>
             : {formatLeverage(
               overview.leverage_tokens_mean ?? overview.yield_ratio_tokens_mean
             )} /
@@ -403,7 +404,7 @@ export function CrossSessionOverview() {
             {formatLeverage(overview.leverage_tokens_p90 ?? overview.yield_ratio_tokens_p90)}
           </p>
           <p>
-            {t('cross.kpi.charLeverage')}
+            <MetricTerm metricId="yield">{t('cross.kpi.charLeverage')}</MetricTerm>
             : {formatLeverage(
               overview.leverage_chars_mean ?? overview.yield_ratio_chars_mean
             )} /
@@ -447,7 +448,7 @@ export function CrossSessionOverview() {
             : {formatNumber(overview.model_timeout_count)}
           </p>
           <p>
-            {t('cross.kpi.modelTokS')}
+            <MetricTerm metricId="tokens_per_second">{t('cross.kpi.modelTokS')}</MetricTerm>
             : {overview.avg_tokens_per_second_mean.toFixed(2)} /
             {' '}
             {overview.avg_tokens_per_second_median.toFixed(2)} /
@@ -455,13 +456,13 @@ export function CrossSessionOverview() {
             {overview.avg_tokens_per_second_p90.toFixed(2)}
           </p>
           <p>
-            {t('cross.kpi.readOutputTokS')}
+            <MetricTerm metricId="tokens_per_second">{t('cross.kpi.readOutputTokS')}</MetricTerm>
             : {overview.read_tokens_per_second_mean.toFixed(2)}
             {' / '}
             {overview.output_tokens_per_second_mean.toFixed(2)}
           </p>
           <p>
-            {t('cross.kpi.cacheTokS')}
+            <MetricTerm metricId="tokens_per_second">{t('cross.kpi.cacheTokS')}</MetricTerm>
             : {overview.cache_tokens_per_second_mean.toFixed(2)}
             {' ('}
             {overview.cache_read_tokens_per_second_mean.toFixed(2)}
@@ -676,8 +677,8 @@ export function CrossSessionOverview() {
                         <th>{t('table.project')}</th>
                         <th>{t('cross.sessions')}</th>
                         <th>{t('table.tokens')}</th>
-                        <th>{t('cross.kpi.activeRatio')}</th>
-                        <th>{t('cross.kpi.tokenLeverage')}</th>
+                        <th><MetricTerm metricId="active_ratio">{t('cross.kpi.activeRatio')}</MetricTerm></th>
+                        <th><MetricTerm metricId="leverage">{t('cross.kpi.tokenLeverage')}</MetricTerm></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -798,7 +799,9 @@ export function CrossSessionOverview() {
         </section>
 
         <section className="overview-card">
-          <h4>{t('cross.bottleneckDistribution')}</h4>
+          <h4>
+            <MetricTerm metricId="bottleneck">{t('cross.bottleneckDistribution')}</MetricTerm>
+          </h4>
           {overview.bottleneck_distribution.length === 0 ? (
             <p className="empty-hint">{t('cross.noBottleneckData')}</p>
           ) : (
@@ -889,8 +892,8 @@ export function CrossSessionOverview() {
                     <th>{t('table.project')}</th>
                     <th>{t('cross.sessions')}</th>
                     <th>{t('cross.tokenShare')}</th>
-                    <th>{t('cross.kpi.tokenLeverage')}</th>
-                    <th>{t('cross.kpi.charLeverage')}</th>
+                    <th><MetricTerm metricId="leverage">{t('cross.kpi.tokenLeverage')}</MetricTerm></th>
+                    <th><MetricTerm metricId="yield">{t('cross.kpi.charLeverage')}</MetricTerm></th>
                   </tr>
                 </thead>
                 <tbody>

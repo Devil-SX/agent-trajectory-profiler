@@ -28,6 +28,7 @@ import type { SessionStatistics } from '../types/session';
 import { TimeBreakdownChart } from './TimeBreakdownChart';
 import { BottleneckInsight } from './BottleneckInsight';
 import { BashCommandTable } from './BashCommandTable';
+import { MetricTerm } from './MetricHelp';
 import './StatisticsDashboard.css';
 
 interface StatisticsDashboardProps {
@@ -249,7 +250,9 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
           </div>
 
           <div className="stat-card">
-            <h4 className="card-title">Automation Ratio</h4>
+            <h4 className="card-title">
+              <MetricTerm metricId="yield">Automation Ratio</MetricTerm>
+            </h4>
             <div className="stat-value large">
               {automationRatio !== null ? `${automationRatio.toFixed(2)}x` : 'N/A'}
             </div>
@@ -277,7 +280,9 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
           </div>
 
           <div className="stat-card">
-            <h4 className="card-title">Leverage Ratio</h4>
+            <h4 className="card-title">
+              <MetricTerm metricId="leverage">Leverage Ratio</MetricTerm>
+            </h4>
             <div className="stat-value large">
               {tokenYieldRatio !== null ? `${tokenYieldRatio.toFixed(2)}x` : 'N/A'}
             </div>
@@ -609,7 +614,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
               className="card-title"
               title="Rates use model active seconds as denominator: tokens / model_time_seconds"
             >
-              Model Throughput
+              <MetricTerm metricId="tokens_per_second">Model Throughput</MetricTerm>
             </h4>
             <div className="stat-value large">
               {formatTokenRate(statistics.avg_tokens_per_second)}
