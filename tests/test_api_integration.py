@@ -415,8 +415,10 @@ class TestAnalyticsAPI:
         sample_codex_rollout_file: Path,
     ) -> None:
         """Overview API should include per-ecosystem aggregates for Codex and Claude Code."""
+        from importlib import import_module
         from unittest.mock import patch
 
+        api_app_module = import_module("claude_vis.api.app")
         _ = sample_codex_rollout_file
         settings = Settings(
             session_path=multi_session_directory,
@@ -431,7 +433,7 @@ class TestAnalyticsAPI:
 
         get_settings.cache_clear()
         try:
-            with patch("claude_vis.api.app.get_settings", return_value=settings):
+            with patch.object(api_app_module, "get_settings", return_value=settings):
                 with TestClient(app) as client:
                     response = client.get(
                         "/api/analytics/overview?start_date=2000-01-01&end_date=2100-12-31"
