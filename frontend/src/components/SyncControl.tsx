@@ -1,4 +1,5 @@
 import type { SyncEcosystemDetail, SyncStatusResponse } from '../types/session';
+import { useI18n } from '../i18n';
 import './SyncControl.css';
 
 interface SyncControlProps {
@@ -18,13 +19,6 @@ function formatBytes(bytes: number): string {
     unitIndex += 1;
   }
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
-function formatTime(timestamp: string | null | undefined): string {
-  if (!timestamp) return 'Never';
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return 'Unknown';
-  return date.toLocaleString();
 }
 
 function getEcoRecord(
@@ -49,17 +43,25 @@ export function SyncControl({
   isSyncing,
   onRunSync,
 }: SyncControlProps) {
+  const { t, formatDateTime, formatNumber } = useI18n();
   const detail = status?.last_sync;
   const claude = getEcoRecord(detail?.ecosystems, 'claude_code');
   const codex = getEcoRecord(detail?.ecosystems, 'codex');
+  const formatTime = (timestamp: string | null | undefined): string => {
+    if (!timestamp) return t('sync.never');
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return t('sync.unknown');
+    return formatDateTime(date);
+  };
 
   return (
-    <section className="sync-control" aria-label="Synchronization control">
+    <section className="sync-control" aria-label={t('sync.aria')}>
       <div className="sync-control__header">
         <div>
-          <h3>DB Sync</h3>
+          <h3>{t('sync.title')}</h3>
           <p>
-            Last sync: <strong>{formatTime(detail?.finished_at)}</strong>
+            {t('sync.lastSync')}
+            : <strong>{formatTime(detail?.finished_at)}</strong>
           </p>
         </div>
         <button
@@ -68,40 +70,63 @@ export function SyncControl({
           onClick={onRunSync}
           disabled={isLoading || isSyncing || status?.sync_running}
         >
-          {isSyncing || status?.sync_running ? 'Syncing...' : 'Sync Now'}
+          {isSyncing || status?.sync_running ? t('sync.syncing') : t('sync.syncNow')}
         </button>
       </div>
 
       <div className="sync-control__summary">
-        <span>Parsed: {detail?.parsed ?? 0}</span>
-        <span>Skipped: {detail?.skipped ?? 0}</span>
-        <span>Errors: {detail?.errors ?? 0}</span>
-        <span>Files: {detail?.total_files_scanned ?? status?.total_files ?? 0}</span>
-        <span>Size: {formatBytes(detail?.total_file_size_bytes ?? 0)}</span>
+        <span>
+          {t('sync.summary.parsed')}
+          : {formatNumber(detail?.parsed ?? 0)}
+        </span>
+        <span>
+          {t('sync.summary.skipped')}
+          : {formatNumber(detail?.skipped ?? 0)}
+        </span>
+        <span>
+          {t('sync.summary.errors')}
+          : {formatNumber(detail?.errors ?? 0)}
+        </span>
+        <span>
+          {t('sync.summary.files')}
+          : {formatNumber(detail?.total_files_scanned ?? status?.total_files ?? 0)}
+        </span>
+        <span>
+          {t('sync.summary.size')}
+          : {formatBytes(detail?.total_file_size_bytes ?? 0)}
+        </span>
       </div>
 
       <div className="sync-control__ecosystems">
         <div className="sync-control__eco-row">
           <span className="sync-control__eco-name">Claude Code</span>
-          <span>{claude.files_scanned} files</span>
+          <span>
+            {formatNumber(claude.files_scanned)}
+            {' '}
+            {t('sync.filesSuffix')}
+          </span>
           <span>{formatBytes(claude.file_size_bytes)}</span>
           <span>
-            {claude.parsed}/{claude.skipped}/{claude.errors}
+            {formatNumber(claude.parsed)}/{formatNumber(claude.skipped)}/{formatNumber(claude.errors)}
           </span>
         </div>
         <div className="sync-control__eco-row">
           <span className="sync-control__eco-name">Codex</span>
-          <span>{codex.files_scanned} files</span>
+          <span>
+            {formatNumber(codex.files_scanned)}
+            {' '}
+            {t('sync.filesSuffix')}
+          </span>
           <span>{formatBytes(codex.file_size_bytes)}</span>
           <span>
-            {codex.parsed}/{codex.skipped}/{codex.errors}
+            {formatNumber(codex.parsed)}/{formatNumber(codex.skipped)}/{formatNumber(codex.errors)}
           </span>
         </div>
       </div>
 
       {detail?.error_samples && detail.error_samples.length > 0 && (
         <details className="sync-control__errors">
-          <summary>Sync errors ({detail.error_samples.length})</summary>
+          <summary>{t('sync.errors', { values: { count: detail.error_samples.length } })}</summary>
           <ul>
             {detail.error_samples.slice(0, 5).map((item) => (
               <li key={item}>{item}</li>

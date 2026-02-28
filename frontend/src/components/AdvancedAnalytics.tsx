@@ -36,6 +36,7 @@ import {
   downloadFiles,
 } from '../utils/exportData';
 import type { ExportConfig } from '../types/analytics';
+import { useI18n } from '../i18n';
 
 import { MetricComparison } from './MetricComparison';
 import { CrossSessionOverview } from './CrossSessionOverview';
@@ -47,6 +48,7 @@ interface AdvancedAnalyticsProps {
 }
 
 export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAnalyticsProps) {
+  const { t } = useI18n();
   const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
 
   // Fetch data with React Query
@@ -156,7 +158,7 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
   return (
     <div className="advanced-analytics">
       <div className="analytics-header">
-        <h2 className="analytics-title">Cross-Session Analytics</h2>
+        <h2 className="analytics-title">{t('advanced.title')}</h2>
         <div className="export-controls">
           <select
             value={exportFormat}
@@ -181,8 +183,8 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
 
       {!sessionId && (
         <div className="session-insights-state session-insights-state--empty">
-          <p>Cross-session analytics is available without selecting a session.</p>
-          <p>Select a session to unlock timeline-level deep-dive metrics below.</p>
+          <p>{t('advanced.emptyPrimary')}</p>
+          <p>{t('advanced.emptySecondary')}</p>
         </div>
       )}
 

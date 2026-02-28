@@ -23,6 +23,7 @@ import {
 import type { DateRange } from './DateRangePicker';
 import { SessionListView } from './SessionListView';
 import { SyncControl } from './SyncControl';
+import { useI18n } from '../i18n';
 import './SessionBrowser.css';
 
 interface SessionBrowserProps {
@@ -50,6 +51,7 @@ export function SessionBrowser({
   comparisonSessionId,
   autoSelectFirst = true,
 }: SessionBrowserProps) {
+  const { t, formatNumber } = useI18n();
   const [page] = useState(1);
   const [pageSize] = useState(200);
 
@@ -138,13 +140,13 @@ export function SessionBrowser({
     let initialSessionId = controlledSelectedSessionId;
 
     if (sessionIdParam) {
-      const sessionExists = sessions.some((s) => s.session_id === sessionIdParam);
-      if (sessionExists) {
-        initialSessionId = sessionIdParam;
-      } else {
-        toast.error(`Session not found: ${sessionIdParam}`);
+        const sessionExists = sessions.some((s) => s.session_id === sessionIdParam);
+        if (sessionExists) {
+          initialSessionId = sessionIdParam;
+        } else {
+          toast.error(t('session.notFound', { values: { sessionId: sessionIdParam } }));
+        }
       }
-    }
 
     if (!initialSessionId) {
       initialSessionId = sessions[0].session_id;
@@ -153,7 +155,7 @@ export function SessionBrowser({
     setActiveSessionId(initialSessionId);
     onSessionChange?.(initialSessionId);
     initRef.current = true;
-  }, [autoSelectFirst, controlledSelectedSessionId, onSessionChange, sessions]);
+  }, [autoSelectFirst, controlledSelectedSessionId, onSessionChange, sessions, t]);
 
   // Filter and sort sessions
   const filteredAndSortedSessions = useMemo(() => {
@@ -214,26 +216,26 @@ export function SessionBrowser({
         setActiveSessionId(nextSessionId);
         onSessionChange?.(nextSessionId);
         if (initRef.current) {
-          toast('Selection adjusted to visible results after filtering.');
+          toast(t('session.search.adjusted'));
         }
       } else {
         setActiveSessionId(null);
       }
     }
-  }, [activeSessionId, autoSelectFirst, filteredAndSortedSessions, onSessionChange]);
+  }, [activeSessionId, autoSelectFirst, filteredAndSortedSessions, onSessionChange, t]);
 
   const handleSessionSelect = (sessionId: string) => {
     const showComparison = onComparisonSessionChange !== undefined;
 
     if (showComparison && isPickingComparison) {
       if (sessionId === activeSessionId) {
-        toast.error('Choose a different session for comparison.');
+        toast.error(t('session.compare.chooseDifferent'));
         return;
       }
 
       onComparisonSessionChange?.(sessionId);
       setIsPickingComparison(false);
-      toast.success(`Comparison session set to ${shortId(sessionId)}.`);
+      toast.success(t('session.compare.setSuccess', { values: { sessionId: shortId(sessionId) } }));
       return;
     }
 
@@ -249,15 +251,19 @@ export function SessionBrowser({
       {
         onSuccess: (result) => {
           if (result.status === 'already_running') {
-            toast('Sync is already running. Please wait for completion.');
+            toast(t('session.sync.alreadyRunning'));
             return;
           }
-          toast.success(
-            `Sync complete: parsed ${result.parsed}, skipped ${result.skipped}, errors ${result.errors}.`
-          );
+          toast.success(t('session.sync.success', {
+            values: {
+              parsed: result.parsed,
+              skipped: result.skipped,
+              errors: result.errors,
+            },
+          }));
         },
         onError: (err) => {
-          toast.error(`Failed to run sync: ${err.message}`);
+          toast.error(t('session.sync.failed', { values: { message: err.message } }));
         },
       }
     );
@@ -282,19 +288,22 @@ export function SessionBrowser({
         />
         {loading && (
           <div className="loading-container">
-            <p>Loading sessions...</p>
+            <p>{t('session.loading')}</p>
           </div>
         )}
 
         {!loading && error && (
           <div className="error-container">
-            <p className="error-message">Error: {error}</p>
+            <p className="error-message">
+              {t('session.errorPrefix')}
+              : {error}
+            </p>
           </div>
         )}
 
         {!loading && !error && sessions.length === 0 && (
           <div className="empty-container">
-            <p>No sessions available</p>
+            <p>{t('session.empty')}</p>
           </div>
         )}
 
@@ -324,14 +333,14 @@ export function SessionBrowser({
 
             <div className="session-browser-actions">
               <div className="session-browser-meta">
-                <div className="session-view-toggle" role="group" aria-label="Session view mode">
+                <div className="session-view-toggle" role="group" aria-label={t('session.viewMode.aria')}>
                   <button
                     className={`session-view-toggle__button ${viewMode === 'cards' ? 'active' : ''}`}
                     type="button"
                     onClick={() => setViewMode('cards')}
                     aria-pressed={viewMode === 'cards'}
                   >
-                    Card View
+                    {t('session.viewMode.card')}
                   </button>
                   <button
                     className={`session-view-toggle__button ${viewMode === 'table' ? 'active' : ''}`}
@@ -339,11 +348,16 @@ export function SessionBrowser({
                     onClick={() => setViewMode('table')}
                     aria-pressed={viewMode === 'table'}
                   >
-                    Table View
+                    {t('session.viewMode.table')}
                   </button>
                 </div>
                 <div className="session-count">
-                  {filteredAndSortedSessions.length} of {sessions.length} sessions
+                  {t('session.countSummary', {
+                    values: {
+                      visible: formatNumber(filteredAndSortedSessions.length),
+                      total: formatNumber(sessions.length),
+                    },
+                  })}
                 </div>
               </div>
 
@@ -354,7 +368,9 @@ export function SessionBrowser({
                     type="button"
                     onClick={() => setIsPickingComparison((prev) => !prev)}
                   >
-                    {isPickingComparison ? 'Cancel Compare Pick' : 'Pick Comparison Session'}
+                    {isPickingComparison
+                      ? t('session.compare.cancelPick')
+                      : t('session.compare.pick')}
                   </button>
 
                   <button
@@ -363,11 +379,12 @@ export function SessionBrowser({
                     onClick={() => onComparisonSessionChange?.(null)}
                     disabled={!comparisonSessionId}
                   >
-                    Clear Comparison
+                    {t('session.compare.clear')}
                   </button>
 
                   <span className="comparison-state">
-                    Compare: {shortId(comparisonSessionId)}
+                    {t('session.compare.state')}
+                    : {shortId(comparisonSessionId)}
                   </span>
                 </div>
               )}

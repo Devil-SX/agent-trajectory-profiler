@@ -23,6 +23,7 @@ import {
 } from '../hooks/useSessionsQuery';
 import type { AnalyticsBucket } from '../types/session';
 import { truncateMiddle } from '../utils/display';
+import { useI18n } from '../i18n';
 import './CrossSessionOverview.css';
 
 type RangePreset = '7d' | '30d' | '90d' | 'custom';
@@ -59,10 +60,6 @@ function buildPresetRange(days: number): DateWindow {
   };
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString();
-}
-
 function formatDuration(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
   const hours = Math.floor(seconds / 3600);
@@ -78,23 +75,11 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(seconds)}s`;
 }
 
-function formatPercent(value: number): string {
-  return `${value.toFixed(1)}%`;
-}
-
 function formatLeverage(value: number | null | undefined): string {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return 'N/A';
   }
   return `${value.toFixed(2)}x`;
-}
-
-function getLeadingBucket(buckets: AnalyticsBucket[]): string {
-  if (buckets.length === 0) {
-    return 'No data';
-  }
-  const [top] = buckets;
-  return `${top.label} (${top.percent.toFixed(1)}%)`;
 }
 
 function formatSessionShareLabel(label: string): string {
@@ -111,6 +96,7 @@ function buildSwimlaneColor(tokens: number, maxTokens: number): string {
 }
 
 export function CrossSessionOverview() {
+  const { t, formatNumber, formatPercent, formatDate } = useI18n();
   const [preset, setPreset] = useState<RangePreset>('7d');
   const [codingFraction, setCodingFraction] = useState(0.3);
   const [tokensPerLine, setTokensPerLine] = useState(10);
@@ -134,6 +120,8 @@ export function CrossSessionOverview() {
   }, [customRange, preset]);
 
   const interval = preset === '90d' ? 'week' : 'day';
+  const formatPercentPoint = (value: number): string => formatPercent(value, 1);
+  const formatPercentRatio = (value: number): string => formatPercent(value / 100, 1);
 
   const { data: overview, isLoading: overviewLoading, error: overviewError } =
     useAnalyticsOverviewQuery(activeRange.startDate, activeRange.endDate);
@@ -179,6 +167,14 @@ export function CrossSessionOverview() {
     if (!sessionShareDistribution) return [];
     return sessionShareDistribution.buckets.slice(0, 8);
   }, [sessionShareDistribution]);
+
+  const getLeadingBucket = (buckets: AnalyticsBucket[]): string => {
+    if (buckets.length === 0) {
+      return t('table.unknown');
+    }
+    const [top] = buckets;
+    return `${top.label} (${formatPercentRatio(top.percent)})`;
+  };
 
   const dayNightRows = useMemo<DayNightRow[]>(() => {
     if (!overview) return [];
@@ -246,7 +242,7 @@ export function CrossSessionOverview() {
   if (isLoading) {
     return (
       <section className="cross-session-overview loading" aria-live="polite">
-        <div className="cross-session-skeleton">Loading cross-session analytics...</div>
+        <div className="cross-session-skeleton">{t('cross.loading')}</div>
       </section>
     );
   }
@@ -254,7 +250,7 @@ export function CrossSessionOverview() {
   if (errorMessage) {
     return (
       <section className="cross-session-overview error">
-        <h3>Cross-session overview</h3>
+        <h3>{t('cross.errorTitle')}</h3>
         <p>{errorMessage}</p>
       </section>
     );
@@ -310,8 +306,8 @@ export function CrossSessionOverview() {
     <section className="cross-session-overview" aria-label="Cross session overview">
       <div className="cross-session-header">
         <div>
-          <h3>Cross-session overview</h3>
-          <p>Aggregate health signals across all sessions in the selected window.</p>
+          <h3>{t('cross.title')}</h3>
+          <p>{t('cross.subtitle')}</p>
         </div>
 
         <div className="cross-session-controls">
@@ -321,35 +317,35 @@ export function CrossSessionOverview() {
               className={preset === '7d' ? 'active' : ''}
               onClick={() => setPreset('7d')}
             >
-              7 days
+              {t('cross.preset.days7')}
             </button>
             <button
               type="button"
               className={preset === '30d' ? 'active' : ''}
               onClick={() => setPreset('30d')}
             >
-              30 days
+              {t('cross.preset.days30')}
             </button>
             <button
               type="button"
               className={preset === '90d' ? 'active' : ''}
               onClick={() => setPreset('90d')}
             >
-              90 days
+              {t('cross.preset.days90')}
             </button>
             <button
               type="button"
               className={preset === 'custom' ? 'active' : ''}
               onClick={() => setPreset('custom')}
             >
-              Custom
+              {t('cross.preset.custom')}
             </button>
           </div>
 
           {preset === 'custom' && (
             <div className="custom-range-inputs">
               <label>
-                Start
+                {t('dateRange.from')}
                 <input
                   type="date"
                   value={customRange.startDate ?? ''}
@@ -362,7 +358,7 @@ export function CrossSessionOverview() {
                 />
               </label>
               <label>
-                End
+                {t('dateRange.to')}
                 <input
                   type="date"
                   value={customRange.endDate ?? ''}
@@ -381,17 +377,24 @@ export function CrossSessionOverview() {
 
       <div className="kpi-grid">
         <article className="kpi-card">
-          <h4>Total sessions</h4>
+          <h4>{t('cross.kpi.totalSessions')}</h4>
           <div className="kpi-value">{formatNumber(overview.total_sessions)}</div>
-          <p>Primary bottleneck: {getLeadingBucket(overview.bottleneck_distribution)}</p>
+          <p>
+            {t('cross.kpi.primaryBottleneck')}
+            : {getLeadingBucket(overview.bottleneck_distribution)}
+          </p>
         </article>
 
         <article className="kpi-card">
-          <h4>Automation efficiency</h4>
+          <h4>{t('cross.kpi.automationEfficiency')}</h4>
           <div className="kpi-value">{overview.avg_automation_ratio.toFixed(2)}x</div>
-          <p>Active ratio: {formatPercent(overview.active_time_ratio * 100)}</p>
           <p>
-            Token leverage (mean/median/p90): {formatLeverage(
+            {t('cross.kpi.activeRatio')}
+            : {formatPercentPoint(overview.active_time_ratio)}
+          </p>
+          <p>
+            {t('cross.kpi.tokenLeverage')}
+            : {formatLeverage(
               overview.leverage_tokens_mean ?? overview.yield_ratio_tokens_mean
             )} /
             {' '}
@@ -400,7 +403,8 @@ export function CrossSessionOverview() {
             {formatLeverage(overview.leverage_tokens_p90 ?? overview.yield_ratio_tokens_p90)}
           </p>
           <p>
-            Char leverage (mean/median/p90): {formatLeverage(
+            {t('cross.kpi.charLeverage')}
+            : {formatLeverage(
               overview.leverage_chars_mean ?? overview.yield_ratio_chars_mean
             )} /
             {' '}
@@ -411,46 +415,54 @@ export function CrossSessionOverview() {
         </article>
 
         <article className="kpi-card">
-          <h4>Token volume</h4>
+          <h4>{t('cross.kpi.tokenVolume')}</h4>
           <div className="kpi-value">{formatNumber(overview.total_tokens)}</div>
           <p>
-            Input/Output: {formatNumber(overview.total_input_tokens)} /{' '}
+            {t('cross.kpi.inputOutput')}
+            : {formatNumber(overview.total_input_tokens)} /{' '}
             {formatNumber(overview.total_output_tokens)}
           </p>
           <p>
-            Trajectory size: {formatNumber(overview.total_trajectory_file_size_bytes)}
+            {t('cross.kpi.trajectorySize')}
+            : {formatNumber(overview.total_trajectory_file_size_bytes)}
             {' '}
-            bytes
+            {t('cross.kpi.bytes')}
           </p>
           <p>
-            Chars (CJK/Latin): {formatNumber(overview.total_cjk_chars)}
+            {t('cross.kpi.charsCjkLatin')}
+            : {formatNumber(overview.total_cjk_chars)}
             {' / '}
             {formatNumber(overview.total_latin_chars)}
           </p>
         </article>
 
         <article className="kpi-card">
-          <h4>Tool execution</h4>
+          <h4>{t('cross.kpi.toolExecution')}</h4>
           <div className="kpi-value">{formatNumber(overview.total_tool_calls)}</div>
           <p>
-            Avg session duration: {formatDuration(overview.avg_session_duration_seconds)} ·
+            {t('cross.kpi.avgSessionDuration')}
+            : {formatDuration(overview.avg_session_duration_seconds)} ·
             {' '}
-            Model timeouts: {formatNumber(overview.model_timeout_count)}
+            {t('cross.kpi.modelTimeouts')}
+            : {formatNumber(overview.model_timeout_count)}
           </p>
           <p>
-            Model tok/s (mean/median/p90): {overview.avg_tokens_per_second_mean.toFixed(2)} /
+            {t('cross.kpi.modelTokS')}
+            : {overview.avg_tokens_per_second_mean.toFixed(2)} /
             {' '}
             {overview.avg_tokens_per_second_median.toFixed(2)} /
             {' '}
             {overview.avg_tokens_per_second_p90.toFixed(2)}
           </p>
           <p>
-            Read/Output tok/s mean: {overview.read_tokens_per_second_mean.toFixed(2)}
+            {t('cross.kpi.readOutputTokS')}
+            : {overview.read_tokens_per_second_mean.toFixed(2)}
             {' / '}
             {overview.output_tokens_per_second_mean.toFixed(2)}
           </p>
           <p>
-            Cache tok/s mean: {overview.cache_tokens_per_second_mean.toFixed(2)}
+            {t('cross.kpi.cacheTokS')}
+            : {overview.cache_tokens_per_second_mean.toFixed(2)}
             {' ('}
             {overview.cache_read_tokens_per_second_mean.toFixed(2)}
             {' / '}
@@ -460,12 +472,12 @@ export function CrossSessionOverview() {
         </article>
 
         <article className="kpi-card leverage-estimator-card">
-          <h4>Code capacity estimate</h4>
+          <h4>{t('cross.kpi.codeCapacity')}</h4>
           <div className="kpi-value">{formatNumber(Math.round(leverageEstimate.estimatedCodeLines))}</div>
-          <p>Approximate editable LOC upper bound for this selected range.</p>
+          <p>{t('cross.kpi.codeCapacityHint')}</p>
           <div className="leverage-controls">
             <label>
-              Coding token fraction
+              {t('cross.kpi.codingTokenFraction')}
               <input
                 type="number"
                 min={0}
@@ -476,7 +488,7 @@ export function CrossSessionOverview() {
               />
             </label>
             <label>
-              Tokens per LOC
+              {t('cross.kpi.tokensPerLoc')}
               <input
                 type="number"
                 min={1}
@@ -487,25 +499,27 @@ export function CrossSessionOverview() {
             </label>
           </div>
           <p>
-            Inputs: {formatNumber(leverageEstimate.outputBudgetTokens)}
+            {t('cross.kpi.inputs')}
+            : {formatNumber(leverageEstimate.outputBudgetTokens)}
             {' '}
-            output tokens, effective
+            {t('cross.kpi.outputTokens')}
+            , 
             {' '}
-            {formatNumber(Math.round(leverageEstimate.effectiveCodingTokens))}
-            {' '}
-            coding tokens.
+            {t('cross.kpi.effectiveCodingTokens', {
+              values: { value: formatNumber(Math.round(leverageEstimate.effectiveCodingTokens)) },
+            })}
           </p>
           <p className="leverage-note">
-            Estimate only. Real leverage depends on docs quality, skills, tooling, and model fit.
+            {t('cross.kpi.estimateOnly')}
           </p>
         </article>
       </div>
 
       <div className="overview-grid two-columns">
         <section className="overview-card">
-          <h4>Source ecosystem distribution</h4>
+          <h4>{t('cross.sourceDistribution')}</h4>
           {sourceBreakdown.length === 0 ? (
-            <p className="empty-hint">No source ecosystem data in this range.</p>
+            <p className="empty-hint">{t('cross.noSourceData')}</p>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={sourceBreakdown}>
@@ -514,27 +528,27 @@ export function CrossSessionOverview() {
                 <YAxis />
                 <Tooltip formatter={(value) => formatNumber(Number(value))} />
                 <Legend />
-                <Bar dataKey="sessions" fill="#2563eb" name="Sessions" />
-                <Bar dataKey="total_tokens" fill="#ea580c" name="Tokens" />
+                <Bar dataKey="sessions" fill="#2563eb" name={t('cross.sessions')} />
+                <Bar dataKey="total_tokens" fill="#ea580c" name={t('table.tokens')} />
               </BarChart>
             </ResponsiveContainer>
           )}
         </section>
 
         <section className="overview-card">
-          <h4>Source comparison table</h4>
+          <h4>{t('cross.sourceComparisonTable')}</h4>
           {sourceBreakdown.length === 0 ? (
-            <p className="empty-hint">No source ecosystem data in this range.</p>
+            <p className="empty-hint">{t('cross.noSourceData')}</p>
           ) : (
             <div className="table-wrapper">
               <table className="compact-table">
                 <thead>
                   <tr>
-                    <th>Source</th>
-                    <th>Sessions</th>
-                    <th>Token share</th>
-                    <th>Tool calls</th>
-                    <th>Active time</th>
+                    <th>{t('table.ecosystem')}</th>
+                    <th>{t('cross.sessions')}</th>
+                    <th>{t('cross.tokenShare')}</th>
+                    <th>{t('cross.callVolume')}</th>
+                    <th>{t('cross.activeTime')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -542,7 +556,7 @@ export function CrossSessionOverview() {
                     <tr key={source.ecosystem}>
                       <td>{source.label}</td>
                       <td>{formatNumber(source.sessions)}</td>
-                      <td>{formatPercent(source.percent_tokens)}</td>
+                      <td>{formatPercentRatio(source.percent_tokens)}</td>
                       <td>{formatNumber(source.total_tool_calls)}</td>
                       <td>{formatDuration(source.active_time_seconds)}</td>
                     </tr>
@@ -556,33 +570,42 @@ export function CrossSessionOverview() {
 
       <div className="overview-grid">
         <section className="overview-card day-night-card">
-          <h4>Day vs night time mix</h4>
-          <p className="day-night-note">Night window: 01:00-09:00 (local time).</p>
+          <h4>{t('cross.dayNightMix')}</h4>
+          <p className="day-night-note">{t('cross.dayNightWindow')}</p>
           <p className="day-night-summary">
-            Day total: {formatDuration(dayNightRows[0]?.total ?? 0)}
+            {t('cross.dayTotal')}
+            : {formatDuration(dayNightRows[0]?.total ?? 0)}
             {' · '}
-            Night total: {formatDuration(dayNightRows[1]?.total ?? 0)}
+            {t('cross.nightTotal')}
+            : {formatDuration(dayNightRows[1]?.total ?? 0)}
           </p>
 
           {dayNightRows.length === 0 || dayNightRows.every((row) => row.total <= 0) ? (
-            <p className="empty-hint">No day/night time data in this range.</p>
+            <p className="empty-hint">{t('cross.noDayNight')}</p>
           ) : (
             <div className="day-night-layout">
               <div className="day-night-chart" aria-label="Day night time chart">
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={dayNightRows}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="period" />
+                    <XAxis
+                      dataKey="period"
+                      tickFormatter={(value: string) =>
+                        value === 'Day' ? t('cross.period.day') : t('cross.period.night')
+                      }
+                    />
                     <YAxis />
                     <Tooltip
                       formatter={(value) => formatDuration(Number(value))}
-                      labelFormatter={(label) => `${label} period`}
+                      labelFormatter={(label) =>
+                        `${label === 'Day' ? t('cross.period.day') : t('cross.period.night')} ${t('cross.period')}`
+                      }
                     />
                     <Legend />
-                    <Bar dataKey="model" stackId="total" name="Model" fill="#2563eb" />
-                    <Bar dataKey="tool" stackId="total" name="Tool" fill="#0891b2" />
-                    <Bar dataKey="user" stackId="total" name="User" fill="#ea580c" />
-                    <Bar dataKey="inactive" stackId="total" name="Inactive" fill="#94a3b8" />
+                    <Bar dataKey="model" stackId="total" name={t('cross.model')} fill="#2563eb" />
+                    <Bar dataKey="tool" stackId="total" name={t('cross.tool')} fill="#0891b2" />
+                    <Bar dataKey="user" stackId="total" name={t('cross.user')} fill="#ea580c" />
+                    <Bar dataKey="inactive" stackId="total" name={t('cross.inactive')} fill="#94a3b8" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -591,25 +614,25 @@ export function CrossSessionOverview() {
                 <table className="compact-table day-night-table">
                   <thead>
                     <tr>
-                      <th>Period</th>
-                      <th>Model</th>
-                      <th>Tool</th>
-                      <th>User</th>
-                      <th>Inactive</th>
-                      <th>Total</th>
-                      <th>Share</th>
+                      <th>{t('cross.period')}</th>
+                      <th>{t('cross.model')}</th>
+                      <th>{t('cross.tool')}</th>
+                      <th>{t('cross.user')}</th>
+                      <th>{t('cross.inactive')}</th>
+                      <th>{t('cross.total')}</th>
+                      <th>{t('cross.share')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dayNightRows.map((row) => (
                       <tr key={row.period}>
-                        <td>{row.period}</td>
+                        <td>{row.period === 'Day' ? t('cross.period.day') : t('cross.period.night')}</td>
                         <td>{formatDuration(row.model)}</td>
                         <td>{formatDuration(row.tool)}</td>
                         <td>{formatDuration(row.user)}</td>
                         <td>{formatDuration(row.inactive)}</td>
                         <td>{formatDuration(row.total)}</td>
-                        <td>{formatPercent(row.share * 100)}</td>
+                        <td>{formatPercentPoint(row.share)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -622,13 +645,13 @@ export function CrossSessionOverview() {
 
       <div className="overview-grid two-columns">
         <section className="overview-card">
-          <h4>Project comparison</h4>
+          <h4>{t('cross.projectComparison')}</h4>
           {comparisonProjects.length === 0 ? (
-            <p className="empty-hint">No project-level comparison data in this range.</p>
+            <p className="empty-hint">{t('cross.noProjectComparison')}</p>
           ) : (
             <>
               <p className="project-compare-note">
-                Select projects to compare KPI rows (sessions, tokens, active ratio, leverage).
+                {t('cross.projectCompareNote')}
               </p>
               <div className="project-chip-group">
                 {comparisonProjects.map((project) => (
@@ -644,17 +667,17 @@ export function CrossSessionOverview() {
               </div>
 
               {selectedComparisonProjects.length === 0 ? (
-                <p className="empty-hint">Select at least one project to compare.</p>
+                <p className="empty-hint">{t('cross.selectProjectPrompt')}</p>
               ) : (
                 <div className="table-wrapper">
                   <table className="compact-table">
                     <thead>
                       <tr>
-                        <th>Project</th>
-                        <th>Sessions</th>
-                        <th>Tokens</th>
-                        <th>Active ratio</th>
-                        <th>Token leverage</th>
+                        <th>{t('table.project')}</th>
+                        <th>{t('cross.sessions')}</th>
+                        <th>{t('table.tokens')}</th>
+                        <th>{t('cross.kpi.activeRatio')}</th>
+                        <th>{t('cross.kpi.tokenLeverage')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -663,7 +686,7 @@ export function CrossSessionOverview() {
                           <td>{project.project_name}</td>
                           <td>{formatNumber(project.sessions)}</td>
                           <td>{formatNumber(project.total_tokens)}</td>
-                          <td>{formatPercent(project.active_ratio * 100)}</td>
+                          <td>{formatPercentPoint(project.active_ratio)}</td>
                           <td>{formatLeverage(project.leverage_tokens_mean)}</td>
                         </tr>
                       ))}
@@ -676,27 +699,28 @@ export function CrossSessionOverview() {
         </section>
 
         <section className="overview-card">
-          <h4>Project swimlane</h4>
+          <h4>{t('cross.projectSwimlane')}</h4>
           {projectSwimlane.truncated_project_count > 0 && (
             <p className="project-compare-note">
-              Showing top {projectSwimlane.project_limit} projects by tokens.
-              {' '}
-              {projectSwimlane.truncated_project_count}
-              {' '}
-              additional project(s) are hidden for readability.
+              {t('cross.projectSwimlaneNote', {
+                values: {
+                  limit: projectSwimlane.project_limit,
+                  hidden: projectSwimlane.truncated_project_count,
+                },
+              })}
             </p>
           )}
           {projectSwimlane.periods.length === 0 || swimlaneProjects.length === 0 ? (
-            <p className="empty-hint">No swimlane data for current filters.</p>
+            <p className="empty-hint">{t('cross.noSwimlane')}</p>
           ) : (
             <>
               <div className="table-wrapper swimlane-wrapper">
                 <table className="compact-table swimlane-table">
                   <thead>
                     <tr>
-                      <th>Project</th>
+                      <th>{t('table.project')}</th>
                       {projectSwimlane.periods.map((period) => (
-                        <th key={period}>{period}</th>
+                        <th key={period}>{formatDate(period, { month: 'short', day: 'numeric' })}</th>
                       ))}
                     </tr>
                   </thead>
@@ -718,12 +742,12 @@ export function CrossSessionOverview() {
                               title={
                                 `Project: ${project.project_name}\nPeriod: ${period}\n` +
                                 `Tokens: ${formatNumber(tokens)}\nSessions: ${sessions}\n` +
-                                `Active ratio: ${formatPercent(activeRatio * 100)}\n` +
+                                `Active ratio: ${formatPercentPoint(activeRatio)}\n` +
                                 `Token leverage: ${formatLeverage(leverage)}`
                               }
                             >
                               <span>{tokens > 0 ? formatNumber(tokens) : '--'}</span>
-                              <small>{sessions > 0 ? `${sessions} sess` : ''}</small>
+                              <small>{sessions > 0 ? `${sessions} ${t('cross.sessionsShort')}` : ''}</small>
                             </td>
                           );
                         })}
@@ -733,9 +757,9 @@ export function CrossSessionOverview() {
                 </table>
               </div>
               <div className="swimlane-legend">
-                <span>Token density</span>
+                <span>{t('cross.tokenDensity')}</span>
                 <div className="swimlane-gradient" />
-                <span>Low → High</span>
+                <span>{t('cross.lowToHigh')}</span>
               </div>
             </>
           )}
@@ -744,7 +768,7 @@ export function CrossSessionOverview() {
 
       <div className="overview-grid two-columns">
         <section className="overview-card">
-          <h4>Session throughput trend</h4>
+          <h4>{t('cross.throughputTrend')}</h4>
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={timeseries.points}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -759,7 +783,7 @@ export function CrossSessionOverview() {
                 dataKey="sessions"
                 stroke="#2563eb"
                 fill="#bfdbfe"
-                name="Sessions"
+                name={t('cross.sessions')}
               />
               <Area
                 yAxisId="right"
@@ -767,16 +791,16 @@ export function CrossSessionOverview() {
                 dataKey="tokens"
                 stroke="#ea580c"
                 fill="#fed7aa"
-                name="Tokens"
+                name={t('table.tokens')}
               />
             </AreaChart>
           </ResponsiveContainer>
         </section>
 
         <section className="overview-card">
-          <h4>Bottleneck distribution</h4>
+          <h4>{t('cross.bottleneckDistribution')}</h4>
           {overview.bottleneck_distribution.length === 0 ? (
-            <p className="empty-hint">No bottleneck data in this range.</p>
+            <p className="empty-hint">{t('cross.noBottleneckData')}</p>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
@@ -788,7 +812,7 @@ export function CrossSessionOverview() {
                   cy="50%"
                   outerRadius={95}
                   label={({ name, percent }) =>
-                    `${name || 'Unknown'}: ${formatPercent((percent || 0) * 100)}`
+                    `${name || t('table.unknown')}: ${formatPercentPoint(percent || 0)}`
                   }
                 >
                   {overview.bottleneck_distribution.map((entry, index) => (
@@ -804,9 +828,9 @@ export function CrossSessionOverview() {
 
       <div className="overview-grid two-columns">
         <section className="overview-card">
-          <h4>Automation bands</h4>
+          <h4>{t('cross.automationBands')}</h4>
           {automationDistribution.buckets.length === 0 ? (
-            <p className="empty-hint">No automation data in this range.</p>
+            <p className="empty-hint">{t('cross.noAutomationData')}</p>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={automationDistribution.buckets}>
@@ -815,25 +839,25 @@ export function CrossSessionOverview() {
                 <YAxis />
                 <Tooltip formatter={(value) => formatNumber(Number(value))} />
                 <Legend />
-                <Bar dataKey="count" fill="#2563eb" name="Sessions" />
+                <Bar dataKey="count" fill="#2563eb" name={t('cross.sessions')} />
               </BarChart>
             </ResponsiveContainer>
           )}
         </section>
 
         <section className="overview-card">
-          <h4>Top tools by call volume</h4>
+          <h4>{t('cross.topTools')}</h4>
           {topTools.length === 0 ? (
-            <p className="empty-hint">No tool data in this range.</p>
+            <p className="empty-hint">{t('cross.noToolData')}</p>
           ) : (
             <div className="table-wrapper">
               <table className="compact-table">
                 <thead>
                   <tr>
-                    <th>Tool</th>
-                    <th>Calls</th>
-                    <th>Errors</th>
-                    <th>Avg latency</th>
+                    <th>{t('cross.tool')}</th>
+                    <th>{t('cross.callVolume')}</th>
+                    <th>{t('cross.errors')}</th>
+                    <th>{t('cross.avgLatency')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -854,19 +878,19 @@ export function CrossSessionOverview() {
 
       <div className="overview-grid two-columns">
         <section className="overview-card">
-          <h4>Top projects</h4>
+          <h4>{t('cross.topProjects')}</h4>
           {topProjects.length === 0 ? (
-            <p className="empty-hint">No project data in this range.</p>
+            <p className="empty-hint">{t('cross.noProjectData')}</p>
           ) : (
             <div className="table-wrapper">
               <table className="compact-table">
                 <thead>
                   <tr>
-                    <th>Project</th>
-                    <th>Sessions</th>
-                    <th>Token share</th>
-                    <th>Token leverage</th>
-                    <th>Char leverage</th>
+                    <th>{t('table.project')}</th>
+                    <th>{t('cross.sessions')}</th>
+                    <th>{t('cross.tokenShare')}</th>
+                    <th>{t('cross.kpi.tokenLeverage')}</th>
+                    <th>{t('cross.kpi.charLeverage')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -874,7 +898,7 @@ export function CrossSessionOverview() {
                     <tr key={project.project_path || project.project_name}>
                       <td>{project.project_name}</td>
                       <td>{formatNumber(project.sessions)}</td>
-                      <td>{formatPercent(project.percent_tokens)}</td>
+                      <td>{formatPercentRatio(project.percent_tokens)}</td>
                       <td>{formatLeverage(project.leverage_tokens_mean)}</td>
                       <td>{formatLeverage(project.leverage_chars_mean)}</td>
                     </tr>
@@ -886,9 +910,9 @@ export function CrossSessionOverview() {
         </section>
 
         <section className="overview-card">
-          <h4>Top sessions by token share</h4>
+          <h4>{t('cross.topSessionsByShare')}</h4>
           {topSessionShare.length === 0 ? (
-            <p className="empty-hint">No token-share data in this range.</p>
+            <p className="empty-hint">{t('cross.noTokenShareData')}</p>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={topSessionShare}>
@@ -897,7 +921,7 @@ export function CrossSessionOverview() {
                 <YAxis />
                 <Tooltip formatter={(value) => formatNumber(Number(value))} />
                 <Legend />
-                <Bar dataKey="percent" fill="#0f766e" name="Token share %" />
+                <Bar dataKey="percent" fill="#0f766e" name={t('cross.tokenShare')} />
               </BarChart>
             </ResponsiveContainer>
           )}

@@ -9,6 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { useI18n } from '../i18n';
 import './DateRangePicker.css';
 
 export interface DateRange {
@@ -23,6 +24,7 @@ interface DateRangePickerProps {
 }
 
 export function DateRangePicker({ value, onChange, onClear }: DateRangePickerProps) {
+  const { t, formatDate } = useI18n();
   const [showPicker, setShowPicker] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -82,19 +84,19 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
   // Format display text for the button
   const getButtonText = () => {
     if (!isFiltered) {
-      return '📅 Date Range';
+      return `📅 ${t('dateRange.button')}`;
     }
 
     const parts = [];
     if (value.start_date) {
-      parts.push(`From: ${value.start_date}`);
+      parts.push(`${t('dateRange.from')}: ${formatDate(value.start_date, { year: 'numeric', month: 'short', day: 'numeric' })}`);
     }
     if (value.end_date) {
-      parts.push(`To: ${value.end_date}`);
+      parts.push(`${t('dateRange.to')}: ${formatDate(value.end_date, { year: 'numeric', month: 'short', day: 'numeric' })}`);
     }
 
     if (parts.length === 0) {
-      return '📅 Date Range';
+      return `📅 ${t('dateRange.button')}`;
     }
 
     return `📅 ${parts.join(' | ')}`;
@@ -107,7 +109,7 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
         className={`date-picker-toggle ${isFiltered ? 'date-picker-toggle--filtered' : ''}`}
         onClick={() => setShowPicker(!showPicker)}
         type="button"
-        title={isFiltered ? 'Click to modify date filter' : 'Click to filter by date range'}
+        title={isFiltered ? t('dateRange.modifyTitle') : t('dateRange.filterTitle')}
       >
         {getButtonText()}
       </button>
@@ -115,41 +117,41 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
       {showPicker && (
         <div ref={dropdownRef} className="date-picker-dropdown">
           <div className="date-picker-header">
-            <h4>Filter by Date Range</h4>
+            <h4>{t('dateRange.header')}</h4>
           </div>
 
           <div className="quick-filters">
-            <h5>Quick Filters</h5>
+            <h5>{t('dateRange.quickFilters')}</h5>
             <div className="quick-filters-buttons">
               <button
                 onClick={() => handleQuickFilter(7)}
                 type="button"
                 className="quick-filter-button"
               >
-                Last 7 days
+                {t('dateRange.lastDays', { values: { days: 7 } })}
               </button>
               <button
                 onClick={() => handleQuickFilter(30)}
                 type="button"
                 className="quick-filter-button"
               >
-                Last 30 days
+                {t('dateRange.lastDays', { values: { days: 30 } })}
               </button>
               <button
                 onClick={() => handleQuickFilter(90)}
                 type="button"
                 className="quick-filter-button"
               >
-                Last 90 days
+                {t('dateRange.lastDays', { values: { days: 90 } })}
               </button>
             </div>
           </div>
 
           <div className="custom-range">
-            <h5>Custom Range</h5>
+            <h5>{t('dateRange.customRange')}</h5>
             <div className="date-inputs">
               <label className="date-input-label">
-                <span className="date-label-text">From:</span>
+                <span className="date-label-text">{t('dateRange.from')}:</span>
                 <input
                   type="date"
                   value={value.start_date || ''}
@@ -158,7 +160,7 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
                 />
               </label>
               <label className="date-input-label">
-                <span className="date-label-text">To:</span>
+                <span className="date-label-text">{t('dateRange.to')}:</span>
                 <input
                   type="date"
                   value={value.end_date || ''}
@@ -175,14 +177,14 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
               type="button"
               className="picker-action-button picker-action-button--clear"
             >
-              Clear
+              {t('dateRange.clear')}
             </button>
             <button
               onClick={handleDone}
               type="button"
               className="picker-action-button picker-action-button--done"
             >
-              Done
+              {t('dateRange.done')}
             </button>
           </div>
         </div>

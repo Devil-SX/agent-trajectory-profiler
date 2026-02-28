@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import './SessionFilter.css';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
+import { useI18n } from '../i18n';
 
 export type SortOption = 'updated' | 'created' | 'tokens' | 'duration' | 'automation';
 export type BottleneckFilter = 'all' | 'model' | 'tool' | 'user';
@@ -37,6 +38,7 @@ export function SessionFilter({
   bottleneckFilter = 'all',
   dateRange = { start_date: null, end_date: null },
 }: SessionFilterProps) {
+  const { t } = useI18n();
   const [searchInput, setSearchInput] = useState(searchQuery);
 
   // Debounced search with 300ms delay
@@ -61,10 +63,10 @@ export function SessionFilter({
   };
 
   const bottleneckFilters: Array<{ value: BottleneckFilter; label: string }> = [
-    { value: 'all', label: 'All' },
-    { value: 'model', label: 'Model' },
-    { value: 'tool', label: 'Tool' },
-    { value: 'user', label: 'User' },
+    { value: 'all', label: t('filter.all') },
+    { value: 'model', label: t('filter.model') },
+    { value: 'tool', label: t('filter.tool') },
+    { value: 'user', label: t('filter.user') },
   ];
 
   return (
@@ -75,7 +77,7 @@ export function SessionFilter({
           <input
             type="text"
             className="search-input"
-            placeholder="Search by project path or session ID..."
+            placeholder={t('filter.searchPlaceholder')}
             value={searchInput}
             onChange={handleSearchChange}
           />
@@ -83,14 +85,14 @@ export function SessionFilter({
 
         <div className="filter-group sort-group">
           <label htmlFor="sort-select" className="sort-label">
-            Sort by:
+            {t('filter.sortBy')}
           </label>
           <select id="sort-select" className="sort-select" value={sortBy} onChange={handleSortChange}>
-            <option value="updated">Updated (newest first)</option>
-            <option value="created">Created (newest first)</option>
-            <option value="tokens">Token usage (highest first)</option>
-            <option value="duration">Duration (longest first)</option>
-            <option value="automation">Automation ratio (highest first)</option>
+            <option value="updated">{t('filter.sort.updated')}</option>
+            <option value="created">{t('filter.sort.created')}</option>
+            <option value="tokens">{t('filter.sort.tokens')}</option>
+            <option value="duration">{t('filter.sort.duration')}</option>
+            <option value="automation">{t('filter.sort.automation')}</option>
           </select>
         </div>
 
@@ -106,7 +108,7 @@ export function SessionFilter({
       {/* Bottleneck Filter Buttons Row */}
       <div className="filter-row filter-buttons">
         <div className="bottleneck-filter">
-          <span className="filter-label">Bottleneck:</span>
+          <span className="filter-label">{t('filter.bottleneck')}</span>
           <div className="button-group">
             {bottleneckFilters.map((filter) => (
               <button

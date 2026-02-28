@@ -11,12 +11,11 @@ import { useEffect, useRef, useState } from 'react';
 import { List } from 'react-window';
 import type { SessionSummary } from '../types/session';
 import {
-  formatAbsoluteTime,
-  formatRelativeWithAbsolute,
   getProjectName,
   truncateMiddle,
 } from '../utils/display';
 import { SessionCard } from './SessionCard';
+import { useI18n } from '../i18n';
 import './SessionListView.css';
 
 interface SessionListViewProps {
@@ -40,14 +39,14 @@ function normalizeEcosystem(ecosystem: string | null | undefined): 'codex' | 'cl
   return 'other';
 }
 
-function ecosystemLabel(ecosystem: string | null | undefined): string {
+function ecosystemLabel(ecosystem: string | null | undefined, unknownLabel: string): string {
   if (ecosystem === 'codex') {
     return 'Codex';
   }
   if (ecosystem === 'claude_code') {
     return 'Claude Code';
   }
-  return ecosystem || 'Unknown';
+  return ecosystem || unknownLabel;
 }
 
 function normalizeBottleneck(value: string | null | undefined): 'model' | 'tool' | 'user' | 'unknown' {
@@ -85,6 +84,7 @@ export function SessionListView({
   onSelect,
   viewMode = 'cards',
 }: SessionListViewProps) {
+  const { t, formatDateTime, formatNumber, formatRelativeWithAbsolute } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [listHeight, setListHeight] = useState<number>(FALLBACK_LIST_HEIGHT);
 
@@ -123,7 +123,7 @@ export function SessionListView({
     return (
       <div className="session-list-view" ref={containerRef}>
         <div className="session-list-empty">
-          <p>No sessions found</p>
+          <p>{t('table.noSessionsFound')}</p>
         </div>
       </div>
     );
@@ -136,14 +136,14 @@ export function SessionListView({
           <table className="session-table">
             <thead>
               <tr>
-                <th>Project</th>
-                <th>Updated</th>
-                <th>Session ID</th>
-                <th>Ecosystem</th>
-                <th>Tokens</th>
-                <th>Messages</th>
-                <th>Bottleneck</th>
-                <th>Automation</th>
+                <th>{t('table.project')}</th>
+                <th>{t('table.updated')}</th>
+                <th>{t('table.sessionId')}</th>
+                <th>{t('table.ecosystem')}</th>
+                <th>{t('table.tokens')}</th>
+                <th>{t('table.messages')}</th>
+                <th>{t('table.bottleneck')}</th>
+                <th>{t('table.automation')}</th>
               </tr>
             </thead>
             <tbody>
@@ -154,7 +154,13 @@ export function SessionListView({
                   : `${session.automation_ratio.toFixed(2)}x`;
                 const projectName = getProjectName(session.project_path);
                 const updatedLabel = formatRelativeWithAbsolute(updated);
-                const updatedAbsolute = formatAbsoluteTime(updated);
+                const updatedAbsolute = formatDateTime(updated, {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
                 return (
                   <tr
                     key={session.session_id}
@@ -184,25 +190,25 @@ export function SessionListView({
                           void handleCopySessionId(event, session.session_id);
                         }}
                         onKeyDown={(event) => event.stopPropagation()}
-                        aria-label={`Copy full session ID ${session.session_id}`}
+                        aria-label={t('table.copySessionId', { values: { id: session.session_id } })}
                       >
-                        Copy
+                        {t('table.copy')}
                       </button>
                     </td>
                     <td>
                       <span
                         className={`session-tag session-tag--ecosystem-${normalizeEcosystem(session.ecosystem)}`}
                       >
-                        {ecosystemLabel(session.ecosystem)}
+                        {ecosystemLabel(session.ecosystem, t('table.unknown'))}
                       </span>
                     </td>
-                    <td>{session.total_tokens.toLocaleString()}</td>
-                    <td>{session.total_messages.toLocaleString()}</td>
+                    <td>{formatNumber(session.total_tokens)}</td>
+                    <td>{formatNumber(session.total_messages)}</td>
                     <td>
                       <span
                         className={`session-tag session-tag--bottleneck-${normalizeBottleneck(session.bottleneck)}`}
                       >
-                        {session.bottleneck ?? 'Unknown'}
+                        {session.bottleneck ?? t('table.unknown')}
                       </span>
                     </td>
                     <td>

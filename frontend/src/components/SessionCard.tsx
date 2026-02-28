@@ -9,11 +9,10 @@
 
 import type { SessionSummary } from '../types/session';
 import {
-  formatAbsoluteTime,
-  formatRelativeWithAbsolute,
   getProjectName,
   truncateMiddle,
 } from '../utils/display';
+import { useI18n } from '../i18n';
 import './SessionCard.css';
 
 interface SessionCardProps {
@@ -44,10 +43,17 @@ export function SessionCard({
   isSelected = false,
   onClick,
 }: SessionCardProps) {
+  const { t, formatDateTime, formatNumber, formatRelativeWithAbsolute } = useI18n();
   const projectName = getProjectName(session.project_path);
   const updatedTime = session.updated_at || session.created_at;
   const relativeWithAbsolute = formatRelativeWithAbsolute(updatedTime);
-  const absoluteTime = formatAbsoluteTime(updatedTime);
+  const absoluteTime = formatDateTime(updatedTime, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
   const displayName = getDisplayName(projectName, session.git_branch);
   const bottleneckColor = session.bottleneck
     ? BOTTLENECK_COLORS[session.bottleneck] || '#6b7280'
@@ -72,7 +78,7 @@ export function SessionCard({
         </h3>
       </div>
       <p className="session-card__time" title={absoluteTime}>
-        Updated {relativeWithAbsolute}
+        {t('card.updated')} {relativeWithAbsolute}
       </p>
 
       {/* Bottleneck badge */}
@@ -90,20 +96,20 @@ export function SessionCard({
       {/* Main stats grid */}
       <div className="session-card__stats">
         <div className="session-card__stat-item">
-          <span className="session-card__stat-label">Tokens</span>
+          <span className="session-card__stat-label">{t('table.tokens')}</span>
           <span className="session-card__stat-value">
-            {session.total_tokens.toLocaleString()}
+            {formatNumber(session.total_tokens)}
           </span>
         </div>
 
         <div className="session-card__stat-item">
-          <span className="session-card__stat-label">Automation</span>
+          <span className="session-card__stat-label">{t('table.automation')}</span>
           <span className="session-card__stat-value">{automationRatioDisplay}</span>
         </div>
 
         <div className="session-card__stat-item">
-          <span className="session-card__stat-label">Messages</span>
-          <span className="session-card__stat-value">{session.total_messages}</span>
+          <span className="session-card__stat-label">{t('table.messages')}</span>
+          <span className="session-card__stat-value">{formatNumber(session.total_messages)}</span>
         </div>
       </div>
 

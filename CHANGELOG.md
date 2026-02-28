@@ -45,6 +45,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-session source-segmentation coverage for ecosystem-specific breakdowns (`codex` vs `claude_code`) across backend integration and frontend smoke/visual tests.
 - Density mode controls (`comfortable` / `compact`) with persisted preference and root-level density tokens applied to overview/session layouts.
 - Playwright coverage for density mode across smoke, visual baseline, and accessibility keyboard interaction checks.
+- Global EN/ZH i18n layer for dashboard UI with persisted locale preference (`agent-vis:locale`) and key workflow coverage (app shell, session browser, date filter, sync panel, cross-session overview).
+- Playwright smoke coverage for language switch behavior (`EN -> ZH`), key label assertions, and reload persistence (`tests/language-switch.spec.ts`).
 
 ### Changed
 
@@ -76,6 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Frontend spacing, control sizes, table cell paddings, and analytics card density now respond to shared density tokens for tighter compact UX.
 - Session table rows now render semantic color tags for ecosystem, bottleneck, and automation bands with theme-safe contrast in light/dark modes.
 - Cross-session overview now exposes and visualizes source-level aggregates with dedicated ecosystem distribution chart and comparison table.
+- Session-list timestamp and number rendering now follow selected locale formatting instead of fixed English-only defaults.
 
 ### Fixed
 

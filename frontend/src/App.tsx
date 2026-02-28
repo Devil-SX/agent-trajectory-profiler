@@ -2,6 +2,8 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import './App.css';
 import { SessionBrowser } from './components/SessionBrowser';
+import { useI18n } from './i18n';
+import type { Locale } from './i18n';
 
 // Lazy load heavy components for code splitting
 const MessageTimeline = lazy(() => import('./components/MessageTimeline').then(m => ({ default: m.MessageTimeline })));
@@ -109,6 +111,7 @@ function buildRouteUrl(route: RouteState): string {
 }
 
 function App() {
+  const { locale, setLocale, t } = useI18n();
   const initialRoute = readRouteState();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialRoute.sessionId);
   const [primaryView, setPrimaryView] = useState<PrimaryView>(initialRoute.view);
@@ -311,31 +314,43 @@ function App() {
         }}
       />
       <header>
-        <h1>Agent Trajectory Visualizer</h1>
-        <div className="header-controls" role="group" aria-label="Display preferences">
+        <h1>{t('header.title')}</h1>
+        <div className="header-controls" role="group" aria-label={t('header.group.display')}>
           <div className="header-control-group">
-            <label htmlFor="theme-mode-select">Theme</label>
+            <label htmlFor="language-mode-select">{t('language.label')}</label>
+            <select
+              id="language-mode-select"
+              value={locale}
+              onChange={(event) => setLocale(event.target.value as Locale)}
+              aria-label={t('language.label')}
+            >
+              <option value="en">{t('language.english')}</option>
+              <option value="zh-CN">{t('language.chinese')}</option>
+            </select>
+          </div>
+          <div className="header-control-group">
+            <label htmlFor="theme-mode-select">{t('theme.label')}</label>
             <select
               id="theme-mode-select"
               value={themeMode}
               onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
-              aria-label="Theme mode"
+              aria-label={t('theme.label')}
             >
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
+              <option value="system">{t('theme.system')}</option>
+              <option value="light">{t('theme.light')}</option>
+              <option value="dark">{t('theme.dark')}</option>
             </select>
           </div>
           <div className="header-control-group">
-            <label htmlFor="density-mode-select">Density</label>
+            <label htmlFor="density-mode-select">{t('density.label')}</label>
             <select
               id="density-mode-select"
               value={densityMode}
               onChange={(event) => setDensityMode(event.target.value as DensityMode)}
-              aria-label="Density mode"
+              aria-label={t('density.label')}
             >
-              <option value="comfortable">Comfortable</option>
-              <option value="compact">Compact</option>
+              <option value="comfortable">{t('density.comfortable')}</option>
+              <option value="compact">{t('density.compact')}</option>
             </select>
           </div>
         </div>
@@ -346,20 +361,20 @@ function App() {
             className={`tab-button ${showCrossSession ? 'active' : ''}`}
             onClick={() => handlePrimaryViewChange('cross-session')}
           >
-            Cross-Session Analytics
+            {t('tabs.crossSession')}
           </button>
           <button
             className={`tab-button ${showSessionDetail ? 'active' : ''}`}
             onClick={() => handlePrimaryViewChange('session-detail')}
             disabled={!selectedSessionId}
           >
-            Session Detail
+            {t('tabs.sessionDetail')}
           </button>
         </div>
 
         {showCrossSession && (
           <div className="main-content main-content--overview">
-            <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
+            <Suspense fallback={<div className="loading-spinner">{t('loading.default')}</div>}>
               <div className="session-content overview-analytics-block">
                 <AdvancedAnalytics sessionId={null} />
               </div>
@@ -383,11 +398,12 @@ function App() {
                 className="detail-back-button"
                 onClick={handleBackToOverview}
               >
-                Back to Overview
+                {t('session.backToOverview')}
               </button>
               {selectedSessionId && (
                 <p className="detail-session-caption">
-                  Session: <code>{selectedSessionId}</code>
+                  {t('session.label')}
+                  : <code>{selectedSessionId}</code>
                 </p>
               )}
             </div>
@@ -397,13 +413,13 @@ function App() {
                 className={`tab-button ${sessionDetailTab === 'timeline' ? 'active' : ''}`}
                 onClick={() => handleSessionDetailTabChange('timeline')}
               >
-                Timeline
+                {t('tabs.timeline')}
               </button>
               <button
                 className={`tab-button ${sessionDetailTab === 'statistics' ? 'active' : ''}`}
                 onClick={() => handleSessionDetailTabChange('statistics')}
               >
-                Statistics
+                {t('tabs.statistics')}
               </button>
               {isMobile && showTimeline && selectedSessionId && (
                 <button
@@ -411,14 +427,16 @@ function App() {
                   onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
                   aria-label="Toggle sidebar"
                 >
-                  {isMobileSidebarOpen ? '✕ Close' : '☰ Info'}
+                  {isMobileSidebarOpen
+                    ? `✕ ${t('session.sidebar.close')}`
+                    : `☰ ${t('session.sidebar.info')}`}
                 </button>
               )}
             </div>
 
             <div className="main-content">
               {selectedSessionId ? (
-                <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
+                <Suspense fallback={<div className="loading-spinner">{t('loading.default')}</div>}>
                   {showTimeline && (
                     <div className="session-content">
                       <MessageTimeline sessionId={selectedSessionId} autoScrollToBottom={false} />
@@ -445,9 +463,9 @@ function App() {
               ) : (
                 <div className="no-session">
                   <div>
-                    <p>No session selected.</p>
+                    <p>{t('session.noSelection')}</p>
                     <button type="button" onClick={handleBackToOverview}>
-                      Return to Overview
+                      {t('session.returnToOverview')}
                     </button>
                   </div>
                 </div>
