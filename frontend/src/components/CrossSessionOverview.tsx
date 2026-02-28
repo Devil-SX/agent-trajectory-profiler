@@ -96,9 +96,26 @@ function buildSwimlaneColor(tokens: number, maxTokens: number): string {
   return `rgba(37, 99, 235, ${alpha.toFixed(3)})`;
 }
 
+function formatPeriodLabel(
+  period: string,
+  interval: 'day' | 'week',
+  formatDate: (value: string | Date, options?: Intl.DateTimeFormatOptions) => string,
+): string {
+  if (interval === 'day') {
+    return formatDate(period, { month: 'short', day: 'numeric' });
+  }
+
+  const weekMatch = /^(\d{4})-W(\d{2})$/.exec(period);
+  if (!weekMatch) {
+    return period;
+  }
+  return `W${weekMatch[2]} ${weekMatch[1]}`;
+}
+
 export function CrossSessionOverview() {
   const { t, formatNumber, formatPercent, formatDate } = useI18n();
   const [preset, setPreset] = useState<RangePreset>('7d');
+  const [projectTimelineInterval, setProjectTimelineInterval] = useState<'day' | 'week'>('day');
   const [codingFraction, setCodingFraction] = useState(0.3);
   const [tokensPerLine, setTokensPerLine] = useState(10);
   const [projectSelection, setProjectSelection] = useState<Record<string, boolean>>({});
@@ -146,7 +163,7 @@ export function CrossSessionOverview() {
     data: projectSwimlane,
     isLoading: projectSwimlaneLoading,
     error: projectSwimlaneError,
-  } = useProjectSwimlaneQuery(interval, activeRange.startDate, activeRange.endDate, 12);
+  } = useProjectSwimlaneQuery(projectTimelineInterval, activeRange.startDate, activeRange.endDate, 12);
 
   const isLoading =
     overviewLoading ||
@@ -287,14 +304,107 @@ export function CrossSessionOverview() {
   const swimlaneProjects = projectSwimlane.projects.filter((project) =>
     selectedProjectPaths.includes(project.project_path)
   );
-  const swimlanePointMap = new Map<string, (typeof projectSwimlane.points)[number]>();
-  for (const point of projectSwimlane.points) {
-    swimlanePointMap.set(`${point.project_path}::${point.period}`, point);
-  }
-  const swimlaneMaxTokens =
-    projectSwimlane.points.length > 0
-      ? Math.max(...projectSwimlane.points.map((point) => point.tokens))
-      : 0;
+  const periodIndexMap = new Map<string, number>();
+  projectSwimlane.periods.forEach((period, index) => {
+    periodIndexMap.set(period, index);
+  });
+
+  const ganttRows = swimlaneProjects.map((project) => {
+    const sortedPoints = projectSwimlane.points
+      .filter((point) => point.project_path === project.project_path)
+      .sort((a, b) => (periodIndexMap.get(a.period) ?? -1) - (periodIndexMap.get(b.period) ?? -1));
+
+    type TimelineSegment = {
+      project_path: string;
+      project_name: string;
+      startPeriod: string;
+      endPeriod: string;
+      startIndex: number;
+      endIndex: number;
+      totalTokens: number;
+      totalSessions: number;
+      activeRatioSum: number;
+      activeRatioCount: number;
+      leverageSum: number;
+      leverageCount: number;
+    };
+
+    const segments: TimelineSegment[] = [];
+    let current: TimelineSegment | null = null;
+
+    const flushSegment = () => {
+      if (current) {
+        segments.push(current);
+      }
+      current = null;
+    };
+
+    for (const point of sortedPoints) {
+      const index = periodIndexMap.get(point.period);
+      if (index === undefined) {
+        continue;
+      }
+
+      if (!current) {
+        current = {
+          project_path: point.project_path,
+          project_name: point.project_name,
+          startPeriod: point.period,
+          endPeriod: point.period,
+          startIndex: index,
+          endIndex: index,
+          totalTokens: point.tokens,
+          totalSessions: point.sessions,
+          activeRatioSum: point.active_ratio,
+          activeRatioCount: 1,
+          leverageSum: point.leverage_tokens_mean ?? 0,
+          leverageCount: point.leverage_tokens_mean === null ? 0 : 1,
+        };
+        continue;
+      }
+
+      if (index === current.endIndex + 1) {
+        current.endIndex = index;
+        current.endPeriod = point.period;
+        current.totalTokens += point.tokens;
+        current.totalSessions += point.sessions;
+        current.activeRatioSum += point.active_ratio;
+        current.activeRatioCount += 1;
+        if (point.leverage_tokens_mean !== null) {
+          current.leverageSum += point.leverage_tokens_mean;
+          current.leverageCount += 1;
+        }
+        continue;
+      }
+
+      flushSegment();
+      current = {
+        project_path: point.project_path,
+        project_name: point.project_name,
+        startPeriod: point.period,
+        endPeriod: point.period,
+        startIndex: index,
+        endIndex: index,
+        totalTokens: point.tokens,
+        totalSessions: point.sessions,
+        activeRatioSum: point.active_ratio,
+        activeRatioCount: 1,
+        leverageSum: point.leverage_tokens_mean ?? 0,
+        leverageCount: point.leverage_tokens_mean === null ? 0 : 1,
+      };
+    }
+
+    flushSegment();
+
+    return {
+      project,
+      segments,
+    };
+  }).filter((row) => row.segments.length > 0);
+
+  const ganttMaxTokens = ganttRows.length > 0
+    ? Math.max(...ganttRows.flatMap((row) => row.segments.map((segment) => segment.totalTokens)))
+    : 0;
 
   const toggleProjectSelection = (projectPath: string) => {
     setProjectSelection((prev) => {
@@ -302,6 +412,14 @@ export function CrossSessionOverview() {
       return { ...prev, [projectPath]: !currentlySelected };
     });
   };
+
+  const ganttLabelWidth = 170;
+  const ganttCellWidth = projectTimelineInterval === 'week' ? 92 : 66;
+  const ganttRowHeight = 36;
+  const ganttAxisHeight = 30;
+  const ganttChartWidth = ganttLabelWidth + projectSwimlane.periods.length * ganttCellWidth + 16;
+  const ganttChartHeight = ganttAxisHeight + ganttRows.length * ganttRowHeight + 14;
+  const ganttTickStep = Math.max(1, Math.ceil(projectSwimlane.periods.length / 8));
 
   return (
     <section className="cross-session-overview" aria-label="Cross session overview">
@@ -316,7 +434,10 @@ export function CrossSessionOverview() {
             <button
               type="button"
               className={preset === '7d' ? 'active' : ''}
-              onClick={() => setPreset('7d')}
+              onClick={() => {
+                setPreset('7d');
+                setProjectTimelineInterval('day');
+              }}
             >
               {t('cross.preset.days7')}
             </button>
@@ -330,7 +451,10 @@ export function CrossSessionOverview() {
             <button
               type="button"
               className={preset === '90d' ? 'active' : ''}
-              onClick={() => setPreset('90d')}
+              onClick={() => {
+                setPreset('90d');
+                setProjectTimelineInterval('week');
+              }}
             >
               {t('cross.preset.days90')}
             </button>
@@ -700,7 +824,25 @@ export function CrossSessionOverview() {
         </section>
 
         <section className="overview-card">
-          <h4>{t('cross.projectSwimlane')}</h4>
+          <div className="project-gantt-header">
+            <h4>{t('cross.projectGantt')}</h4>
+            <div className="project-gantt-granularity" role="group" aria-label={t('cross.ganttGranularity')}>
+              <button
+                type="button"
+                className={projectTimelineInterval === 'day' ? 'active' : ''}
+                onClick={() => setProjectTimelineInterval('day')}
+              >
+                {t('cross.ganttDay')}
+              </button>
+              <button
+                type="button"
+                className={projectTimelineInterval === 'week' ? 'active' : ''}
+                onClick={() => setProjectTimelineInterval('week')}
+              >
+                {t('cross.ganttWeek')}
+              </button>
+            </div>
+          </div>
           {projectSwimlane.truncated_project_count > 0 && (
             <p className="project-compare-note">
               {t('cross.projectSwimlaneNote', {
@@ -711,58 +853,110 @@ export function CrossSessionOverview() {
               })}
             </p>
           )}
-          {projectSwimlane.periods.length === 0 || swimlaneProjects.length === 0 ? (
+          {projectSwimlane.periods.length === 0 || ganttRows.length === 0 ? (
             <p className="empty-hint">{t('cross.noSwimlane')}</p>
           ) : (
-            <>
-              <div className="table-wrapper swimlane-wrapper">
-                <table className="compact-table swimlane-table">
-                  <thead>
-                    <tr>
-                      <th>{t('table.project')}</th>
-                      {projectSwimlane.periods.map((period) => (
-                        <th key={period}>{formatDate(period, { month: 'short', day: 'numeric' })}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {swimlaneProjects.map((project) => (
-                      <tr key={project.project_path}>
-                        <td>{project.project_name}</td>
-                        {projectSwimlane.periods.map((period) => {
-                          const point = swimlanePointMap.get(`${project.project_path}::${period}`);
-                          const tokens = point?.tokens ?? 0;
-                          const sessions = point?.sessions ?? 0;
-                          const activeRatio = point?.active_ratio ?? 0;
-                          const leverage = point?.leverage_tokens_mean;
-                          return (
-                            <td
-                              key={`${project.project_path}-${period}`}
-                              className="swimlane-cell"
-                              style={{ backgroundColor: buildSwimlaneColor(tokens, swimlaneMaxTokens) }}
-                              title={
-                                `Project: ${project.project_name}\nPeriod: ${period}\n` +
-                                `Tokens: ${formatNumber(tokens)}\nSessions: ${sessions}\n` +
-                                `Active ratio: ${formatPercentPoint(activeRatio)}\n` +
-                                `Token leverage: ${formatLeverage(leverage)}`
-                              }
+            <div className="gantt-wrapper">
+              <svg
+                className="project-gantt-chart"
+                width={ganttChartWidth}
+                height={ganttChartHeight}
+                role="img"
+                aria-label={t('cross.ganttAria')}
+              >
+                {projectSwimlane.periods.map((period, index) => {
+                  if (index % ganttTickStep !== 0 && index !== projectSwimlane.periods.length - 1) {
+                    return null;
+                  }
+                  const x = ganttLabelWidth + index * ganttCellWidth + ganttCellWidth / 2;
+                  return (
+                    <text key={`gantt-tick-${period}`} x={x} y={14} textAnchor="middle" className="gantt-axis-label">
+                      {formatPeriodLabel(period, projectTimelineInterval, formatDate)}
+                    </text>
+                  );
+                })}
+
+                {projectSwimlane.periods.map((period, index) => {
+                  const x = ganttLabelWidth + index * ganttCellWidth;
+                  return (
+                    <line
+                      key={`gantt-grid-${period}`}
+                      x1={x}
+                      y1={ganttAxisHeight - 2}
+                      x2={x}
+                      y2={ganttChartHeight - 2}
+                      className="gantt-grid-line"
+                    />
+                  );
+                })}
+                <line
+                  x1={ganttLabelWidth + projectSwimlane.periods.length * ganttCellWidth}
+                  y1={ganttAxisHeight - 2}
+                  x2={ganttLabelWidth + projectSwimlane.periods.length * ganttCellWidth}
+                  y2={ganttChartHeight - 2}
+                  className="gantt-grid-line"
+                />
+
+                {ganttRows.map((row, rowIndex) => {
+                  const yBase = ganttAxisHeight + rowIndex * ganttRowHeight;
+                  const labelY = yBase + ganttRowHeight / 2 + 4;
+                  return (
+                    <g key={row.project.project_path} className="gantt-row">
+                      <text x={ganttLabelWidth - 10} y={labelY} textAnchor="end" className="gantt-row-label">
+                        {row.project.project_name}
+                      </text>
+                      {row.segments.map((segment) => {
+                        const x = ganttLabelWidth + segment.startIndex * ganttCellWidth + 2;
+                        const width = (segment.endIndex - segment.startIndex + 1) * ganttCellWidth - 4;
+                        const y = yBase + 6;
+                        const height = ganttRowHeight - 12;
+                        const avgActiveRatio =
+                          segment.activeRatioCount > 0
+                            ? segment.activeRatioSum / segment.activeRatioCount
+                            : 0;
+                        const avgLeverage =
+                          segment.leverageCount > 0
+                            ? segment.leverageSum / segment.leverageCount
+                            : null;
+                        return (
+                          <g key={`${segment.project_path}-${segment.startPeriod}-${segment.endPeriod}`}>
+                            <rect
+                              className="gantt-bar"
+                              x={x}
+                              y={y}
+                              width={width}
+                              height={height}
+                              rx={4}
+                              style={{
+                                fill: buildSwimlaneColor(segment.totalTokens, ganttMaxTokens),
+                              }}
                             >
-                              <span>{tokens > 0 ? formatNumber(tokens) : '--'}</span>
-                              <small>{sessions > 0 ? `${sessions} ${t('cross.sessionsShort')}` : ''}</small>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="swimlane-legend">
-                <span>{t('cross.tokenDensity')}</span>
-                <div className="swimlane-gradient" />
-                <span>{t('cross.lowToHigh')}</span>
-              </div>
-            </>
+                              <title>
+                                {`Project: ${segment.project_name}\n`}
+                                {`Range: ${segment.startPeriod} -> ${segment.endPeriod}\n`}
+                                {`Tokens: ${formatNumber(segment.totalTokens)}\n`}
+                                {`Sessions: ${formatNumber(segment.totalSessions)}\n`}
+                                {`Active ratio: ${formatPercentPoint(avgActiveRatio)}\n`}
+                                {`Token leverage: ${formatLeverage(avgLeverage)}`}
+                              </title>
+                            </rect>
+                            {width > 64 && (
+                              <text
+                                x={x + 8}
+                                y={y + height / 2 + 4}
+                                className="gantt-bar-label"
+                              >
+                                {formatNumber(segment.totalTokens)}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
           )}
         </section>
       </div>

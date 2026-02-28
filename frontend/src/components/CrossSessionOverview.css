@@ -251,48 +251,83 @@
   min-height: 30px;
 }
 
-.swimlane-wrapper {
-  margin-top: 0.55rem;
+.project-gantt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
-.swimlane-table th,
-.swimlane-table td {
-  text-align: center;
+.project-gantt-granularity {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
 }
 
-.swimlane-table td:first-child {
-  text-align: left;
+.project-gantt-granularity button {
+  border: 0;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  min-height: 30px;
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
+}
+
+.project-gantt-granularity button + button {
+  border-left: 1px solid var(--color-border);
+}
+
+.project-gantt-granularity button.active {
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+.gantt-wrapper {
+  margin-top: 0.6rem;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+  padding: 0.4rem 0.35rem 0.6rem;
+}
+
+.project-gantt-chart {
+  min-width: 100%;
+}
+
+.gantt-axis-label {
+  fill: var(--color-text-muted);
+  font-size: 0.72rem;
+}
+
+.gantt-grid-line {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.gantt-row-label {
+  fill: var(--color-text-primary);
+  font-size: 0.8rem;
   font-weight: 600;
 }
 
-.swimlane-cell {
-  min-width: 80px;
-  border-radius: 4px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
+.gantt-bar {
+  transition: opacity 0.2s ease;
+  cursor: pointer;
 }
 
-.swimlane-cell small {
-  font-size: 0.7rem;
-  color: var(--color-text-primary);
+.gantt-bar:hover {
+  opacity: 0.85;
 }
 
-.swimlane-legend {
-  margin-top: 0.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  color: var(--color-text-secondary);
-  font-size: 0.78rem;
-}
-
-.swimlane-gradient {
-  width: 120px;
-  height: 10px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--color-surface-subtle) 0%, var(--color-accent) 100%);
+.gantt-bar-label {
+  fill: var(--color-text-primary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .table-wrapper {

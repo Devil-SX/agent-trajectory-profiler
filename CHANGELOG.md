@@ -49,6 +49,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Playwright smoke coverage for language switch behavior (`EN -> ZH`), key label assertions, and reload persistence (`tests/language-switch.spec.ts`).
 - Metric glossary framework (`MetricHelp`) with keyboard-accessible popovers, formula/input/notes fields, and bilingual (`EN/ZH`) definitions for leverage, yield, active ratio, token/s, and bottleneck.
 - Playwright smoke coverage for glossary interactions: tooltip hint presence, expandable details, keyboard activation, and Chinese-content rendering (`tests/metric-glossary.spec.ts`).
+- Cross-session project timeline now includes a Gantt visualization with contiguous activity segments, token-density encoding, and day/week granularity toggle bound to existing date-window filters.
+- Updated Playwright smoke coverage for project timeline UX to validate Gantt rendering, granularity switching, and mobile horizontal usability (`tests/project-swimlane.spec.ts`).
 
 ### Changed
 
@@ -82,6 +84,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-session overview now exposes and visualizes source-level aggregates with dedicated ecosystem distribution chart and comparison table.
 - Session-list timestamp and number rendering now follow selected locale formatting instead of fixed English-only defaults.
 - Derived metric labels in cross-session and session dashboards now include contextual help entry points that map directly to backend formula semantics.
+- Cross-session project timeline presentation has replaced the previous swimlane table with a denser Gantt layout for multi-project overlap readability.
 
 ### Fixed
 
