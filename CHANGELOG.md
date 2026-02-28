@@ -77,6 +77,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Session statistics API payload now includes computed `average_tokens_per_message`, restoring full-stack round-trip compatibility.
 - Integration test settings patching now targets the API app module object directly, fixing Python 3.10 compatibility for API/full-stack test fixtures.
+- Session detail timeline no longer auto-jumps to the bottom on entry/session switch; default behavior now starts at top with an explicit "Jump to latest" action.
 
 ## [0.6.0] - 2026-02-26
 

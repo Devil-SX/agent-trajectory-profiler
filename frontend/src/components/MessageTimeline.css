@@ -69,6 +69,29 @@
   color: #666;
 }
 
+.timeline-header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.timeline-jump-button {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.28rem 0.65rem;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.timeline-jump-button:hover {
+  background: var(--color-surface-subtle);
+}
+
 .messages-container {
   flex: 1;
   overflow-y: scroll;
@@ -271,6 +294,10 @@
 
   .timeline-header h2 {
     font-size: 1.2rem;
+  }
+
+  .timeline-header-meta {
+    flex-wrap: wrap;
   }
 
   .messages-container {

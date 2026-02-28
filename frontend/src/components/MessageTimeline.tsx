@@ -37,6 +37,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   const { data, isLoading, error: queryError } = useSessionDetailQuery(sessionId);
   const timelineEndRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const session: Session | null = data?.session || null;
   const loading = isLoading;
@@ -100,11 +101,27 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     }
   }, [error]);
 
+  const scrollToLatest = (behavior: ScrollBehavior = 'smooth') => {
+    if (!messagesContainerRef.current) {
+      return;
+    }
+    messagesContainerRef.current.scrollTo({
+      top: messagesContainerRef.current.scrollHeight,
+      behavior,
+    });
+  };
+
   useEffect(() => {
     if (autoScrollToBottom && timelineEndRef.current && !loading) {
-      timelineEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      scrollToLatest('smooth');
     }
   }, [session, autoScrollToBottom, loading]);
+
+  useEffect(() => {
+    if (!autoScrollToBottom && !loading && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, [sessionId, autoScrollToBottom, loading]);
 
   const getMessageSource = (message: MessageRecord): 'user' | 'assistant' | 'subagent' => {
     if (message.isSidechain) {
@@ -308,12 +325,23 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     <div className="message-timeline" ref={timelineRef}>
       <div className="timeline-header">
         <h2>Conversation Timeline</h2>
-        <p className="message-count">
-          {mainMessages.length} message{mainMessages.length !== 1 ? 's' : ''}
-          {subagentGroups.size > 0 && ` · ${subagentGroups.size} subagent session${subagentGroups.size !== 1 ? 's' : ''}`}
-        </p>
+        <div className="timeline-header-meta">
+          <p className="message-count">
+            {mainMessages.length} message{mainMessages.length !== 1 ? 's' : ''}
+            {subagentGroups.size > 0 && ` · ${subagentGroups.size} subagent session${subagentGroups.size !== 1 ? 's' : ''}`}
+          </p>
+          {!autoScrollToBottom && (
+            <button
+              type="button"
+              className="timeline-jump-button"
+              onClick={() => scrollToLatest('smooth')}
+            >
+              Jump to latest
+            </button>
+          )}
+        </div>
       </div>
-      <div className="messages-container">
+      <div className="messages-container" ref={messagesContainerRef}>
         {mainMessages.map((message) => {
           const source = getMessageSource(message);
           return (

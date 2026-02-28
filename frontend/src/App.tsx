@@ -373,7 +373,7 @@ function App() {
                 <Suspense fallback={<div className="loading-spinner">Loading...</div>}>
                   {showTimeline && (
                     <div className="session-content">
-                      <MessageTimeline sessionId={selectedSessionId} autoScrollToBottom={true} />
+                      <MessageTimeline sessionId={selectedSessionId} autoScrollToBottom={false} />
                     </div>
                   )}
                   {showStatistics && (
