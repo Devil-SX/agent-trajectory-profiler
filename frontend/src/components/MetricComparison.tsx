@@ -19,6 +19,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { SessionStatistics } from '../types/session';
+import { formatTokenCount } from '../utils/tokenFormat';
 import './MetricComparison.css';
 
 interface MetricComparisonProps {
@@ -126,11 +127,15 @@ export function MetricComparison({
         <div className="comparison-metric__content">
           <div className="comparison-column comparison-column--a">
             <div className="comparison-column__label">Session A</div>
-            <div className="comparison-column__value">{tokensA.toLocaleString()}</div>
+            <div className="comparison-column__value" title={tokensA.toLocaleString()}>
+              {formatTokenCount(tokensA)}
+            </div>
           </div>
           <div className="comparison-column comparison-column--b">
             <div className="comparison-column__label">Session B</div>
-            <div className="comparison-column__value">{tokensB.toLocaleString()}</div>
+            <div className="comparison-column__value" title={tokensB.toLocaleString()}>
+              {formatTokenCount(tokensB)}
+            </div>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={120}>
@@ -143,7 +148,11 @@ export function MetricComparison({
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" />
             <YAxis />
-            <Tooltip formatter={(value: number | undefined) => (value !== undefined ? value.toLocaleString() : 'N/A')} />
+            <Tooltip
+              formatter={(value: number | undefined) =>
+                value !== undefined ? `${formatTokenCount(value)} (${value.toLocaleString()})` : 'N/A'
+              }
+            />
             <Bar dataKey="tokens" fill="#3b82f6" />
           </BarChart>
         </ResponsiveContainer>

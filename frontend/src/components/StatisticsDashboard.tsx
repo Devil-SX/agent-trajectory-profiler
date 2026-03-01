@@ -25,6 +25,7 @@ import {
 } from 'recharts';
 import { useSessionStatisticsQuery } from '../hooks/useSessionsQuery';
 import type { SessionStatistics } from '../types/session';
+import { formatTokenCount } from '../utils/tokenFormat';
 import { TimeBreakdownChart } from './TimeBreakdownChart';
 import { BottleneckInsight } from './BottleneckInsight';
 import { BashCommandTable } from './BashCommandTable';
@@ -50,6 +51,10 @@ const COLORS = [
 
 function formatNumber(num: number): string {
   return num.toLocaleString();
+}
+
+function formatTokenWithFull(num: number): string {
+  return `${formatTokenCount(num)} (${formatNumber(num)})`;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -417,7 +422,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" angle={-45} textAnchor="end" height={90} />
                   <YAxis />
-                  <Tooltip formatter={(value) => formatNumber(value as number)} />
+                  <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
                   <Legend />
                   <Bar dataKey="tokens" fill={COLORS[2]} name="Total Tokens" />
                 </BarChart>
@@ -446,7 +451,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                     <tr key={tool.tool_name}>
                       <td className="tool-name">{tool.tool_name}</td>
                       <td>{formatNumber(tool.count)}</td>
-                      <td>{formatNumber(tool.total_tokens)}</td>
+                      <td title={formatNumber(tool.total_tokens)}>{formatTokenCount(tool.total_tokens)}</td>
                       <td
                         className={
                           tool.avg_latency_seconds > 10
@@ -659,32 +664,45 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
         <div className="stats-grid">
           <div className="stat-card">
             <h4 className="card-title">Total Tokens</h4>
-            <div className="stat-value large">{formatNumber(statistics.total_tokens)}</div>
+            <div className="stat-value large" title={formatNumber(statistics.total_tokens)}>
+              {formatTokenCount(statistics.total_tokens)}
+            </div>
             <div className="stat-breakdown">
               <div className="breakdown-item">
                 <span className="breakdown-label">Input</span>
-                <span className="breakdown-value">{formatNumber(statistics.total_input_tokens)}</span>
+                <span className="breakdown-value" title={formatNumber(statistics.total_input_tokens)}>
+                  {formatTokenCount(statistics.total_input_tokens)}
+                </span>
               </div>
               <div className="breakdown-item">
                 <span className="breakdown-label">Output</span>
-                <span className="breakdown-value">{formatNumber(statistics.total_output_tokens)}</span>
+                <span className="breakdown-value" title={formatNumber(statistics.total_output_tokens)}>
+                  {formatTokenCount(statistics.total_output_tokens)}
+                </span>
               </div>
             </div>
           </div>
 
           <div className="stat-card">
             <h4 className="card-title">Cache Tokens</h4>
-            <div className="stat-value large">
-              {formatNumber(statistics.cache_read_tokens + statistics.cache_creation_tokens)}
+            <div
+              className="stat-value large"
+              title={formatNumber(statistics.cache_read_tokens + statistics.cache_creation_tokens)}
+            >
+              {formatTokenCount(statistics.cache_read_tokens + statistics.cache_creation_tokens)}
             </div>
             <div className="stat-breakdown">
               <div className="breakdown-item">
                 <span className="breakdown-label">Read</span>
-                <span className="breakdown-value">{formatNumber(statistics.cache_read_tokens)}</span>
+                <span className="breakdown-value" title={formatNumber(statistics.cache_read_tokens)}>
+                  {formatTokenCount(statistics.cache_read_tokens)}
+                </span>
               </div>
               <div className="breakdown-item">
                 <span className="breakdown-label">Created</span>
-                <span className="breakdown-value">{formatNumber(statistics.cache_creation_tokens)}</span>
+                <span className="breakdown-value" title={formatNumber(statistics.cache_creation_tokens)}>
+                  {formatTokenCount(statistics.cache_creation_tokens)}
+                </span>
               </div>
             </div>
           </div>
@@ -750,7 +768,7 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
                     <Cell key={`token-distribution-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => formatNumber(value as number)} />
+                <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
               </PieChart>
             </ResponsiveContainer>
           </div>

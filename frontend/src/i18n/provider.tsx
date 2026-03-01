@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { I18nContext, type I18nContextValue, type Locale, type TranslateOptions } from './context';
 import { messages, type TranslationDictionary } from './messages';
+import { formatTokenCount as formatTokenCountCompact } from '../utils/tokenFormat';
 
 const LOCALE_STORAGE_KEY = 'agent-vis:locale';
 
@@ -85,6 +86,10 @@ export function I18nProvider({ children }: I18nProviderProps) {
       return new Intl.NumberFormat(locale, options).format(num);
     };
 
+    const formatTokenCount = (num: number): string => {
+      return formatTokenCountCompact(num);
+    };
+
     const formatPercent = (value: number, fractionDigits: number = 1): string => {
       return new Intl.NumberFormat(locale, {
         style: 'percent',
@@ -136,6 +141,7 @@ export function I18nProvider({ children }: I18nProviderProps) {
       setLocale,
       t,
       formatNumber,
+      formatTokenCount,
       formatPercent,
       formatDate,
       formatDateTime,

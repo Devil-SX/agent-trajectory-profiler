@@ -43,7 +43,7 @@ export function SessionCard({
   isSelected = false,
   onClick,
 }: SessionCardProps) {
-  const { t, formatDateTime, formatNumber, formatRelativeWithAbsolute } = useI18n();
+  const { t, formatDateTime, formatNumber, formatTokenCount, formatRelativeWithAbsolute } = useI18n();
   const projectName = getProjectName(session.project_path);
   const updatedTime = session.updated_at || session.created_at;
   const relativeWithAbsolute = formatRelativeWithAbsolute(updatedTime);
@@ -97,8 +97,8 @@ export function SessionCard({
       <div className="session-card__stats">
         <div className="session-card__stat-item">
           <span className="session-card__stat-label">{t('table.tokens')}</span>
-          <span className="session-card__stat-value">
-            {formatNumber(session.total_tokens)}
+          <span className="session-card__stat-value" title={formatNumber(session.total_tokens)}>
+            {formatTokenCount(session.total_tokens)}
           </span>
         </div>
 

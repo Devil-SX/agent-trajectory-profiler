@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import type { ToolUseContent, ToolResultContent } from '../types/session';
 import { categorizeToolCall, getCategoryIcon, getCategoryName } from '../utils/toolCategories';
+import { formatTokenCount } from '../utils/tokenFormat';
 import './ToolCallBlock.css';
 
 interface ToolCallBlockProps {
@@ -68,8 +69,11 @@ export function ToolCallBlock({ toolUse, toolResult, tokens }: ToolCallBlockProp
         </div>
         <div className="tool-call-actions">
           {tokens && (
-            <span className="tool-tokens" title={`Input: ${tokens.input} | Output: ${tokens.output}`}>
-              {tokens.total.toLocaleString()} tokens
+            <span
+              className="tool-tokens"
+              title={`Input: ${tokens.input.toLocaleString()} | Output: ${tokens.output.toLocaleString()} | Total: ${tokens.total.toLocaleString()}`}
+            >
+              {formatTokenCount(tokens.total)} tokens
             </span>
           )}
           {hasParameters && (

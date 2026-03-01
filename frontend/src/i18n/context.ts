@@ -11,6 +11,7 @@ export interface I18nContextValue {
   setLocale: (next: Locale) => void;
   t: (key: string, options?: TranslateOptions) => string;
   formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string;
+  formatTokenCount: (value: number) => string;
   formatPercent: (value: number, fractionDigits?: number) => string;
   formatDate: (value: string | Date, options?: Intl.DateTimeFormatOptions) => string;
   formatDateTime: (value: string | Date, options?: Intl.DateTimeFormatOptions) => string;

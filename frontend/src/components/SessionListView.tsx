@@ -84,7 +84,7 @@ export function SessionListView({
   onSelect,
   viewMode = 'cards',
 }: SessionListViewProps) {
-  const { t, formatDateTime, formatNumber, formatRelativeWithAbsolute } = useI18n();
+  const { t, formatDateTime, formatNumber, formatTokenCount, formatRelativeWithAbsolute } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [listHeight, setListHeight] = useState<number>(FALLBACK_LIST_HEIGHT);
 
@@ -202,7 +202,7 @@ export function SessionListView({
                         {ecosystemLabel(session.ecosystem, t('table.unknown'))}
                       </span>
                     </td>
-                    <td>{formatNumber(session.total_tokens)}</td>
+                    <td title={formatNumber(session.total_tokens)}>{formatTokenCount(session.total_tokens)}</td>
                     <td>{formatNumber(session.total_messages)}</td>
                     <td>
                       <span

@@ -96,4 +96,23 @@ test.describe('@smoke Statistics Dashboard - Tool Errors', () => {
     );
     expect(['auto', 'scroll']).toContain(overflowX);
   });
+
+  test('@smoke formats token magnitudes in cards and token tooltips', async ({ page }) => {
+    await page.goto('/');
+    await openStatisticsTab(page);
+
+    const totalTokensCard = page.locator('.stat-card').filter({ hasText: 'Total Tokens' }).first();
+    await expect(totalTokensCard.locator('.stat-value.large')).toHaveText('15K');
+    await expect(totalTokensCard.locator('.stat-value.large')).toHaveAttribute('title', '15,000');
+    await expect(totalTokensCard).toContainText('10K');
+    await expect(totalTokensCard).toContainText('5K');
+
+    const tokenDistributionCard = page.locator('.chart-card').filter({ hasText: 'Token Distribution' }).first();
+    const firstSector = tokenDistributionCard.locator('.recharts-sector').first();
+    await firstSector.hover({ force: true });
+
+    const tooltip = page.locator('.recharts-tooltip-wrapper').filter({ hasText: 'Input Tokens' }).first();
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText('10K (10,000)');
+  });
 });

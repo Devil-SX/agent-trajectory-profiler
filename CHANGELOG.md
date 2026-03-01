@@ -51,6 +51,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Playwright smoke coverage for glossary interactions: tooltip hint presence, expandable details, keyboard activation, and Chinese-content rendering (`tests/metric-glossary.spec.ts`).
 - Cross-session project timeline now includes a Gantt visualization with contiguous activity segments, token-density encoding, and day/week granularity toggle bound to existing date-window filters.
 - Updated Playwright smoke coverage for project timeline UX to validate Gantt rendering, granularity switching, and mobile horizontal usability (`tests/project-swimlane.spec.ts`).
+- Unified token-number formatter for frontend display (`K/M/B`) via shared helper and i18n context entry (`formatTokenCount`).
+- Playwright coverage for compact token formatting and full-value hints in session table and statistics token charts (`tests/session-table-mode.spec.ts`, `tests/statistics-dashboard.spec.ts`).
 
 ### Changed
 
@@ -85,6 +87,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session-list timestamp and number rendering now follow selected locale formatting instead of fixed English-only defaults.
 - Derived metric labels in cross-session and session dashboards now include contextual help entry points that map directly to backend formula semantics.
 - Cross-session project timeline presentation has replaced the previous swimlane table with a denser Gantt layout for multi-project overlap readability.
+- Token metrics in session list/cards, session metadata, statistics dashboard, cross-session overview, tool blocks, and analytics comparison views now render compact `K/M/B` values with full raw counts preserved in `title`/tooltip contexts.
 
 ### Fixed
 

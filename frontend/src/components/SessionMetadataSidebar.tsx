@@ -14,6 +14,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { fetchSessionDetail } from '../api/sessions';
 import type { Session, SessionMetadataDisplay } from '../types/session';
+import { formatTokenCount } from '../utils/tokenFormat';
 import './SessionMetadataSidebar.css';
 
 interface SessionMetadataSidebarProps {
@@ -195,7 +196,9 @@ export function SessionMetadataSidebar({ sessionId }: SessionMetadataSidebarProp
           </div>
           <div className="metadata-item">
             <span className="label">Total Tokens</span>
-            <span className="value metric">{metadata.totalTokens.toLocaleString()}</span>
+            <span className="value metric" title={metadata.totalTokens.toLocaleString()}>
+              {formatTokenCount(metadata.totalTokens)}
+            </span>
           </div>
         </div>
 

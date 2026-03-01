@@ -142,9 +142,13 @@ test.describe('@full Session Table Mode', () => {
     await expect(page.locator('.session-tag--ecosystem-codex').first()).toBeVisible();
     await expect(page.locator('.session-tag--bottleneck-tool').first()).toBeVisible();
     await expect(page.locator('.session-tag--automation-high').first()).toBeVisible();
+
+    const tokenCell = page.locator('tr[data-session-id="session-beta"] td').nth(4);
+    await expect(tokenCell).toHaveText('50K');
+    await expect(tokenCell).toHaveAttribute('title', '50,000');
   });
 
-  test('should render compact table and select rows while preserving filters', async ({ page }) => {
+  test('should render compact table and open detail while preserving filters after back', async ({ page }) => {
     const requestedSessionDetails: string[] = [];
     page.on('request', (request) => {
       if (
@@ -160,13 +164,15 @@ test.describe('@full Session Table Mode', () => {
 
     await page.getByRole('button', { name: 'Table View' }).click();
     await page.waitForSelector('.session-table', { timeout: 10000 });
+    await page.waitForSelector('tr[data-session-id="session-alpha"]', { timeout: 10000 });
 
     await expect(page.locator('.session-table thead')).toContainText('Ecosystem');
     await expect(page.locator('.session-table thead')).toContainText('Automation');
 
     const alphaRow = page.locator('tr[data-session-id="session-alpha"]');
     await alphaRow.click();
-    await expect(alphaRow).toHaveClass(/selected/);
+    await expect(page.getByRole('button', { name: 'Back to Overview' })).toBeVisible();
+    await expect(page.locator('.detail-session-caption')).toContainText('session-alpha');
 
     await expect
       .poll(
@@ -174,6 +180,9 @@ test.describe('@full Session Table Mode', () => {
         { timeout: 10000 }
       )
       .toBeTruthy();
+
+    await page.getByRole('button', { name: 'Back to Overview' }).click();
+    await page.waitForSelector('.session-table', { timeout: 10000 });
 
     await page.locator('.search-input').fill('session-alpha');
     await page.waitForTimeout(500);

@@ -113,7 +113,7 @@ function formatPeriodLabel(
 }
 
 export function CrossSessionOverview() {
-  const { t, formatNumber, formatPercent, formatDate } = useI18n();
+  const { t, formatNumber, formatTokenCount, formatPercent, formatDate } = useI18n();
   const [preset, setPreset] = useState<RangePreset>('7d');
   const [projectTimelineInterval, setProjectTimelineInterval] = useState<'day' | 'week'>('day');
   const [codingFraction, setCodingFraction] = useState(0.3);
@@ -140,6 +140,8 @@ export function CrossSessionOverview() {
   const interval = preset === '90d' ? 'week' : 'day';
   const formatPercentPoint = (value: number): string => formatPercent(value, 1);
   const formatPercentRatio = (value: number): string => formatPercent(value / 100, 1);
+  const formatTokenTooltip = (value: number): string =>
+    `${formatTokenCount(value)} (${formatNumber(value)})`;
 
   const { data: overview, isLoading: overviewLoading, error: overviewError } =
     useAnalyticsOverviewQuery(activeRange.startDate, activeRange.endDate);
@@ -541,11 +543,18 @@ export function CrossSessionOverview() {
 
         <article className="kpi-card">
           <h4>{t('cross.kpi.tokenVolume')}</h4>
-          <div className="kpi-value">{formatNumber(overview.total_tokens)}</div>
+          <div className="kpi-value" title={formatNumber(overview.total_tokens)}>
+            {formatTokenCount(overview.total_tokens)}
+          </div>
           <p>
             {t('cross.kpi.inputOutput')}
-            : {formatNumber(overview.total_input_tokens)} /{' '}
-            {formatNumber(overview.total_output_tokens)}
+            : <span title={formatNumber(overview.total_input_tokens)}>
+              {formatTokenCount(overview.total_input_tokens)}
+            </span>
+            {' / '}
+            <span title={formatNumber(overview.total_output_tokens)}>
+              {formatTokenCount(overview.total_output_tokens)}
+            </span>
           </p>
           <p>
             {t('cross.kpi.trajectorySize')}
@@ -625,13 +634,15 @@ export function CrossSessionOverview() {
           </div>
           <p>
             {t('cross.kpi.inputs')}
-            : {formatNumber(leverageEstimate.outputBudgetTokens)}
+            : <span title={formatNumber(leverageEstimate.outputBudgetTokens)}>
+              {formatTokenCount(leverageEstimate.outputBudgetTokens)}
+            </span>
             {' '}
             {t('cross.kpi.outputTokens')}
             , 
             {' '}
             {t('cross.kpi.effectiveCodingTokens', {
-              values: { value: formatNumber(Math.round(leverageEstimate.effectiveCodingTokens)) },
+              values: { value: formatTokenCount(Math.round(leverageEstimate.effectiveCodingTokens)) },
             })}
           </p>
           <p className="leverage-note">
@@ -651,7 +662,14 @@ export function CrossSessionOverview() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip formatter={(value) => formatNumber(Number(value))} />
+                <Tooltip
+                  formatter={(value, name) => {
+                    const numeric = Number(value);
+                    return String(name).toLowerCase().includes('token')
+                      ? formatTokenTooltip(numeric)
+                      : formatNumber(numeric);
+                  }}
+                />
                 <Legend />
                 <Bar dataKey="sessions" fill="#2563eb" name={t('cross.sessions')} />
                 <Bar dataKey="total_tokens" fill="#ea580c" name={t('table.tokens')} />
@@ -810,7 +828,9 @@ export function CrossSessionOverview() {
                         <tr key={project.project_path}>
                           <td>{project.project_name}</td>
                           <td>{formatNumber(project.sessions)}</td>
-                          <td>{formatNumber(project.total_tokens)}</td>
+                          <td title={formatNumber(project.total_tokens)}>
+                            {formatTokenCount(project.total_tokens)}
+                          </td>
                           <td>{formatPercentPoint(project.active_ratio)}</td>
                           <td>{formatLeverage(project.leverage_tokens_mean)}</td>
                         </tr>
@@ -934,7 +954,7 @@ export function CrossSessionOverview() {
                               <title>
                                 {`Project: ${segment.project_name}\n`}
                                 {`Range: ${segment.startPeriod} -> ${segment.endPeriod}\n`}
-                                {`Tokens: ${formatNumber(segment.totalTokens)}\n`}
+                                {`Tokens: ${formatTokenTooltip(segment.totalTokens)}\n`}
                                 {`Sessions: ${formatNumber(segment.totalSessions)}\n`}
                                 {`Active ratio: ${formatPercentPoint(avgActiveRatio)}\n`}
                                 {`Token leverage: ${formatLeverage(avgLeverage)}`}
@@ -946,7 +966,7 @@ export function CrossSessionOverview() {
                                 y={y + height / 2 + 4}
                                 className="gantt-bar-label"
                               >
-                                {formatNumber(segment.totalTokens)}
+                                {formatTokenCount(segment.totalTokens)}
                               </text>
                             )}
                           </g>
@@ -970,7 +990,14 @@ export function CrossSessionOverview() {
               <XAxis dataKey="period" />
               <YAxis yAxisId="left" />
               <YAxis yAxisId="right" orientation="right" />
-              <Tooltip formatter={(value) => formatNumber(Number(value))} />
+              <Tooltip
+                formatter={(value, name) => {
+                  const numeric = Number(value);
+                  return String(name).toLowerCase().includes('token')
+                    ? formatTokenTooltip(numeric)
+                    : formatNumber(numeric);
+                }}
+              />
               <Legend />
               <Area
                 yAxisId="left"

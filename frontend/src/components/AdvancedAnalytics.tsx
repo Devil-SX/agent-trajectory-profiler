@@ -35,6 +35,7 @@ import {
   exportData,
   downloadFiles,
 } from '../utils/exportData';
+import { formatTokenCount } from '../utils/tokenFormat';
 import type { ExportConfig } from '../types/analytics';
 import { useI18n } from '../i18n';
 
@@ -48,7 +49,7 @@ interface AdvancedAnalyticsProps {
 }
 
 export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAnalyticsProps) {
-  const { t } = useI18n();
+  const { t, formatNumber } = useI18n();
   const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
 
   // Fetch data with React Query
@@ -153,7 +154,8 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
     }
   }
 
-  const formatNumber = (num: number): string => num.toLocaleString();
+  const formatTokenWithFull = (num: number): string =>
+    `${formatTokenCount(num)} (${formatNumber(num)})`;
 
   return (
     <div className="advanced-analytics">
@@ -219,9 +221,14 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
               <div className="comparison-grid">
                 <div className="comparison-card">
                   <h4>Token Difference</h4>
-                  <div className={`comparison-value ${comparison.differences.totalTokensDiff > 0 ? 'positive' : 'negative'}`}>
+                  <div
+                    className={`comparison-value ${comparison.differences.totalTokensDiff > 0 ? 'positive' : 'negative'}`}
+                    title={formatNumber(comparison.differences.totalTokensDiff)}
+                  >
                     {comparison.differences.totalTokensDiff > 0 ? '+' : ''}
-                    {formatNumber(comparison.differences.totalTokensDiff)} ({comparison.differences.totalTokensDiffPercent.toFixed(1)}%)
+                    {formatTokenCount(comparison.differences.totalTokensDiff)}
+                    {' '}
+                    ({comparison.differences.totalTokensDiffPercent.toFixed(1)}%)
                   </div>
                 </div>
                 <div className="comparison-card">
@@ -254,15 +261,19 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
           <div className="chart-section">
             <h3 className="section-title">Token Usage Over Time</h3>
             <div className="heatmap-summary">
-              <span>Total: {formatNumber(analytics.tokenUsageHeatmap.totalTokens)}</span>
-              <span>Peak: {formatNumber(analytics.tokenUsageHeatmap.peakUsage.tokens)} at {new Date(analytics.tokenUsageHeatmap.peakUsage.timestamp).toLocaleTimeString()}</span>
+              <span title={formatNumber(analytics.tokenUsageHeatmap.totalTokens)}>
+                Total: {formatTokenCount(analytics.tokenUsageHeatmap.totalTokens)}
+              </span>
+              <span title={formatNumber(analytics.tokenUsageHeatmap.peakUsage.tokens)}>
+                Peak: {formatTokenCount(analytics.tokenUsageHeatmap.peakUsage.tokens)} at {new Date(analytics.tokenUsageHeatmap.peakUsage.timestamp).toLocaleTimeString()}
+              </span>
             </div>
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={heatmapData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
                 <YAxis />
-                <Tooltip formatter={(value) => formatNumber(value as number)} />
+                <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
                 <Legend />
                 <Area type="monotone" dataKey="input" stackId="1" stroke="#1976d2" fill="#1976d2" name="Input" />
                 <Area type="monotone" dataKey="output" stackId="1" stroke="#388e3c" fill="#388e3c" name="Output" />
@@ -280,7 +291,7 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
                   <YAxis />
-                  <Tooltip formatter={(value) => formatNumber(value as number)} />
+                  <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
                   <Legend />
                   <Bar dataKey="tokens" fill="#d32f2f" name="Tokens" />
                 </BarChart>
@@ -314,7 +325,9 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
                         <tr key={pattern.toolName}>
                           <td className="tool-name">{pattern.toolName}</td>
                           <td>{formatNumber(pattern.totalCalls)}</td>
-                          <td>{Math.round(pattern.averageTokensPerCall)}</td>
+                          <td title={formatNumber(Math.round(pattern.averageTokensPerCall))}>
+                            {formatTokenCount(Math.round(pattern.averageTokensPerCall))}
+                          </td>
                           <td>{avgLatency > 0 ? avgLatency.toFixed(2) + 's' : '--'}</td>
                           <td className={pattern.successRate < 0.7 ? 'low-success' : ''}>
                             {(pattern.successRate * 100).toFixed(1)}%
@@ -354,9 +367,13 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
                     <h4>{eff.agentType}</h4>
                     <div className="efficiency-stats">
                       <span>Avg Messages: {eff.averageMessages.toFixed(1)}</span>
-                      <span>Avg Tokens: {formatNumber(Math.round(eff.averageTokens))}</span>
+                      <span title={formatNumber(Math.round(eff.averageTokens))}>
+                        Avg Tokens: {formatTokenCount(Math.round(eff.averageTokens))}
+                      </span>
                       <span>Avg Duration: {eff.averageDuration.toFixed(1)}s</span>
-                      <span>Tokens/min: {formatNumber(Math.round(eff.tokensPerMinute))}</span>
+                      <span title={formatNumber(Math.round(eff.tokensPerMinute))}>
+                        Tokens/min: {formatTokenCount(Math.round(eff.tokensPerMinute))}
+                      </span>
                     </div>
                     {eff.recommendations.length > 0 && (
                       <div className="efficiency-recommendations">
@@ -389,7 +406,9 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
                     <p className="bottleneck-component">Affects: {bottleneck.affectedComponent}</p>
                     <div className="bottleneck-impact">
                       {bottleneck.impactMetrics.tokensWasted && (
-                        <span>Tokens: {formatNumber(bottleneck.impactMetrics.tokensWasted)}</span>
+                        <span title={formatNumber(bottleneck.impactMetrics.tokensWasted)}>
+                          Tokens: {formatTokenCount(bottleneck.impactMetrics.tokensWasted)}
+                        </span>
                       )}
                       {bottleneck.impactMetrics.errorCount && (
                         <span>Errors: {bottleneck.impactMetrics.errorCount}</span>
@@ -421,7 +440,12 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
                       <div className="potential-savings">
                         <strong>Potential Savings:</strong>
                         {rec.potentialSavings.tokens && (
-                          <span> {formatNumber(rec.potentialSavings.tokens)} tokens</span>
+                          <span title={formatNumber(rec.potentialSavings.tokens)}>
+                            {' '}
+                            {formatTokenCount(rec.potentialSavings.tokens)}
+                            {' '}
+                            tokens
+                          </span>
                         )}
                         {rec.potentialSavings.time && (
                           <span> {rec.potentialSavings.time}s time</span>
