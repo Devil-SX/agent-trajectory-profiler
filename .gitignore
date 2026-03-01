@@ -59,5 +59,4 @@ tests/fixtures/*.jsonl
 # Local generated artifacts
 .sisyphus/
 frontend/test-results/
-frontend/playwright-report/*
-!frontend/playwright-report/index.html
+frontend/playwright-report/

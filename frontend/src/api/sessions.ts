@@ -17,7 +17,28 @@ import type {
   SessionStatisticsResponse,
 } from '../types/session';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+function resolveApiBaseUrl(): string {
+  const fromEnv = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (fromEnv) {
+    return fromEnv.replace(/\/$/, '');
+  }
+
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8000';
+  }
+
+  const { hostname, port, protocol } = window.location;
+
+  // Local frontend dev server should target backend on :8000 by default.
+  if (port === '5173' || port === '5174' || port === '3000') {
+    return `${protocol}//${hostname}:8000`;
+  }
+
+  // When served from backend/static host, use same-origin API paths.
+  return '';
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 /**
  * Retry configuration
