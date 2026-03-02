@@ -423,6 +423,23 @@ export interface EcosystemAggregate {
   percent_tokens: number;
 }
 
+export interface RoleSourceAggregate {
+  ecosystem: string;
+  ecosystem_label: string;
+  role: 'user' | 'model' | 'tool';
+  role_label: string;
+  key: string;
+  label: string;
+  time_seconds: number;
+  time_percent: number;
+  token_count: number;
+  token_percent: number;
+  tool_calls: number;
+  tool_call_percent: number;
+  error_count: number;
+  error_percent: number;
+}
+
 export interface ControlPlaneFileStats {
   total_files: number;
   parsed_files: number;
@@ -504,6 +521,11 @@ export interface RuntimePlaneOverview {
   active_time_ratio: number;
   model_timeout_count: number;
   source_breakdown: EcosystemAggregate[];
+  role_source_breakdown: RoleSourceAggregate[];
+  primary_bottleneck_key: string | null;
+  primary_bottleneck_label: string | null;
+  primary_bottleneck_source: string | null;
+  primary_bottleneck_role: 'user' | 'model' | 'tool' | null;
   bottleneck_distribution: AnalyticsBucket[];
   top_projects: ProjectAggregate[];
   top_tools: ToolAggregate[];
@@ -576,6 +598,11 @@ export interface AnalyticsOverviewResponse {
   active_time_ratio: number;
   model_timeout_count: number;
   source_breakdown: EcosystemAggregate[];
+  role_source_breakdown: RoleSourceAggregate[];
+  primary_bottleneck_key: string | null;
+  primary_bottleneck_label: string | null;
+  primary_bottleneck_source: string | null;
+  primary_bottleneck_role: 'user' | 'model' | 'tool' | null;
   bottleneck_distribution: AnalyticsBucket[];
   top_projects: ProjectAggregate[];
   top_tools: ToolAggregate[];

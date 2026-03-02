@@ -536,12 +536,20 @@ class TestAnalyticsAPI:
         assert "night_inactive_time_seconds" in payload
         assert "source_breakdown" in payload
         assert isinstance(payload["source_breakdown"], list)
+        assert "role_source_breakdown" in payload
+        assert isinstance(payload["role_source_breakdown"], list)
+        assert "primary_bottleneck_key" in payload
+        assert "primary_bottleneck_label" in payload
+        assert "primary_bottleneck_source" in payload
+        assert "primary_bottleneck_role" in payload
         assert "control_plane" in payload
         assert "runtime_plane" in payload
         assert isinstance(payload["control_plane"], dict)
         assert isinstance(payload["runtime_plane"], dict)
         assert "last_sync" in payload["control_plane"]
         assert "files" in payload["control_plane"]
+        assert "role_source_breakdown" in payload["runtime_plane"]
+        assert "primary_bottleneck_key" in payload["runtime_plane"]
         assert "bottleneck_distribution" in payload["runtime_plane"]
         assert "top_tools" in payload["runtime_plane"]
 
@@ -632,6 +640,14 @@ class TestAnalyticsAPI:
                     ecosystems = {row["ecosystem"] for row in source_breakdown}
                     assert "claude_code" in ecosystems
                     assert "codex" in ecosystems
+                    role_source = payload["role_source_breakdown"]
+                    assert len(role_source) >= 2
+                    role_ecosystems = {row["ecosystem"] for row in role_source}
+                    assert "claude_code" in role_ecosystems
+                    assert "codex" in role_ecosystems
+                    roles = {row["role"] for row in role_source}
+                    assert {"user", "model", "tool"}.issubset(roles)
+                    assert payload["primary_bottleneck_key"] is not None
 
                     for row in source_breakdown:
                         assert "label" in row
@@ -641,6 +657,49 @@ class TestAnalyticsAPI:
                         assert "active_time_seconds" in row
                         assert "percent_sessions" in row
                         assert "percent_tokens" in row
+        finally:
+            get_settings.cache_clear()
+
+    def test_analytics_overview_ecosystem_filter_returns_single_source(
+        self,
+        tmp_path: Path,
+        multi_session_directory: Path,
+        codex_session_root: Path,
+        sample_codex_rollout_file: Path,
+    ) -> None:
+        """Overview ecosystem filter should narrow aggregates to one source."""
+        from importlib import import_module
+        from unittest.mock import patch
+
+        api_app_module = import_module("agent_vis.api.app")
+        _ = sample_codex_rollout_file
+        settings = Settings(
+            session_path=multi_session_directory,
+            codex_session_path=codex_session_root,
+            db_path=tmp_path / "mixed_overview_filter.db",
+            api_host="127.0.0.1",
+            api_port=8000,
+            api_reload=False,
+            log_level="INFO",
+            cors_origins=["http://localhost:5173"],
+        )
+
+        get_settings.cache_clear()
+        try:
+            with patch.object(api_app_module, "get_settings", return_value=settings):
+                with TestClient(app) as client:
+                    response = client.get(
+                        "/api/analytics/overview"
+                        "?start_date=2000-01-01&end_date=2100-12-31&ecosystem=codex"
+                    )
+                    assert response.status_code == 200
+                    payload = response.json()
+                    assert payload["source_breakdown"]
+                    assert all(row["ecosystem"] == "codex" for row in payload["source_breakdown"])
+                    assert payload["role_source_breakdown"]
+                    assert all(
+                        row["ecosystem"] == "codex" for row in payload["role_source_breakdown"]
+                    )
         finally:
             get_settings.cache_clear()
 
@@ -668,6 +727,16 @@ class TestAnalyticsAPI:
         assert "points" in payload
         assert isinstance(payload["points"], list)
 
+    def test_analytics_timeseries_supports_ecosystem_filter(self, test_client: TestClient) -> None:
+        response = test_client.get(
+            "/api/analytics/timeseries"
+            "?interval=day&start_date=2026-02-01&end_date=2026-02-10&ecosystem=claude_code"
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["interval"] == "day"
+        assert "points" in payload
+
     def test_project_comparison_endpoint(self, test_client: TestClient) -> None:
         """Project comparison endpoint should return project KPI rows."""
         response = test_client.get(
@@ -688,6 +757,15 @@ class TestAnalyticsAPI:
             assert "leverage_tokens_mean" in first
             assert "leverage_chars_mean" in first
 
+    def test_project_comparison_supports_ecosystem_filter(self, test_client: TestClient) -> None:
+        response = test_client.get(
+            "/api/analytics/project-comparison"
+            "?start_date=2026-02-01&end_date=2026-02-10&limit=5&ecosystem=claude_code"
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert "projects" in payload
+
     def test_project_swimlane_endpoint(self, test_client: TestClient) -> None:
         """Project swimlane endpoint should return period/project points."""
         response = test_client.get(
@@ -703,6 +781,16 @@ class TestAnalyticsAPI:
         assert "points" in payload
         assert "truncated_project_count" in payload
         assert isinstance(payload["points"], list)
+
+    def test_project_swimlane_supports_ecosystem_filter(self, test_client: TestClient) -> None:
+        response = test_client.get(
+            "/api/analytics/project-swimlane"
+            "?start_date=2026-02-01&end_date=2026-02-10&interval=day&project_limit=3&ecosystem=codex"
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["interval"] == "day"
+        assert "points" in payload
 
     def test_analytics_invalid_date_range(self, test_client: TestClient) -> None:
         """Invalid date range should return HTTP 400."""
@@ -858,7 +946,7 @@ class TestSessionServiceIntegration:
                 },
             }
         ]
-        service._get_analytics_rows = lambda *_: rows  # type: ignore[method-assign]
+        service._get_analytics_rows = lambda *_, **__: rows  # type: ignore[method-assign]
 
         payload = await service.get_analytics_overview("2026-02-01", "2026-02-10")
         assert payload.total_sessions == 1

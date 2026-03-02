@@ -60,30 +60,43 @@ export const sessionKeys = {
   analytics: () => [...sessionKeys.all, 'analytics'] as const,
   analyticsOverview: (startDate: string | null, endDate: string | null) =>
     [...sessionKeys.analytics(), 'overview', { startDate, endDate }] as const,
+  analyticsOverviewByEcosystem: (
+    startDate: string | null,
+    endDate: string | null,
+    ecosystem: string | null,
+  ) => [...sessionKeys.analytics(), 'overview', { startDate, endDate, ecosystem }] as const,
   analyticsDistribution: (
     dimension: AnalyticsDimension,
     startDate: string | null,
     endDate: string | null,
+    ecosystem: string | null,
   ) =>
-    [...sessionKeys.analytics(), 'distribution', { dimension, startDate, endDate }] as const,
+    [...sessionKeys.analytics(), 'distribution', { dimension, startDate, endDate, ecosystem }] as const,
   analyticsTimeseries: (
     interval: AnalyticsInterval,
     startDate: string | null,
     endDate: string | null,
+    ecosystem: string | null,
   ) =>
-    [...sessionKeys.analytics(), 'timeseries', { interval, startDate, endDate }] as const,
-  projectComparison: (startDate: string | null, endDate: string | null, limit: number) =>
-    [...sessionKeys.analytics(), 'project-comparison', { startDate, endDate, limit }] as const,
+    [...sessionKeys.analytics(), 'timeseries', { interval, startDate, endDate, ecosystem }] as const,
+  projectComparison: (
+    startDate: string | null,
+    endDate: string | null,
+    limit: number,
+    ecosystem: string | null,
+  ) =>
+    [...sessionKeys.analytics(), 'project-comparison', { startDate, endDate, limit, ecosystem }] as const,
   projectSwimlane: (
     interval: AnalyticsInterval,
     startDate: string | null,
     endDate: string | null,
     projectLimit: number,
+    ecosystem: string | null,
   ) =>
     [
       ...sessionKeys.analytics(),
       'project-swimlane',
-      { interval, startDate, endDate, projectLimit },
+      { interval, startDate, endDate, projectLimit, ecosystem },
     ] as const,
   syncStatus: () => [...sessionKeys.all, 'sync-status'] as const,
   frontendPreferences: () => [...sessionKeys.all, 'frontend-preferences'] as const,
@@ -139,11 +152,12 @@ export function useSessionStatisticsQuery(
  */
 export function useAnalyticsOverviewQuery(
   startDate: string | null = null,
-  endDate: string | null = null
+  endDate: string | null = null,
+  ecosystem: string | null = null,
 ): UseQueryResult<AnalyticsOverviewResponse, Error> {
   return useQuery({
-    queryKey: sessionKeys.analyticsOverview(startDate, endDate),
-    queryFn: () => fetchAnalyticsOverview(startDate, endDate),
+    queryKey: sessionKeys.analyticsOverviewByEcosystem(startDate, endDate, ecosystem),
+    queryFn: () => fetchAnalyticsOverview(startDate, endDate, ecosystem),
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -155,10 +169,11 @@ export function useAnalyticsDistributionQuery(
   dimension: AnalyticsDimension,
   startDate: string | null = null,
   endDate: string | null = null,
+  ecosystem: string | null = null,
 ): UseQueryResult<AnalyticsDistributionResponse, Error> {
   return useQuery({
-    queryKey: sessionKeys.analyticsDistribution(dimension, startDate, endDate),
-    queryFn: () => fetchAnalyticsDistribution(dimension, startDate, endDate),
+    queryKey: sessionKeys.analyticsDistribution(dimension, startDate, endDate, ecosystem),
+    queryFn: () => fetchAnalyticsDistribution(dimension, startDate, endDate, ecosystem),
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -170,10 +185,11 @@ export function useAnalyticsTimeseriesQuery(
   interval: AnalyticsInterval = 'day',
   startDate: string | null = null,
   endDate: string | null = null,
+  ecosystem: string | null = null,
 ): UseQueryResult<AnalyticsTimeseriesResponse, Error> {
   return useQuery({
-    queryKey: sessionKeys.analyticsTimeseries(interval, startDate, endDate),
-    queryFn: () => fetchAnalyticsTimeseries(interval, startDate, endDate),
+    queryKey: sessionKeys.analyticsTimeseries(interval, startDate, endDate, ecosystem),
+    queryFn: () => fetchAnalyticsTimeseries(interval, startDate, endDate, ecosystem),
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -185,10 +201,11 @@ export function useProjectComparisonQuery(
   startDate: string | null = null,
   endDate: string | null = null,
   limit: number = 10,
+  ecosystem: string | null = null,
 ): UseQueryResult<ProjectComparisonResponse, Error> {
   return useQuery({
-    queryKey: sessionKeys.projectComparison(startDate, endDate, limit),
-    queryFn: () => fetchProjectComparison(startDate, endDate, limit),
+    queryKey: sessionKeys.projectComparison(startDate, endDate, limit, ecosystem),
+    queryFn: () => fetchProjectComparison(startDate, endDate, limit, ecosystem),
     staleTime: 60 * 1000,
   });
 }
@@ -201,10 +218,11 @@ export function useProjectSwimlaneQuery(
   startDate: string | null = null,
   endDate: string | null = null,
   projectLimit: number = 12,
+  ecosystem: string | null = null,
 ): UseQueryResult<ProjectSwimlaneResponse, Error> {
   return useQuery({
-    queryKey: sessionKeys.projectSwimlane(interval, startDate, endDate, projectLimit),
-    queryFn: () => fetchProjectSwimlane(interval, startDate, endDate, projectLimit),
+    queryKey: sessionKeys.projectSwimlane(interval, startDate, endDate, projectLimit, ecosystem),
+    queryFn: () => fetchProjectSwimlane(interval, startDate, endDate, projectLimit, ecosystem),
     staleTime: 60 * 1000,
   });
 }

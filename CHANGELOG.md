@@ -45,6 +45,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Regression coverage for dual-plane architecture:
   - API integration assertions for control/runtime plane schema separation (`tests/test_api_integration.py`)
   - frontend cross-session segmentation smoke assertions for plane rendering (`frontend/tests/source-segmentation.spec.ts`).
+- Source-layer analytics now include `role x ecosystem` segmentation (`user/model/tool` x `codex/claude_code`) with API fields: `role_source_breakdown`, `primary_bottleneck_*`, and ecosystem-filtered analytics queries across overview/distribution/timeseries/project endpoints.
+- Frontend cross-session dashboard now includes source-filter-driven global linkage, role/source metric controls (time/tokens/calls/errors), stacked visualization, and dense comparison table with explicit bottleneck source-role highlight.
+- Expanded regression coverage for source segmentation:
+  - backend API integration assertions for `role_source_breakdown`, bottleneck fields, and ecosystem-filtered analytics endpoints (`tests/test_api_integration.py`)
+  - frontend smoke coverage for source filter linkage, role/source dimension switch, and empty-data fallback (`frontend/tests/source-segmentation.spec.ts`).
 
 ### Changed
 

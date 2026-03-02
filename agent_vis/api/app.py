@@ -346,6 +346,10 @@ async def get_analytics_overview(
     response: Response,
     start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
+    ecosystem: str | None = Query(
+        default=None,
+        description="Optional source filter (e.g. claude_code, codex)",
+    ),
 ) -> AnalyticsOverviewResponse:
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
@@ -354,7 +358,11 @@ async def get_analytics_overview(
     assert start_date is not None and end_date is not None
 
     try:
-        result = await session_service.get_analytics_overview(start_date, end_date)
+        result = await session_service.get_analytics_overview(
+            start_date,
+            end_date,
+            ecosystem=ecosystem,
+        )
         response.headers["Cache-Control"] = "public, max-age=60"
         return result
     except HTTPException:
@@ -383,6 +391,10 @@ async def get_analytics_distributions(
     ),
     start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
+    ecosystem: str | None = Query(
+        default=None,
+        description="Optional source filter (e.g. claude_code, codex)",
+    ),
 ) -> AnalyticsDistributionResponse:
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
@@ -391,7 +403,12 @@ async def get_analytics_distributions(
     assert start_date is not None and end_date is not None
 
     try:
-        result = await session_service.get_analytics_distribution(dimension, start_date, end_date)
+        result = await session_service.get_analytics_distribution(
+            dimension,
+            start_date,
+            end_date,
+            ecosystem=ecosystem,
+        )
         response.headers["Cache-Control"] = "public, max-age=60"
         return result
     except ValueError as e:
@@ -416,6 +433,10 @@ async def get_analytics_timeseries(
     interval: Literal["day", "week"] = Query(default="day"),
     start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
+    ecosystem: str | None = Query(
+        default=None,
+        description="Optional source filter (e.g. claude_code, codex)",
+    ),
 ) -> AnalyticsTimeseriesResponse:
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
@@ -424,7 +445,12 @@ async def get_analytics_timeseries(
     assert start_date is not None and end_date is not None
 
     try:
-        result = await session_service.get_analytics_timeseries(start_date, end_date, interval)
+        result = await session_service.get_analytics_timeseries(
+            start_date,
+            end_date,
+            interval,
+            ecosystem=ecosystem,
+        )
         response.headers["Cache-Control"] = "public, max-age=60"
         return result
     except HTTPException:
@@ -466,6 +492,10 @@ async def get_project_comparison(
     start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
     limit: int = Query(default=10, ge=1, le=50, description="Maximum projects to return"),
+    ecosystem: str | None = Query(
+        default=None,
+        description="Optional source filter (e.g. claude_code, codex)",
+    ),
 ) -> ProjectComparisonResponse:
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
@@ -474,7 +504,12 @@ async def get_project_comparison(
     assert start_date is not None and end_date is not None
 
     try:
-        result = await session_service.get_project_comparison(start_date, end_date, limit)
+        result = await session_service.get_project_comparison(
+            start_date,
+            end_date,
+            limit,
+            ecosystem=ecosystem,
+        )
         response.headers["Cache-Control"] = "public, max-age=60"
         return result
     except HTTPException:
@@ -498,6 +533,10 @@ async def get_project_swimlane(
     start_date: str | None = Query(default=None, description="Range start date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="Range end date (YYYY-MM-DD)"),
     project_limit: int = Query(default=12, ge=1, le=50),
+    ecosystem: str | None = Query(
+        default=None,
+        description="Optional source filter (e.g. claude_code, codex)",
+    ),
 ) -> ProjectSwimlaneResponse:
     if session_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
@@ -507,7 +546,11 @@ async def get_project_swimlane(
 
     try:
         result = await session_service.get_project_swimlane(
-            start_date, end_date, interval, project_limit
+            start_date,
+            end_date,
+            interval,
+            project_limit,
+            ecosystem=ecosystem,
         )
         response.headers["Cache-Control"] = "public, max-age=60"
         return result

@@ -248,7 +248,8 @@ export async function fetchSessionStatistics(
  */
 export async function fetchAnalyticsOverview(
   startDate: string | null = null,
-  endDate: string | null = null
+  endDate: string | null = null,
+  ecosystem: string | null = null,
 ): Promise<AnalyticsOverviewResponse> {
   try {
     const params = new URLSearchParams();
@@ -257,6 +258,9 @@ export async function fetchAnalyticsOverview(
     }
     if (endDate) {
       params.append('end_date', endDate);
+    }
+    if (ecosystem) {
+      params.append('ecosystem', ecosystem);
     }
 
     const suffix = params.toString() ? `?${params.toString()}` : '';
@@ -280,7 +284,8 @@ export async function fetchAnalyticsOverview(
 export async function fetchAnalyticsDistribution(
   dimension: AnalyticsDimension,
   startDate: string | null = null,
-  endDate: string | null = null
+  endDate: string | null = null,
+  ecosystem: string | null = null,
 ): Promise<AnalyticsDistributionResponse> {
   try {
     const params = new URLSearchParams({
@@ -291,6 +296,9 @@ export async function fetchAnalyticsDistribution(
     }
     if (endDate) {
       params.append('end_date', endDate);
+    }
+    if (ecosystem) {
+      params.append('ecosystem', ecosystem);
     }
 
     const response = await fetchWithRetry(`${API_BASE_URL}/api/analytics/distributions?${params.toString()}`);
@@ -313,7 +321,8 @@ export async function fetchAnalyticsDistribution(
 export async function fetchAnalyticsTimeseries(
   interval: AnalyticsInterval = 'day',
   startDate: string | null = null,
-  endDate: string | null = null
+  endDate: string | null = null,
+  ecosystem: string | null = null,
 ): Promise<AnalyticsTimeseriesResponse> {
   try {
     const params = new URLSearchParams({
@@ -324,6 +333,9 @@ export async function fetchAnalyticsTimeseries(
     }
     if (endDate) {
       params.append('end_date', endDate);
+    }
+    if (ecosystem) {
+      params.append('ecosystem', ecosystem);
     }
 
     const response = await fetchWithRetry(`${API_BASE_URL}/api/analytics/timeseries?${params.toString()}`);
@@ -342,7 +354,8 @@ export async function fetchAnalyticsTimeseries(
 export async function fetchProjectComparison(
   startDate: string | null = null,
   endDate: string | null = null,
-  limit: number = 10
+  limit: number = 10,
+  ecosystem: string | null = null,
 ): Promise<ProjectComparisonResponse> {
   try {
     const params = new URLSearchParams({
@@ -353,6 +366,9 @@ export async function fetchProjectComparison(
     }
     if (endDate) {
       params.append('end_date', endDate);
+    }
+    if (ecosystem) {
+      params.append('ecosystem', ecosystem);
     }
     const response = await fetchWithRetry(
       `${API_BASE_URL}/api/analytics/project-comparison?${params.toString()}`
@@ -373,7 +389,8 @@ export async function fetchProjectSwimlane(
   interval: AnalyticsInterval = 'day',
   startDate: string | null = null,
   endDate: string | null = null,
-  projectLimit: number = 12
+  projectLimit: number = 12,
+  ecosystem: string | null = null,
 ): Promise<ProjectSwimlaneResponse> {
   try {
     const params = new URLSearchParams({
@@ -385,6 +402,9 @@ export async function fetchProjectSwimlane(
     }
     if (endDate) {
       params.append('end_date', endDate);
+    }
+    if (ecosystem) {
+      params.append('ecosystem', ecosystem);
     }
     const response = await fetchWithRetry(
       `${API_BASE_URL}/api/analytics/project-swimlane?${params.toString()}`

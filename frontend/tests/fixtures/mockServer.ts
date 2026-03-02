@@ -97,6 +97,108 @@ export async function setupMockApi(page: Page) {
         percent_tokens: 42.5,
       },
     ],
+    role_source_breakdown: [
+      {
+        ecosystem: 'claude_code',
+        ecosystem_label: 'Claude Code',
+        role: 'model',
+        role_label: 'Model',
+        key: 'claude_code:model',
+        label: 'Claude Code:Model',
+        time_seconds: 3200,
+        time_percent: 32,
+        token_count: 13000,
+        token_percent: 32.5,
+        tool_calls: 0,
+        tool_call_percent: 0,
+        error_count: 1,
+        error_percent: 33.3,
+      },
+      {
+        ecosystem: 'claude_code',
+        ecosystem_label: 'Claude Code',
+        role: 'tool',
+        role_label: 'Tool',
+        key: 'claude_code:tool',
+        label: 'Claude Code:Tool',
+        time_seconds: 1800,
+        time_percent: 18,
+        token_count: 7000,
+        token_percent: 17.5,
+        tool_calls: 11,
+        tool_call_percent: 61.1,
+        error_count: 1,
+        error_percent: 33.3,
+      },
+      {
+        ecosystem: 'claude_code',
+        ecosystem_label: 'Claude Code',
+        role: 'user',
+        role_label: 'User',
+        key: 'claude_code:user',
+        label: 'Claude Code:User',
+        time_seconds: 1200,
+        time_percent: 12,
+        token_count: 3000,
+        token_percent: 7.5,
+        tool_calls: 0,
+        tool_call_percent: 0,
+        error_count: 0,
+        error_percent: 0,
+      },
+      {
+        ecosystem: 'codex',
+        ecosystem_label: 'Codex',
+        role: 'model',
+        role_label: 'Model',
+        key: 'codex:model',
+        label: 'Codex:Model',
+        time_seconds: 2100,
+        time_percent: 21,
+        token_count: 9000,
+        token_percent: 22.5,
+        tool_calls: 0,
+        tool_call_percent: 0,
+        error_count: 1,
+        error_percent: 33.3,
+      },
+      {
+        ecosystem: 'codex',
+        ecosystem_label: 'Codex',
+        role: 'tool',
+        role_label: 'Tool',
+        key: 'codex:tool',
+        label: 'Codex:Tool',
+        time_seconds: 1000,
+        time_percent: 10,
+        token_count: 3500,
+        token_percent: 8.75,
+        tool_calls: 7,
+        tool_call_percent: 38.9,
+        error_count: 1,
+        error_percent: 33.3,
+      },
+      {
+        ecosystem: 'codex',
+        ecosystem_label: 'Codex',
+        role: 'user',
+        role_label: 'User',
+        key: 'codex:user',
+        label: 'Codex:User',
+        time_seconds: 700,
+        time_percent: 7,
+        token_count: 12000,
+        token_percent: 30,
+        tool_calls: 0,
+        tool_call_percent: 0,
+        error_count: 0,
+        error_percent: 0,
+      },
+    ],
+    primary_bottleneck_key: 'claude_code:model',
+    primary_bottleneck_label: 'Claude Code:Model',
+    primary_bottleneck_source: 'claude_code',
+    primary_bottleneck_role: 'model',
     bottleneck_distribution: [
       { key: 'model', label: 'Model', count: 1, value: 1, percent: 50 },
       { key: 'tool', label: 'Tool', count: 1, value: 1, percent: 50 },
@@ -189,6 +291,11 @@ export async function setupMockApi(page: Page) {
     active_time_ratio: mockAnalyticsOverview.active_time_ratio,
     model_timeout_count: mockAnalyticsOverview.model_timeout_count,
     source_breakdown: mockAnalyticsOverview.source_breakdown,
+    role_source_breakdown: mockAnalyticsOverview.role_source_breakdown,
+    primary_bottleneck_key: mockAnalyticsOverview.primary_bottleneck_key,
+    primary_bottleneck_label: mockAnalyticsOverview.primary_bottleneck_label,
+    primary_bottleneck_source: mockAnalyticsOverview.primary_bottleneck_source,
+    primary_bottleneck_role: mockAnalyticsOverview.primary_bottleneck_role,
     bottleneck_distribution: mockAnalyticsOverview.bottleneck_distribution,
     top_projects: mockAnalyticsOverview.top_projects,
     top_tools: mockAnalyticsOverview.top_tools,
@@ -414,6 +521,130 @@ export async function setupMockApi(page: Page) {
     updated_at: null as string | null,
   };
 
+  const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+  const filteredOverview = (ecosystem: string | null) => {
+    const overview = cloneJson(mockAnalyticsOverview);
+    if (!ecosystem) {
+      return overview;
+    }
+
+    const sourceRows = overview.source_breakdown.filter(
+      (row: { ecosystem: string }) => row.ecosystem === ecosystem
+    );
+    const roleRows = overview.role_source_breakdown.filter(
+      (row: { ecosystem: string }) => row.ecosystem === ecosystem
+    );
+    if (sourceRows.length === 0) {
+      overview.total_sessions = 0;
+      overview.total_tokens = 0;
+      overview.total_tool_calls = 0;
+      overview.source_breakdown = [];
+      overview.role_source_breakdown = [];
+      overview.primary_bottleneck_key = null;
+      overview.primary_bottleneck_label = null;
+      overview.primary_bottleneck_source = null;
+      overview.primary_bottleneck_role = null;
+      overview.runtime_plane.total_tokens = 0;
+      overview.runtime_plane.total_tool_calls = 0;
+      overview.runtime_plane.source_breakdown = [];
+      overview.runtime_plane.role_source_breakdown = [];
+      overview.runtime_plane.primary_bottleneck_key = null;
+      overview.runtime_plane.primary_bottleneck_label = null;
+      overview.runtime_plane.primary_bottleneck_source = null;
+      overview.runtime_plane.primary_bottleneck_role = null;
+      return overview;
+    }
+
+    const selected = sourceRows[0];
+    const primary = [...roleRows].sort((a, b) => b.time_seconds - a.time_seconds)[0] ?? null;
+    const modelSeconds = roleRows
+      .filter((row: { role: string }) => row.role === 'model')
+      .reduce((sum: number, row: { time_seconds: number }) => sum + row.time_seconds, 0);
+    const toolSeconds = roleRows
+      .filter((row: { role: string }) => row.role === 'tool')
+      .reduce((sum: number, row: { time_seconds: number }) => sum + row.time_seconds, 0);
+    const userSeconds = roleRows
+      .filter((row: { role: string }) => row.role === 'user')
+      .reduce((sum: number, row: { time_seconds: number }) => sum + row.time_seconds, 0);
+
+    overview.total_sessions = selected.sessions;
+    overview.total_tokens = selected.total_tokens;
+    overview.total_tool_calls = selected.total_tool_calls;
+    overview.source_breakdown = sourceRows;
+    overview.role_source_breakdown = roleRows;
+    overview.primary_bottleneck_key = primary?.key ?? null;
+    overview.primary_bottleneck_label = primary?.label ?? null;
+    overview.primary_bottleneck_source = primary?.ecosystem ?? null;
+    overview.primary_bottleneck_role = primary?.role ?? null;
+    overview.runtime_plane.total_tokens = selected.total_tokens;
+    overview.runtime_plane.total_tool_calls = selected.total_tool_calls;
+    overview.runtime_plane.model_time_seconds = modelSeconds;
+    overview.runtime_plane.tool_time_seconds = toolSeconds;
+    overview.runtime_plane.user_time_seconds = userSeconds;
+    overview.runtime_plane.source_breakdown = sourceRows;
+    overview.runtime_plane.role_source_breakdown = roleRows;
+    overview.runtime_plane.primary_bottleneck_key = primary?.key ?? null;
+    overview.runtime_plane.primary_bottleneck_label = primary?.label ?? null;
+    overview.runtime_plane.primary_bottleneck_source = primary?.ecosystem ?? null;
+    overview.runtime_plane.primary_bottleneck_role = primary?.role ?? null;
+    return overview;
+  };
+
+  const filteredTimeseries = (ecosystem: string | null) => {
+    if (!ecosystem) {
+      return mockAnalyticsTimeseries;
+    }
+    const point =
+      ecosystem === 'claude_code' ? mockAnalyticsTimeseries.points[1] : mockAnalyticsTimeseries.points[0];
+    return {
+      ...mockAnalyticsTimeseries,
+      points: point ? [point] : [],
+    };
+  };
+
+  const filteredProjectComparison = (ecosystem: string | null) => {
+    if (!ecosystem) {
+      return mockProjectComparison;
+    }
+    const baseProject = mockProjectComparison.projects[0];
+    if (!baseProject) {
+      return { ...mockProjectComparison, total_projects: 0, projects: [] };
+    }
+    const sessions = 1;
+    const totalTokens = ecosystem === 'claude_code' ? 23000 : 17000;
+    return {
+      ...mockProjectComparison,
+      total_projects: 1,
+      projects: [
+        {
+          ...baseProject,
+          sessions,
+          total_tokens: totalTokens,
+          percent_sessions: 100,
+          percent_tokens: 100,
+        },
+      ],
+    };
+  };
+
+  const filteredProjectSwimlane = (ecosystem: string | null) => {
+    if (!ecosystem) {
+      return mockProjectSwimlane;
+    }
+    const points = mockProjectSwimlane.points.filter((point) =>
+      ecosystem === 'claude_code' ? point.period === '2026-02-27' : point.period === '2026-02-26'
+    );
+    const projects = filteredProjectComparison(ecosystem).projects;
+    return {
+      ...mockProjectSwimlane,
+      projects,
+      points,
+      periods: points.map((point) => point.period),
+      truncated_project_count: 0,
+    };
+  };
+
   await page.route(/\/api\/state\/frontend-preferences(?:\?.*)?$/, async (route) => {
     const method = route.request().method();
     if (method === 'PUT') {
@@ -532,19 +763,40 @@ export async function setupMockApi(page: Page) {
   });
 
   await page.route(/\/api\/analytics\/overview(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url());
+    const ecosystem = url.searchParams.get('ecosystem');
+    const payload = filteredOverview(ecosystem);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(mockAnalyticsOverview),
+      body: JSON.stringify(payload),
     });
   });
 
   await page.route(/\/api\/analytics\/distribution(?:s)?(?:\?.*)?$/, async (route) => {
     const url = new URL(route.request().url());
     const dimension = url.searchParams.get('dimension');
+    const ecosystem = url.searchParams.get('ecosystem');
     const payload = dimension === 'session_token_share'
-      ? mockSessionShareDistribution
-      : mockAutomationDistribution;
+      ? cloneJson(mockSessionShareDistribution)
+      : cloneJson(mockAutomationDistribution);
+
+    if (ecosystem) {
+      if (dimension === 'session_token_share') {
+        payload.buckets = payload.buckets.filter((bucket: { key: string }) =>
+          ecosystem === 'claude_code' ? bucket.key === 'test-session-001' : bucket.key === 'test-session-002'
+        );
+      } else {
+        payload.buckets = ecosystem === 'claude_code'
+          ? [{ key: 'high', label: 'High', count: 1, value: 1, percent: 100 }]
+          : [{ key: 'medium', label: 'Medium', count: 1, value: 1, percent: 100 }];
+      }
+      payload.total = payload.buckets.reduce(
+        (sum: number, bucket: { value?: number; count?: number }) =>
+          sum + Number(bucket.value ?? bucket.count ?? 0),
+        0
+      );
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -553,26 +805,35 @@ export async function setupMockApi(page: Page) {
   });
 
   await page.route(/\/api\/analytics\/timeseries(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url());
+    const ecosystem = url.searchParams.get('ecosystem');
+    const payload = filteredTimeseries(ecosystem);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(mockAnalyticsTimeseries),
+      body: JSON.stringify(payload),
     });
   });
 
   await page.route(/\/api\/analytics\/project-comparison(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url());
+    const ecosystem = url.searchParams.get('ecosystem');
+    const payload = filteredProjectComparison(ecosystem);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(mockProjectComparison),
+      body: JSON.stringify(payload),
     });
   });
 
   await page.route(/\/api\/analytics\/project-swimlane(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url());
+    const ecosystem = url.searchParams.get('ecosystem');
+    const payload = filteredProjectSwimlane(ecosystem);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(mockProjectSwimlane),
+      body: JSON.stringify(payload),
     });
   });
 }

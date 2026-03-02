@@ -242,6 +242,25 @@ class EcosystemAggregate(BaseModel):
     percent_tokens: float
 
 
+class RoleSourceAggregate(BaseModel):
+    """Aggregated metrics grouped by role x source ecosystem."""
+
+    ecosystem: str
+    ecosystem_label: str
+    role: Literal["user", "model", "tool"]
+    role_label: str
+    key: str
+    label: str
+    time_seconds: float
+    time_percent: float
+    token_count: int
+    token_percent: float
+    tool_calls: int
+    tool_call_percent: float
+    error_count: int
+    error_percent: float
+
+
 class ProjectComparisonItem(BaseModel):
     """Per-project KPI row for cross-session comparison."""
 
@@ -364,6 +383,11 @@ class RuntimePlaneOverview(BaseModel):
     active_time_ratio: float
     model_timeout_count: int
     source_breakdown: list[EcosystemAggregate]
+    role_source_breakdown: list[RoleSourceAggregate]
+    primary_bottleneck_key: str | None
+    primary_bottleneck_label: str | None
+    primary_bottleneck_source: str | None
+    primary_bottleneck_role: Literal["user", "model", "tool"] | None
     bottleneck_distribution: list[AnalyticsBucket]
     top_projects: list[ProjectAggregate]
     top_tools: list[ToolAggregate]
@@ -438,6 +462,11 @@ class AnalyticsOverviewResponse(BaseModel):
     active_time_ratio: float
     model_timeout_count: int
     source_breakdown: list[EcosystemAggregate]
+    role_source_breakdown: list[RoleSourceAggregate]
+    primary_bottleneck_key: str | None
+    primary_bottleneck_label: str | None
+    primary_bottleneck_source: str | None
+    primary_bottleneck_role: Literal["user", "model", "tool"] | None
     bottleneck_distribution: list[AnalyticsBucket]
     top_projects: list[ProjectAggregate]
     top_tools: list[ToolAggregate]

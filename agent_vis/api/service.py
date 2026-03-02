@@ -38,6 +38,7 @@ from agent_vis.api.models import (
     ProjectComparisonResponse,
     ProjectSwimlanePoint,
     ProjectSwimlaneResponse,
+    RoleSourceAggregate,
     RuntimePlaneOverview,
     SessionSummary,
     ToolAggregate,
@@ -677,10 +678,10 @@ class SessionService:
         )
 
     async def get_analytics_overview(
-        self, start_date: str, end_date: str
+        self, start_date: str, end_date: str, ecosystem: str | None = None
     ) -> AnalyticsOverviewResponse:
         """Compute cross-session overview metrics for a date range."""
-        rows = self._get_analytics_rows(start_date, end_date)
+        rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
         total_sessions = len(rows)
 
         if total_sessions == 0:
@@ -747,6 +748,11 @@ class SessionService:
                 active_time_ratio=0.0,
                 model_timeout_count=0,
                 source_breakdown=[],
+                role_source_breakdown=[],
+                primary_bottleneck_key=None,
+                primary_bottleneck_label=None,
+                primary_bottleneck_source=None,
+                primary_bottleneck_role=None,
                 bottleneck_distribution=[],
                 top_projects=[],
                 top_tools=[],
@@ -822,6 +828,11 @@ class SessionService:
                 active_time_ratio=0.0,
                 model_timeout_count=0,
                 source_breakdown=[],
+                role_source_breakdown=[],
+                primary_bottleneck_key=None,
+                primary_bottleneck_label=None,
+                primary_bottleneck_source=None,
+                primary_bottleneck_role=None,
                 bottleneck_distribution=[],
                 top_projects=[],
                 top_tools=[],
@@ -846,6 +857,14 @@ class SessionService:
 
         bottleneck_counter: dict[str, int] = {"Model": 0, "Tool": 0, "User": 0, "Unknown": 0}
         ecosystem_acc: dict[str, dict[str, float | int | str]] = {}
+        role_source_acc: dict[tuple[str, str], dict[str, float | int | str]] = defaultdict(
+            lambda: {
+                "time_seconds": 0.0,
+                "token_count": 0,
+                "tool_calls": 0,
+                "error_count": 0,
+            }
+        )
         project_acc: dict[str, dict[str, float | int | str]] = {}
 
         total_input_tokens = 0
@@ -893,6 +912,13 @@ class SessionService:
             except (TypeError, ValueError):
                 return None
 
+        def _ecosystem_label(ecosystem_name: str) -> str:
+            if ecosystem_name == "claude_code":
+                return "Claude Code"
+            if ecosystem_name == "codex":
+                return "Codex"
+            return ecosystem_name.replace("_", " ").title()
+
         tool_acc: dict[str, dict[str, float | int | set[str]]] = defaultdict(
             lambda: {
                 "total_calls": 0,
@@ -907,13 +933,7 @@ class SessionService:
             ecosystem = str(row.get("ecosystem") or "claude_code").strip() or "claude_code"
             if ecosystem not in ecosystem_acc:
                 ecosystem_acc[ecosystem] = {
-                    "label": (
-                        "Claude Code"
-                        if ecosystem == "claude_code"
-                        else (
-                            "Codex" if ecosystem == "codex" else ecosystem.replace("_", " ").title()
-                        )
-                    ),
+                    "label": _ecosystem_label(ecosystem),
                     "sessions": 0,
                     "total_tokens": 0,
                     "total_tool_calls": 0,
@@ -1059,13 +1079,42 @@ class SessionService:
             tool_time_seconds += tool_seconds
             user_time_seconds += user_seconds
             inactive_time_seconds += inactive_seconds
-            model_timeout_count += int(time_breakdown.get("model_timeout_count") or 0)
+            model_timeout_in_session = int(time_breakdown.get("model_timeout_count") or 0)
+            model_timeout_count += model_timeout_in_session
             ecosystem_acc[ecosystem]["active_time_seconds"] = (
                 float(ecosystem_acc[ecosystem]["active_time_seconds"])
                 + model_seconds
                 + tool_seconds
                 + user_seconds
             )
+            tool_error_count = int(
+                sum(int(tool.get("error_count") or 0) for tool in (stats.get("tool_calls") or []))
+            )
+            input_token_count = int(stats.get("total_input_tokens") or 0)
+            output_token_count = int(stats.get("total_output_tokens") or 0)
+            cache_read_token_count = int(stats.get("cache_read_tokens") or 0)
+            cache_creation_token_count = int(stats.get("cache_creation_tokens") or 0)
+
+            model_bucket = role_source_acc[(ecosystem, "model")]
+            model_bucket["time_seconds"] = float(model_bucket["time_seconds"]) + model_seconds
+            model_bucket["token_count"] = int(model_bucket["token_count"]) + (
+                output_token_count + cache_read_token_count + cache_creation_token_count
+            )
+            model_bucket["error_count"] = (
+                int(model_bucket["error_count"]) + model_timeout_in_session
+            )
+
+            tool_bucket = role_source_acc[(ecosystem, "tool")]
+            tool_bucket["time_seconds"] = float(tool_bucket["time_seconds"]) + tool_seconds
+            tool_bucket["token_count"] = int(tool_bucket["token_count"]) + tool_tokens
+            tool_bucket["tool_calls"] = int(tool_bucket["tool_calls"]) + int(
+                stats.get("total_tool_calls") or 0
+            )
+            tool_bucket["error_count"] = int(tool_bucket["error_count"]) + tool_error_count
+
+            user_bucket = role_source_acc[(ecosystem, "user")]
+            user_bucket["time_seconds"] = float(user_bucket["time_seconds"]) + user_seconds
+            user_bucket["token_count"] = int(user_bucket["token_count"]) + input_token_count
 
             span_seconds = float(row.get("duration_seconds") or 0.0)
             component_span = model_seconds + tool_seconds + user_seconds + inactive_seconds
@@ -1198,6 +1247,56 @@ class SessionService:
                 )
             )
         source_breakdown.sort(key=lambda item: (item.total_tokens, item.sessions), reverse=True)
+        role_source_breakdown: list[RoleSourceAggregate] = []
+        role_label_map = {
+            "user": "User",
+            "model": "Model",
+            "tool": "Tool",
+        }
+        total_role_time = sum(float(values["time_seconds"]) for values in role_source_acc.values())
+        total_role_tokens = sum(int(values["token_count"]) for values in role_source_acc.values())
+        total_role_tool_calls = sum(
+            int(values["tool_calls"]) for values in role_source_acc.values()
+        )
+        total_role_errors = sum(int(values["error_count"]) for values in role_source_acc.values())
+
+        for (ecosystem, role), values in role_source_acc.items():
+            ecosystem_label = _ecosystem_label(ecosystem)
+            role_label = role_label_map.get(role, role.title())
+            time_seconds = float(values["time_seconds"])
+            token_count = int(values["token_count"])
+            tool_calls = int(values["tool_calls"])
+            error_count = int(values["error_count"])
+            role_source_breakdown.append(
+                RoleSourceAggregate(
+                    ecosystem=ecosystem,
+                    ecosystem_label=ecosystem_label,
+                    role=cast(Literal["user", "model", "tool"], role),
+                    role_label=role_label,
+                    key=f"{ecosystem}:{role}",
+                    label=f"{ecosystem_label}:{role_label}",
+                    time_seconds=time_seconds,
+                    time_percent=(
+                        time_seconds / total_role_time * 100.0 if total_role_time else 0.0
+                    ),
+                    token_count=token_count,
+                    token_percent=(
+                        token_count / total_role_tokens * 100.0 if total_role_tokens else 0.0
+                    ),
+                    tool_calls=tool_calls,
+                    tool_call_percent=(
+                        tool_calls / total_role_tool_calls * 100.0 if total_role_tool_calls else 0.0
+                    ),
+                    error_count=error_count,
+                    error_percent=(
+                        error_count / total_role_errors * 100.0 if total_role_errors else 0.0
+                    ),
+                )
+            )
+        role_source_breakdown.sort(
+            key=lambda item: (item.time_seconds, item.token_count, item.tool_calls), reverse=True
+        )
+        primary_bottleneck = role_source_breakdown[0] if role_source_breakdown else None
 
         total_active_time = model_time_seconds + tool_time_seconds + user_time_seconds
         total_span_time = total_active_time + inactive_time_seconds
@@ -1294,6 +1393,13 @@ class SessionService:
             active_time_ratio=active_time_ratio,
             model_timeout_count=model_timeout_count,
             source_breakdown=source_breakdown,
+            role_source_breakdown=role_source_breakdown,
+            primary_bottleneck_key=primary_bottleneck.key if primary_bottleneck else None,
+            primary_bottleneck_label=primary_bottleneck.label if primary_bottleneck else None,
+            primary_bottleneck_source=(
+                primary_bottleneck.ecosystem if primary_bottleneck else None
+            ),
+            primary_bottleneck_role=(primary_bottleneck.role if primary_bottleneck else None),
             bottleneck_distribution=bottleneck_distribution,
             top_projects=top_projects,
             top_tools=top_tools,
@@ -1370,6 +1476,13 @@ class SessionService:
             active_time_ratio=active_time_ratio,
             model_timeout_count=model_timeout_count,
             source_breakdown=source_breakdown,
+            role_source_breakdown=role_source_breakdown,
+            primary_bottleneck_key=primary_bottleneck.key if primary_bottleneck else None,
+            primary_bottleneck_label=primary_bottleneck.label if primary_bottleneck else None,
+            primary_bottleneck_source=(
+                primary_bottleneck.ecosystem if primary_bottleneck else None
+            ),
+            primary_bottleneck_role=(primary_bottleneck.role if primary_bottleneck else None),
             bottleneck_distribution=bottleneck_distribution,
             top_projects=top_projects,
             top_tools=top_tools,
@@ -1378,10 +1491,10 @@ class SessionService:
         )
 
     async def get_analytics_distribution(
-        self, dimension: str, start_date: str, end_date: str
+        self, dimension: str, start_date: str, end_date: str, ecosystem: str | None = None
     ) -> AnalyticsDistributionResponse:
         """Compute a distribution breakdown for one dimension."""
-        rows = self._get_analytics_rows(start_date, end_date)
+        rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
         buckets: list[AnalyticsBucket] = []
         total_value = 0.0
 
@@ -1514,10 +1627,14 @@ class SessionService:
         )
 
     async def get_analytics_timeseries(
-        self, start_date: str, end_date: str, interval: str = "day"
+        self,
+        start_date: str,
+        end_date: str,
+        interval: str = "day",
+        ecosystem: str | None = None,
     ) -> AnalyticsTimeseriesResponse:
         """Compute time-series aggregates across sessions."""
-        rows = self._get_analytics_rows(start_date, end_date)
+        rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
         buckets: dict[str, dict[str, float]] = {}
 
         for row in rows:
@@ -1584,10 +1701,14 @@ class SessionService:
         )
 
     async def get_project_comparison(
-        self, start_date: str, end_date: str, limit: int = 10
+        self,
+        start_date: str,
+        end_date: str,
+        limit: int = 10,
+        ecosystem: str | None = None,
     ) -> ProjectComparisonResponse:
         """Return cross-project KPI comparison for the selected range."""
-        rows = self._get_analytics_rows(start_date, end_date)
+        rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
 
         def _coerce_float(value: Any) -> float | None:
             if value is None:
@@ -1692,12 +1813,15 @@ class SessionService:
         end_date: str,
         interval: str = "day",
         project_limit: int = 12,
+        ecosystem: str | None = None,
     ) -> ProjectSwimlaneResponse:
         """Return project x time swimlane points for cross-session exploration."""
         if interval not in {"day", "week"}:
             raise ValueError("interval must be one of: day, week")
 
-        comparison = await self.get_project_comparison(start_date, end_date, limit=0)
+        comparison = await self.get_project_comparison(
+            start_date, end_date, limit=0, ecosystem=ecosystem
+        )
         all_projects = comparison.projects
         selected_projects = all_projects[:project_limit] if project_limit > 0 else all_projects
         selected_paths = {project.project_path for project in selected_projects}
@@ -1711,7 +1835,7 @@ class SessionService:
             except (TypeError, ValueError):
                 return None
 
-        rows = self._get_analytics_rows(start_date, end_date)
+        rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
         bucketed: dict[tuple[str, str], dict[str, float | int | str]] = {}
         periods: set[str] = set()
 
@@ -1810,12 +1934,17 @@ class SessionService:
         )
 
     def _get_analytics_rows(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        ecosystem: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return normalized rows for cross-session analytics."""
         if self._repo is not None and self._repo.count_sessions() > 0:
             rows = self._repo.list_statistics_for_analytics(
-                start_date=start_date, end_date=end_date
+                start_date=start_date,
+                end_date=end_date,
+                ecosystem=ecosystem,
             )
             normalized: list[dict[str, Any]] = []
             for row in rows:
@@ -1855,6 +1984,11 @@ class SessionService:
             created_at = session.metadata.created_at.isoformat()
             if not self._is_within_date_range(created_at, start_date, end_date):
                 continue
+            session_ecosystem = self._session_ecosystem.get(
+                session.metadata.session_id, "claude_code"
+            )
+            if ecosystem and session_ecosystem != ecosystem:
+                continue
             rows.append(
                 {
                     "session_id": session.metadata.session_id,
@@ -1864,9 +1998,7 @@ class SessionService:
                     "logical_session_id": (
                         session.metadata.logical_session_id or session.metadata.session_id
                     ),
-                    "ecosystem": self._session_ecosystem.get(
-                        session.metadata.session_id, "claude_code"
-                    ),
+                    "ecosystem": session_ecosystem,
                     "project_path": session.metadata.project_path,
                     "git_branch": session.metadata.git_branch,
                     "created_at": created_at,

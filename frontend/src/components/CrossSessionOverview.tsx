@@ -21,7 +21,7 @@ import {
   useProjectComparisonQuery,
   useProjectSwimlaneQuery,
 } from '../hooks/useSessionsQuery';
-import type { AnalyticsBucket } from '../types/session';
+import type { AnalyticsBucket, RoleSourceAggregate } from '../types/session';
 import { truncateMiddle } from '../utils/display';
 import { useI18n } from '../i18n';
 import { MetricTerm } from './MetricHelp';
@@ -44,7 +44,20 @@ interface DayNightRow {
   share: number;
 }
 
+type SourceFilter = 'all' | 'claude_code' | 'codex';
+type RoleSourceMetric = 'time' | 'tokens' | 'tool_calls' | 'errors';
+type RoleSourceView = 'source' | 'role';
+
 const DISTRIBUTION_COLORS = ['#2563eb', '#0891b2', '#ea580c', '#dc2626', '#16a34a', '#7c3aed'];
+const ROLE_COLORS: Record<'user' | 'model' | 'tool', string> = {
+  model: '#2563eb',
+  tool: '#0891b2',
+  user: '#ea580c',
+};
+const SOURCE_COLORS: Record<'claude_code' | 'codex', string> = {
+  claude_code: '#7c3aed',
+  codex: '#16a34a',
+};
 
 function toIsoDate(value: Date): string {
   const adjusted = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
@@ -120,9 +133,19 @@ function formatPeriodLabel(
   return `W${weekMatch[2]} ${weekMatch[1]}`;
 }
 
+function metricValue(row: RoleSourceAggregate, metric: RoleSourceMetric): number {
+  if (metric === 'tokens') return row.token_count;
+  if (metric === 'tool_calls') return row.tool_calls;
+  if (metric === 'errors') return row.error_count;
+  return row.time_seconds;
+}
+
 export function CrossSessionOverview() {
   const { t, formatNumber, formatTokenCount, formatPercent, formatDate } = useI18n();
   const [preset, setPreset] = useState<RangePreset>('7d');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [roleSourceMetric, setRoleSourceMetric] = useState<RoleSourceMetric>('time');
+  const [roleSourceView, setRoleSourceView] = useState<RoleSourceView>('source');
   const [projectTimelineInterval, setProjectTimelineInterval] = useState<'day' | 'week'>('day');
   const [codingFraction, setCodingFraction] = useState(0.3);
   const [tokensPerLine, setTokensPerLine] = useState(10);
@@ -146,34 +169,56 @@ export function CrossSessionOverview() {
   }, [customRange, preset]);
 
   const interval = preset === '90d' ? 'week' : 'day';
+  const ecosystemFilter = sourceFilter === 'all' ? null : sourceFilter;
   const formatPercentPoint = (value: number): string => formatPercent(value, 1);
   const formatPercentRatio = (value: number): string => formatPercent(value / 100, 1);
   const formatTokenTooltip = (value: number): string =>
     `${formatTokenCount(value)} (${formatNumber(value)})`;
 
   const { data: overview, isLoading: overviewLoading, error: overviewError } =
-    useAnalyticsOverviewQuery(activeRange.startDate, activeRange.endDate);
+    useAnalyticsOverviewQuery(activeRange.startDate, activeRange.endDate, ecosystemFilter);
 
   const { data: automationDistribution, isLoading: automationLoading, error: automationError } =
-    useAnalyticsDistributionQuery('automation_band', activeRange.startDate, activeRange.endDate);
+    useAnalyticsDistributionQuery(
+      'automation_band',
+      activeRange.startDate,
+      activeRange.endDate,
+      ecosystemFilter
+    );
 
   const { data: sessionShareDistribution, isLoading: shareLoading, error: shareError } =
-    useAnalyticsDistributionQuery('session_token_share', activeRange.startDate, activeRange.endDate);
+    useAnalyticsDistributionQuery(
+      'session_token_share',
+      activeRange.startDate,
+      activeRange.endDate,
+      ecosystemFilter
+    );
 
   const { data: timeseries, isLoading: timeseriesLoading, error: timeseriesError } =
-    useAnalyticsTimeseriesQuery(interval, activeRange.startDate, activeRange.endDate);
+    useAnalyticsTimeseriesQuery(interval, activeRange.startDate, activeRange.endDate, ecosystemFilter);
 
   const {
     data: projectComparison,
     isLoading: projectComparisonLoading,
     error: projectComparisonError,
-  } = useProjectComparisonQuery(activeRange.startDate, activeRange.endDate, 12);
+  } = useProjectComparisonQuery(
+    activeRange.startDate,
+    activeRange.endDate,
+    12,
+    ecosystemFilter
+  );
 
   const {
     data: projectSwimlane,
     isLoading: projectSwimlaneLoading,
     error: projectSwimlaneError,
-  } = useProjectSwimlaneQuery(projectTimelineInterval, activeRange.startDate, activeRange.endDate, 12);
+  } = useProjectSwimlaneQuery(
+    projectTimelineInterval,
+    activeRange.startDate,
+    activeRange.endDate,
+    12,
+    ecosystemFilter
+  );
 
   const isLoading =
     overviewLoading ||
@@ -357,6 +402,11 @@ export function CrossSessionOverview() {
     active_time_ratio: overview.active_time_ratio,
     model_timeout_count: overview.model_timeout_count,
     source_breakdown: overview.source_breakdown,
+    role_source_breakdown: overview.role_source_breakdown ?? [],
+    primary_bottleneck_key: overview.primary_bottleneck_key ?? null,
+    primary_bottleneck_label: overview.primary_bottleneck_label ?? null,
+    primary_bottleneck_source: overview.primary_bottleneck_source ?? null,
+    primary_bottleneck_role: overview.primary_bottleneck_role ?? null,
     bottleneck_distribution: overview.bottleneck_distribution,
     top_projects: overview.top_projects,
     top_tools: overview.top_tools,
@@ -393,6 +443,94 @@ export function CrossSessionOverview() {
   const topProjects = runtime.top_projects.slice(0, 8);
   const topTools = runtime.top_tools.slice(0, 8);
   const sourceBreakdown = runtime.source_breakdown || [];
+  const roleSourceBreakdown = runtime.role_source_breakdown;
+  const roleSourceMetricLabel =
+    roleSourceMetric === 'tokens'
+      ? t('table.tokens')
+      : roleSourceMetric === 'tool_calls'
+        ? t('cross.callVolume')
+        : roleSourceMetric === 'errors'
+          ? t('cross.errors')
+          : t('cross.activeTime');
+  const roleSourcePrimary = runtime.primary_bottleneck_label || t('table.unknown');
+  const roleSourceBySource = (() => {
+    const grouped = new Map<
+      string,
+      {
+        label: string;
+        roleValues: Record<'user' | 'model' | 'tool', number>;
+        total: number;
+      }
+    >();
+    for (const row of roleSourceBreakdown) {
+      const existing = grouped.get(row.ecosystem) ?? {
+        label: row.ecosystem_label,
+        roleValues: { user: 0, model: 0, tool: 0 },
+        total: 0,
+      };
+      const value = metricValue(row, roleSourceMetric);
+      existing.roleValues[row.role] += value;
+      existing.total += value;
+      grouped.set(row.ecosystem, existing);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([ecosystem, value]) => ({
+        ecosystem,
+        label: value.label,
+        user: value.roleValues.user,
+        model: value.roleValues.model,
+        tool: value.roleValues.tool,
+        total: value.total,
+      }))
+      .sort((a, b) => b.total - a.total);
+  })();
+  const roleSourceByRole = (() => {
+    const grouped = new Map<
+      string,
+      {
+        roleLabel: string;
+        ecosystemValues: Record<string, number>;
+        total: number;
+      }
+    >();
+    for (const row of roleSourceBreakdown) {
+      const existing = grouped.get(row.role) ?? {
+        roleLabel: row.role_label,
+        ecosystemValues: {},
+        total: 0,
+      };
+      const value = metricValue(row, roleSourceMetric);
+      existing.ecosystemValues[row.ecosystem] =
+        (existing.ecosystemValues[row.ecosystem] ?? 0) + value;
+      existing.total += value;
+      grouped.set(row.role, existing);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([role, value]) => ({
+        role,
+        roleLabel: value.roleLabel,
+        ...value.ecosystemValues,
+        total: value.total,
+      }))
+      .sort((a, b) => b.total - a.total);
+  })();
+  const roleSourceTotal = roleSourceBreakdown.reduce(
+    (sum, row) => sum + metricValue(row, roleSourceMetric),
+    0
+  );
+  const roleSourceTableRows = roleSourceBreakdown
+    .map((row) => {
+      const value = metricValue(row, roleSourceMetric);
+      const share = roleSourceTotal > 0 ? value / roleSourceTotal : 0;
+      return {
+        ...row,
+        value,
+        share,
+      };
+    })
+    .sort((a, b) => b.value - a.value);
   const comparisonProjects = projectComparison.projects;
   const defaultProjectPaths = comparisonProjects.slice(0, 3).map((project) => project.project_path);
   const selectedProjectPaths = comparisonProjects
@@ -603,6 +741,33 @@ export function CrossSessionOverview() {
               </label>
             </div>
           )}
+
+          <div className="source-filter-group" role="group" aria-label={t('cross.sourceFilter')}>
+            <button
+              type="button"
+              className={sourceFilter === 'all' ? 'active' : ''}
+              onClick={() => setSourceFilter('all')}
+              data-testid="source-filter-all"
+            >
+              {t('cross.sourceAll')}
+            </button>
+            <button
+              type="button"
+              className={sourceFilter === 'claude_code' ? 'active' : ''}
+              onClick={() => setSourceFilter('claude_code')}
+              data-testid="source-filter-claude"
+            >
+              Claude Code
+            </button>
+            <button
+              type="button"
+              className={sourceFilter === 'codex' ? 'active' : ''}
+              onClick={() => setSourceFilter('codex')}
+              data-testid="source-filter-codex"
+            >
+              Codex
+            </button>
+          </div>
         </div>
       </div>
 
@@ -832,6 +997,177 @@ export function CrossSessionOverview() {
             {t('cross.kpi.estimateOnly')}
           </p>
         </article>
+      </div>
+
+      <div className="overview-grid">
+        <section className="overview-card role-source-card">
+          <div className="role-source-header">
+            <div>
+              <h4>{t('cross.roleSource.title')}</h4>
+              <p className="role-source-note">
+                {t('cross.roleSource.subtitle')}
+              </p>
+              <p className="role-source-bottleneck" data-testid="role-source-primary-bottleneck">
+                {t('cross.roleSource.primary')}
+                : {roleSourcePrimary}
+              </p>
+            </div>
+            <div className="role-source-controls">
+              <div className="role-source-control-group" role="group" aria-label={t('cross.roleSource.metric')}>
+                <button
+                  type="button"
+                  className={roleSourceMetric === 'time' ? 'active' : ''}
+                  onClick={() => setRoleSourceMetric('time')}
+                  data-testid="role-source-metric-time"
+                >
+                  {t('cross.activeTime')}
+                </button>
+                <button
+                  type="button"
+                  className={roleSourceMetric === 'tokens' ? 'active' : ''}
+                  onClick={() => setRoleSourceMetric('tokens')}
+                  data-testid="role-source-metric-tokens"
+                >
+                  {t('table.tokens')}
+                </button>
+                <button
+                  type="button"
+                  className={roleSourceMetric === 'tool_calls' ? 'active' : ''}
+                  onClick={() => setRoleSourceMetric('tool_calls')}
+                  data-testid="role-source-metric-calls"
+                >
+                  {t('cross.callVolume')}
+                </button>
+                <button
+                  type="button"
+                  className={roleSourceMetric === 'errors' ? 'active' : ''}
+                  onClick={() => setRoleSourceMetric('errors')}
+                  data-testid="role-source-metric-errors"
+                >
+                  {t('cross.errors')}
+                </button>
+              </div>
+              <div className="role-source-control-group" role="group" aria-label={t('cross.roleSource.dimension')}>
+                <button
+                  type="button"
+                  className={roleSourceView === 'source' ? 'active' : ''}
+                  onClick={() => setRoleSourceView('source')}
+                  data-testid="role-source-dimension-source"
+                >
+                  {t('cross.roleSource.bySource')}
+                </button>
+                <button
+                  type="button"
+                  className={roleSourceView === 'role' ? 'active' : ''}
+                  onClick={() => setRoleSourceView('role')}
+                  data-testid="role-source-dimension-role"
+                >
+                  {t('cross.roleSource.byRole')}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {roleSourceBreakdown.length === 0 ? (
+            <p className="empty-hint" data-testid="role-source-empty">{t('cross.roleSource.empty')}</p>
+          ) : (
+            <div className="role-source-layout">
+              <div className="role-source-chart">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={roleSourceView === 'source' ? roleSourceBySource : roleSourceByRole}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey={roleSourceView === 'source' ? 'label' : 'roleLabel'} />
+                    <YAxis />
+                    <Tooltip
+                      formatter={(value) => {
+                        const numeric = Number(value ?? 0);
+                        if (roleSourceMetric === 'tokens') {
+                          return formatTokenTooltip(numeric);
+                        }
+                        if (roleSourceMetric === 'time') {
+                          return formatDuration(numeric);
+                        }
+                        return formatNumber(numeric);
+                      }}
+                    />
+                    <Legend />
+                    {roleSourceView === 'source' ? (
+                      <>
+                        <Bar dataKey="model" stackId="role" fill={ROLE_COLORS.model} name={t('cross.model')} />
+                        <Bar dataKey="tool" stackId="role" fill={ROLE_COLORS.tool} name={t('cross.tool')} />
+                        <Bar dataKey="user" stackId="role" fill={ROLE_COLORS.user} name={t('cross.user')} />
+                      </>
+                    ) : (
+                      sourceBreakdown.map((source) => (
+                        <Bar
+                          key={source.ecosystem}
+                          dataKey={source.ecosystem}
+                          stackId="source"
+                          fill={
+                            source.ecosystem === 'claude_code'
+                              ? SOURCE_COLORS.claude_code
+                              : source.ecosystem === 'codex'
+                                ? SOURCE_COLORS.codex
+                                : '#94a3b8'
+                          }
+                          name={source.label}
+                        />
+                      ))
+                    )}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="table-wrapper">
+                <table className="compact-table role-source-table" data-testid="role-source-table">
+                  <thead>
+                    <tr>
+                      <th>{t('table.ecosystem')}</th>
+                      <th>{t('cross.roleSource.role')}</th>
+                      <th>{roleSourceMetricLabel}</th>
+                      <th>{t('cross.share')}</th>
+                      <th>{t('cross.activeTime')}</th>
+                      <th>{t('table.tokens')}</th>
+                      <th>{t('cross.callVolume')}</th>
+                      <th>{t('cross.errors')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roleSourceTableRows.map((row) => (
+                      <tr key={row.key} data-testid={`role-source-row-${row.key}`}>
+                        <td>
+                          <span className="role-source-tag role-source-tag--source">
+                            {row.ecosystem_label}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className={`role-source-tag role-source-tag--role role-source-tag--role-${row.role}`}
+                          >
+                            {row.role_label}
+                          </span>
+                        </td>
+                        <td>
+                          {roleSourceMetric === 'time'
+                            ? formatDuration(row.value)
+                            : roleSourceMetric === 'tokens'
+                              ? formatTokenCount(row.value)
+                              : formatNumber(row.value)}
+                        </td>
+                        <td>{formatPercentPoint(row.share)}</td>
+                        <td>{formatDuration(row.time_seconds)}</td>
+                        <td>{formatTokenCount(row.token_count)}</td>
+                        <td>{formatNumber(row.tool_calls)}</td>
+                        <td>{formatNumber(row.error_count)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
 
       <div className="overview-grid two-columns">
