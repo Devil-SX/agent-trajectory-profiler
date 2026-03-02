@@ -3,8 +3,8 @@
 import json
 from pathlib import Path
 
-from claude_vis.models import MessageRecord
-from claude_vis.parsers.canonical import (
+from agent_vis.models import MessageRecord
+from agent_vis.parsers.canonical import (
     CanonicalEvent,
     TrajectoryEventAdapter,
     canonical_to_messages,
@@ -13,7 +13,7 @@ from claude_vis.parsers.canonical import (
     parse_jsonl_to_canonical,
     register_adapter,
 )
-from claude_vis.parsers.claude_code import parse_jsonl_file
+from agent_vis.parsers.claude_code import parse_jsonl_file
 
 
 class TestCanonicalAdapterRegistry:

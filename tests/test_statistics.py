@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from claude_vis.models import SessionStatistics, ToolCallStatistics
-from claude_vis.parsers import parse_session_file
-from claude_vis.parsers.error_taxonomy import (
+from agent_vis.models import SessionStatistics, ToolCallStatistics
+from agent_vis.parsers import parse_session_file
+from agent_vis.parsers.error_taxonomy import (
     ERROR_TAXONOMY_VERSION,
     UNCATEGORIZED_ERROR,
 )
-from claude_vis.parsers.session_parser import (
+from agent_vis.parsers.session_parser import (
     calculate_session_statistics,
     extract_subagent_sessions,
     parse_jsonl_file,
@@ -925,7 +925,7 @@ class TestConfigurableThresholds:
 
     def test_default_inactivity_threshold(self, messages_with_large_gaps: Path) -> None:
         """Test that 55-min gap is classified as inactive with default 1800s threshold."""
-        from claude_vis.parsers.session_parser import parse_jsonl_file
+        from agent_vis.parsers.session_parser import parse_jsonl_file
 
         messages = parse_jsonl_file(messages_with_large_gaps)
         stats = calculate_session_statistics(messages)
@@ -943,7 +943,7 @@ class TestConfigurableThresholds:
 
     def test_custom_inactivity_threshold_lower(self, messages_with_large_gaps: Path) -> None:
         """Test with a 600s (10 min) threshold: 12-min and 15-min gaps become inactive too."""
-        from claude_vis.parsers.session_parser import parse_jsonl_file
+        from agent_vis.parsers.session_parser import parse_jsonl_file
 
         messages = parse_jsonl_file(messages_with_large_gaps)
         stats_default = calculate_session_statistics(messages)
@@ -960,7 +960,7 @@ class TestConfigurableThresholds:
 
     def test_custom_inactivity_threshold_higher(self, messages_with_large_gaps: Path) -> None:
         """Test with a 7200s (2 hour) threshold: 55-min gap is no longer inactive."""
-        from claude_vis.parsers.session_parser import parse_jsonl_file
+        from agent_vis.parsers.session_parser import parse_jsonl_file
 
         messages = parse_jsonl_file(messages_with_large_gaps)
         stats = calculate_session_statistics(messages, inactivity_threshold=7200.0)
@@ -973,7 +973,7 @@ class TestConfigurableThresholds:
 
     def test_model_timeout_detection_default(self, messages_with_large_gaps: Path) -> None:
         """Test model timeout detection with default 600s threshold."""
-        from claude_vis.parsers.session_parser import parse_jsonl_file
+        from agent_vis.parsers.session_parser import parse_jsonl_file
 
         messages = parse_jsonl_file(messages_with_large_gaps)
         stats = calculate_session_statistics(messages)
@@ -987,7 +987,7 @@ class TestConfigurableThresholds:
 
     def test_model_timeout_detection_custom_threshold(self, messages_with_large_gaps: Path) -> None:
         """Test model timeout detection with a custom 300s (5 min) threshold."""
-        from claude_vis.parsers.session_parser import parse_jsonl_file
+        from agent_vis.parsers.session_parser import parse_jsonl_file
 
         messages = parse_jsonl_file(messages_with_large_gaps)
         stats = calculate_session_statistics(messages, model_timeout_threshold=300.0)
@@ -1001,7 +1001,7 @@ class TestConfigurableThresholds:
 
     def test_no_model_timeout_with_high_threshold(self, messages_with_large_gaps: Path) -> None:
         """Test that high threshold produces zero timeouts."""
-        from claude_vis.parsers.session_parser import parse_jsonl_file
+        from agent_vis.parsers.session_parser import parse_jsonl_file
 
         messages = parse_jsonl_file(messages_with_large_gaps)
         stats = calculate_session_statistics(messages, model_timeout_threshold=3600.0)

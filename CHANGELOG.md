@@ -6,17 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-02
+
+> **Code Stats** | Total: 56,061 lines | Delta: +11,984 (-2,861) = **+9,123 net** | Change: **+19.4%** vs v0.6.0
+
 ### Added
 
-- Canonical `agent_vis` Python package namespace mirroring existing `claude_vis` modules via compatibility wrappers.
-- Canonical `agent-vis` CLI entry point in `pyproject.toml`, while preserving `claude-vis` for backward compatibility.
-- Installation/uninstallation scripts now manage both global commands (`agent-vis` canonical, `claude-vis` legacy alias).
-- Namespace compatibility regression tests to ensure canonical and legacy imports expose equivalent symbols.
-- Canonical parser middle layer (`claude_vis.parsers.canonical`) with adapter contract (`TrajectoryEventAdapter`), neutral event models (`CanonicalEvent` / `CanonicalSession`), and ecosystem adapter registry.
+- Canonical parser middle layer (`agent_vis.parsers.canonical`) with adapter contract (`TrajectoryEventAdapter`), neutral event models (`CanonicalEvent` / `CanonicalSession`), and ecosystem adapter registry.
 - Canonical conversion contract tests covering registry extension, source-to-canonical normalization, and canonical-to-message compatibility behavior.
 - New `CodexParser` with Codex rollout adapter for local files under `~/.codex/sessions/**/rollout-*.jsonl`.
 - Mixed-ecosystem API/session tests covering Codex fixture ingestion and `/api/sessions?ecosystem=` filtering.
-- Rule-based tool error taxonomy module (`claude_vis.parsers.error_taxonomy`) with versioned categories and `uncategorized` fallback for unmatched failures.
+- Rule-based tool error taxonomy module (`agent_vis.parsers.error_taxonomy`) with versioned categories and `uncategorized` fallback for unmatched failures.
 - Session-level tool error timeline records (`timestamp`, `tool_name`, `category`, `matched_rule`, `preview`, `detail`) and per-category counters in `SessionStatistics`.
 - Regression fixtures/tests for taxonomy precision and fallback behavior (`tests/fixtures/error_taxonomy_examples.json`, `tests/test_error_taxonomy.py`).
 - Playwright smoke tests for tool error timeline rendering, expand/collapse details, and table scroll-container behavior on metrics dashboard.
@@ -58,7 +58,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - API branding and metadata text to ecosystem-neutral naming (`Agent Trajectory Visualizer API`) instead of Claude-only wording.
 - CLI user-facing branding and examples now prefer `agent-vis` as canonical command.
-- README (EN/CN) now includes explicit migration notes and deprecation path for `claude_vis` -> `agent_vis`.
+- README (EN/CN) now documents the 1.0 breaking removal of legacy `claude_vis`/`claude-vis` interfaces.
 - Claude parser ingestion path now uses the canonical adapter pipeline (`JSONL -> CanonicalEvent -> MessageRecord`) without changing downstream statistics logic.
 - Session sync and service initialization now support mixed local roots (Claude + Codex), and session list responses now expose ecosystem metadata.
 - Statistics dashboard now includes taxonomy-aware tool error timeline table with category chips and expandable raw error detail rows.
@@ -88,6 +88,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Derived metric labels in cross-session and session dashboards now include contextual help entry points that map directly to backend formula semantics.
 - Cross-session project timeline presentation has replaced the previous swimlane table with a denser Gantt layout for multi-project overlap readability.
 - Token metrics in session list/cards, session metadata, statistics dashboard, cross-session overview, tool blocks, and analytics comparison views now render compact `K/M/B` values with full raw counts preserved in `title`/tooltip contexts.
+
+### Removed
+
+- Legacy Python package namespace `claude_vis` and all compatibility wrappers.
+- Legacy CLI alias `claude-vis`; only `agent-vis` remains supported.
+- Dual-command installer behavior; install/uninstall scripts now manage canonical `agent-vis` only (while cleaning stale legacy alias files if present).
 
 ### Fixed
 

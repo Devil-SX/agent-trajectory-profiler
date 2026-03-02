@@ -24,18 +24,16 @@ log() {
 
 log "INFO" "Uninstalling Agent Trajectory Profiler..."
 
-if [[ -f "$INSTALL_DIR/claude-vis" ]]; then
-    rm -f "$INSTALL_DIR/claude-vis"
-    log "INFO" "Removed $INSTALL_DIR/claude-vis"
-else
-    log "INFO" "claude-vis not found in $INSTALL_DIR (already removed?)"
-fi
-
 if [[ -f "$INSTALL_DIR/agent-vis" ]]; then
     rm -f "$INSTALL_DIR/agent-vis"
     log "INFO" "Removed $INSTALL_DIR/agent-vis"
 else
     log "INFO" "agent-vis not found in $INSTALL_DIR (already removed?)"
+fi
+
+if [[ -f "$INSTALL_DIR/claude-vis" ]]; then
+    rm -f "$INSTALL_DIR/claude-vis"
+    log "INFO" "Removed legacy alias $INSTALL_DIR/claude-vis"
 fi
 
 log "SUCCESS" "Agent Trajectory Profiler uninstalled successfully!"

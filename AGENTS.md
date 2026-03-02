@@ -29,8 +29,8 @@ Use this matrix to determine minimum required test updates.
 | `frontend/src/components/SessionFilter*` | E2E search/sort/filter synchronization assertions |
 | `frontend/src/App*` | E2E tab-state persistence and session-switch behavior |
 | `frontend/src/api/*` / `frontend/src/hooks/*` | Integration/E2E request-state assertions (loading, stale data, error recovery) |
-| `claude_vis/api/*` | API integration tests for response schema and error handling |
-| `claude_vis/parsers/*` / `claude_vis/db/*` | Pytest parser/repository regression tests and edge-case coverage |
+| `agent_vis/api/*` | API integration tests for response schema and error handling |
+| `agent_vis/parsers/*` / `agent_vis/db/*` | Pytest parser/repository regression tests and edge-case coverage |
 
 ## Test Levels and Tagging Contract
 

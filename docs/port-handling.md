@@ -19,7 +19,7 @@ Both backend and frontend servers now gracefully handle port conflicts instead o
 
 **When custom port is specified**:
 ```bash
-claude-vis serve --port 8080
+agent-vis serve --port 8080
 ```
 - ❌ Fails with clear error if port 8080 is occupied
 - ✅ Does NOT auto-switch (user made explicit choice)
@@ -28,7 +28,7 @@ claude-vis serve --port 8080
 
 **Scenario 1: Default port occupied**
 ```bash
-$ claude-vis serve --reload
+$ agent-vis serve --reload
 Warning: Default port 8000 is already in use.
 Using alternative port: 8001
 
@@ -43,14 +43,14 @@ Reload Mode:  Enabled
 
 **Scenario 2: Custom port occupied**
 ```bash
-$ claude-vis serve --port 8000
+$ agent-vis serve --port 8000
 Error: Port 8000 is already in use.
 Please specify a different port with --port option.
 ```
 
 **Scenario 3: Custom port available**
 ```bash
-$ claude-vis serve --port 8080
+$ agent-vis serve --port 8080
 ============================================================
 Claude Code Session Visualizer
 ============================================================
@@ -128,7 +128,7 @@ Updated tasks handle port conflicts automatically:
 ```json
 {
   "label": "Start Dev Server",
-  "command": "uv run claude-vis serve --reload",
+  "command": "uv run agent-vis serve --reload",
   // Will auto-find available port if 8000 is taken
 }
 ```
@@ -141,19 +141,19 @@ Updated tasks handle port conflicts automatically:
 
 **Terminal 1**: Start first instance
 ```bash
-claude-vis serve --reload
+agent-vis serve --reload
 # Uses port 8000
 ```
 
 **Terminal 2**: Start second instance
 ```bash
-claude-vis serve --reload
+agent-vis serve --reload
 # Auto-switches to port 8001
 ```
 
 **Terminal 3**: Try custom port
 ```bash
-claude-vis serve --port 8000
+agent-vis serve --port 8000
 # Fails with clear error message
 ```
 
@@ -168,7 +168,7 @@ def test_port_conflict():
     server.bind(('127.0.0.1', 8000))
     server.listen(1)
 
-    # Try to start claude-vis serve (should use 8001)
+    # Try to start agent-vis serve (should use 8001)
     # ...
 
     server.close()
@@ -191,7 +191,7 @@ lsof -i :8000-8009
 kill -9 <PID>
 
 # Or use a custom port range
-claude-vis serve --port 9000
+agent-vis serve --port 9000
 ```
 
 ### Problem: Frontend shows wrong backend URL
@@ -211,7 +211,7 @@ claude-vis serve --port 9000
 **Solution**: Use explicit port flags
 ```bash
 # Backend on specific port (fails if taken)
-claude-vis serve --port 8080
+agent-vis serve --port 8080
 
 # Frontend on specific port (fails if taken)
 cd frontend && npm run dev -- --port 5000 --strictPort
@@ -233,7 +233,7 @@ cd frontend && npm run dev -- --port 5000 --strictPort
 ### Changes Made
 
 **Files Modified**:
-- `claude_vis/cli/main.py` - Added port detection logic
+- `agent_vis/cli/main.py` - Added port detection logic
 - `frontend/vite.config.ts` - Enabled automatic port selection
 - `CLAUDE.md` - Updated documentation
 - `docs/port-handling.md` - This guide
@@ -254,6 +254,6 @@ cd frontend && npm run dev -- --port 5000 --strictPort
 Potential improvements:
 - [ ] Add `--auto-port` flag to always find free port
 - [ ] Save preferred port to config file
-- [ ] Show all running instances with `claude-vis list`
+- [ ] Show all running instances with `agent-vis list`
 - [ ] Auto-detect and connect frontend to backend port
 - [ ] Support port ranges: `--port-range 8000-8100`

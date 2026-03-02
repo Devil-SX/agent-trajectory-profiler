@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from claude_vis.db.connection import get_connection
-from claude_vis.db.repository import SessionRepository
-from claude_vis.db.sync import SyncEngine
-from claude_vis.parsers.claude_code import ClaudeCodeParser
+from agent_vis.db.connection import get_connection
+from agent_vis.db.repository import SessionRepository
+from agent_vis.db.sync import SyncEngine
+from agent_vis.parsers.claude_code import ClaudeCodeParser
 
 
 @pytest.fixture

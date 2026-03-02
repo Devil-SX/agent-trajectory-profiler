@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from claude_vis.parsers import parse_session_directory, parse_session_file
+from agent_vis.parsers import parse_session_directory, parse_session_file
 
 
 class TestFullStackSessionWorkflow:
@@ -178,7 +178,7 @@ class TestFullStackErrorHandling:
 
     def test_missing_session_directory_handling(self, tmp_path: Path) -> None:
         """Test handling of missing session directory."""
-        from claude_vis.api.service import SessionService
+        from agent_vis.api.service import SessionService
 
         # Create service with non-existent directory
         nonexistent_dir = tmp_path / "nonexistent"

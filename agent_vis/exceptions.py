@@ -1,3 +1,7 @@
-"""Compatibility wrapper for canonical namespace."""
+"""Centralized exception classes for Agent Trajectory Profiler."""
 
-from claude_vis.exceptions import *  # noqa: F401,F403
+
+class SessionParseError(Exception):
+    """Exception raised when session parsing fails."""
+
+    pass

@@ -10,15 +10,15 @@ The backend is Python (Pydantic models, single-pass parser, FastAPI endpoints, S
 
 ## Code Map
 
-### `claude_vis/models.py`
+### `agent_vis/models.py`
 
 Type backbone. All Pydantic v2 models: `MessageRecord`, `Session`, `SessionMetadata`, `SessionStatistics`, `TimeBreakdown`, `TokenBreakdown`, `BashBreakdown`, `ToolCallStatistics`, `ToolGroupStatistics`, `CompactEvent`. Domain types live here, API response types live in `api/models.py`.
 
-### `claude_vis/exceptions.py`
+### `agent_vis/exceptions.py`
 
 Centralized exception definitions. `SessionParseError` for all parse failures.
 
-### `claude_vis/parsers/`
+### `agent_vis/parsers/`
 
 Core parser layer with ecosystem extensibility.
 
@@ -49,27 +49,27 @@ Core parser layer with ecosystem extensibility.
 6. **Bash breakdown** — `_split_bash_on_operators()` (quote-aware splitting on `&&`, `||`, `;`, `|`) → `_parse_bash_sub_commands()` → per-command stats
 7. **Compact events** — `extract_compact_events()` reads `compact_boundary` system messages directly from JSONL
 
-### `claude_vis/db/`
+### `agent_vis/db/`
 
 SQLite persistence layer for incremental session parsing.
 
 - `schema.py` — DDL for `tracked_files`, `sessions`, `session_statistics` tables with indexes. `create_tables(conn)` function
-- `connection.py` — `get_connection(db_path)` with WAL mode, foreign keys enabled. Default path: `~/.claude-vis/profiler.db`
+- `connection.py` — `get_connection(db_path)` with WAL mode, foreign keys enabled. Default path: `~/.agent-vis/profiler.db`
 - `repository.py` — `SessionRepository` CRUD: tracked file management, session upsert/query with sort/pagination, statistics JSON serialization via `model_dump_json()` / `model_validate_json()`
 - `sync.py` — `SyncEngine` with incremental detection (mtime + file_size comparison), returns `SyncResult(parsed, skipped, errors)`
 
-### `claude_vis/formatters/`
+### `agent_vis/formatters/`
 
 Multi-level output formatters for CLI human-readable output.
 
 - `human.py` — `OutputLevel` IntEnum (SUMMARY=1, STANDARD=2, DETAILED=3), `format_session_stats(stats, session_id, level)` public API. Level 1 is single-line, Level 2 is the standard `--human` output, Level 3 adds all tools, all bash commands, and compact events.
 
-### `claude_vis/api/`
+### `agent_vis/api/`
 
 FastAPI application layer.
 
 - `app.py` — FastAPI app with lifespan (DB initialization + auto-sync), endpoints, SPA catch-all fallback
-- `config.py` — `Settings` class (env var prefix `CLAUDE_VIS_`), `@lru_cache get_settings()`. Includes `db_path` setting.
+- `config.py` — `Settings` class (env var prefix `AGENT_VIS_`), `@lru_cache get_settings()`. Includes `db_path` setting.
 - `service.py` — `SessionService`: reads from SQLite with in-memory fallback. Provides paginated listing with sort, on-demand session detail parsing, statistics lookup.
   - auto-syncs mixed local sources (`~/.claude/projects` + `~/.codex/sessions`) using parser registry
 - `models.py` — API response models (`SessionSummary`, `SessionListResponse`, `SyncStatusResponse`, `ErrorResponse`)
@@ -81,7 +81,7 @@ Endpoints:
 - `GET /api/sync/status` — sync database status
 - `GET /health` — health check
 
-### `claude_vis/cli/`
+### `agent_vis/cli/`
 
 Click CLI entry point (`main.py`). Five subcommands:
 
@@ -91,7 +91,7 @@ Click CLI entry point (`main.py`). Five subcommands:
 - `stats` — query session statistics from the database
 - `analyze` — parses session, builds prompt via `build_analyze_prompt()`, invokes `claude -p` subprocess, writes Markdown report
 
-### `claude_vis/prompts/`
+### `agent_vis/prompts/`
 
 Prompt templates for the `analyze` command.
 
@@ -121,15 +121,15 @@ Pytest test suite. Fixtures in `conftest.py` (composable). Test data in `tests/f
 
 ## Entry Points
 
-- **CLI**: `claude_vis/cli/main.py:main` (registered as `claude-vis` in pyproject.toml)
-- **API**: `claude_vis/api/app.py:app` (FastAPI ASGI application, started by uvicorn)
+- **CLI**: `agent_vis/cli/main.py:main` (registered as `agent-vis` in pyproject.toml)
+- **API**: `agent_vis/api/app.py:app` (FastAPI ASGI application, started by uvicorn)
 - **Frontend**: `frontend/src/main.tsx` (React entry, bundled by Vite)
 
 ## Cross-Cutting Concerns
 
 - **Error handling**: Custom `SessionParseError` in `exceptions.py` for parse failures. CLI catches and reports to stderr. API uses global exception handler returning `ErrorResponse`.
-- **Configuration**: `pydantic-settings` with `CLAUDE_VIS_` env var prefix. CLI flags override settings.
-- **Persistence**: SQLite with WAL mode at `~/.claude-vis/profiler.db`. Incremental sync via mtime + file_size comparison. Statistics stored as JSON blobs.
+- **Configuration**: `pydantic-settings` with `AGENT_VIS_` env var prefix. CLI flags override settings.
+- **Persistence**: SQLite with WAL mode at `~/.agent-vis/profiler.db`. Incremental sync via mtime + file_size comparison. Statistics stored as JSON blobs.
 - **Caching**: API service reads from SQLite, falls back to in-memory parsing. React Query caches API responses client-side.
 - **Serialization**: Pydantic `model_dump(mode="json")` for API responses and CLI JSON output. `model_dump_json()` / `model_validate_json()` for DB statistics storage.
 

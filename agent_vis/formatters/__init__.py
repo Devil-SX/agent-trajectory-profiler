@@ -1,3 +1,5 @@
-"""Compatibility wrapper for canonical namespace."""
+"""Output formatters for session statistics."""
 
-from claude_vis.formatters import *  # noqa: F401,F403
+from agent_vis.formatters.human import OutputLevel, format_session_stats
+
+__all__ = ["OutputLevel", "format_session_stats"]

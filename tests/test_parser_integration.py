@@ -8,7 +8,7 @@ session file handling, and integration with the statistics calculator.
 import json
 from pathlib import Path
 
-from claude_vis.parsers import (
+from agent_vis.parsers import (
     SessionParseError,
     parse_session_directory,
     parse_session_file,

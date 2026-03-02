@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from claude_vis.parsers import (
+from agent_vis.parsers import (
     SessionParseError,
     parse_session_directory,
     parse_session_file,
 )
-from claude_vis.parsers.session_parser import (
+from agent_vis.parsers.session_parser import (
     calculate_session_statistics,
     extract_session_metadata,
     find_session_files,

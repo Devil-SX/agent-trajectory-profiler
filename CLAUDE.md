@@ -29,27 +29,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync && ./install.sh
 
 # Run dev server (backend + auto-built frontend)
-claude-vis serve --reload                    # Auto-finds available port if 8000 is taken
-claude-vis serve --reload --port 8080        # Use specific port (fails if taken)
+agent-vis serve --reload                    # Auto-finds available port if 8000 is taken
+agent-vis serve --reload --port 8080        # Use specific port (fails if taken)
 
 # Frontend dev (separate terminal)
 cd frontend && npm install && npm run dev    # Auto-finds available port if 5173 is taken
 
 # CLI usage
-claude-vis parse --file session.jsonl --human            # Human-readable stats
-claude-vis parse --file session.jsonl --human --level 1  # One-line summary
-claude-vis parse --file session.jsonl --human --level 3  # Detailed output
-claude-vis parse --file session.jsonl                    # JSON output
-claude-vis sync                                          # Incremental sync to SQLite
-claude-vis sync --force                                  # Force full re-parse
-claude-vis stats --level 1                               # DB query: all sessions summary
-claude-vis stats --session-id abc123 --level 3           # DB query: one session detailed
-claude-vis analyze --file session.jsonl --lang cn        # AI analysis report
+agent-vis parse --file session.jsonl --human            # Human-readable stats
+agent-vis parse --file session.jsonl --human --level 1  # One-line summary
+agent-vis parse --file session.jsonl --human --level 3  # Detailed output
+agent-vis parse --file session.jsonl                    # JSON output
+agent-vis sync                                          # Incremental sync to SQLite
+agent-vis sync --force                                  # Force full re-parse
+agent-vis stats --level 1                               # DB query: all sessions summary
+agent-vis stats --session-id abc123 --level 3           # DB query: one session detailed
+agent-vis analyze --file session.jsonl --lang cn        # AI analysis report
 
 # Python tests
 uv run pytest                                       # All tests
 uv run pytest tests/test_parser.py -v               # Single file
-uv run pytest --cov=claude_vis tests/               # With coverage
+uv run pytest --cov=agent_vis tests/               # With coverage
 
 # Frontend E2E tests
 cd frontend && npm run test:e2e
@@ -67,12 +67,12 @@ cd frontend && npm run format    # Prettier
 
 - Python: type hints required everywhere, `ruff` + `black` (100 char lines), Pydantic v2 models
 - Private functions: `_leading_underscore()`
-- Custom exceptions: `SessionParseError` in `claude_vis/exceptions.py` (not generic Exception)
+- Custom exceptions: `SessionParseError` in `agent_vis/exceptions.py` (not generic Exception)
 - CLI error output goes to stderr (`click.echo(..., err=True)`), data to stdout
 - Test fixtures in `tests/conftest.py`, composable; test data dir `tests/fixtures/` is gitignored
 - Frontend: strict TypeScript, named exports, props interfaces per component, React Query for all API calls
 - Commits: conventional commits (`feat:`, `fix:`, `refactor:`, etc.)
 - MCP tools named `mcp__<server>__<method>` are grouped into `<server> (MCP)` for aggregated statistics
 - Parser logic lives in `parsers/claude_code.py`; `session_parser.py` is a backward-compatibility shim
-- SQLite DB at `~/.claude-vis/profiler.db` (WAL mode); system falls back to in-memory when DB unavailable
+- SQLite DB at `~/.agent-vis/profiler.db` (WAL mode); system falls back to in-memory when DB unavailable
 - **VS Code Tasks**: When adding new commands or changing server startup, update `.vscode/tasks.json` to keep IDE launch configurations in sync

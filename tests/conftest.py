@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from claude_vis.api.app import app
-from claude_vis.api.config import Settings, get_settings
-from claude_vis.api.service import SessionService
+from agent_vis.api.app import app
+from agent_vis.api.config import Settings, get_settings
+from agent_vis.api.service import SessionService
 
 
 @pytest.fixture
@@ -422,7 +422,7 @@ def test_client(
     from importlib import import_module
     from unittest.mock import patch
 
-    api_app_module = import_module("claude_vis.api.app")
+    api_app_module = import_module("agent_vis.api.app")
 
     # Patch get_settings at the module level so the lifespan picks it up.
     # dependency_overrides only works for FastAPI Depends(), not direct calls.

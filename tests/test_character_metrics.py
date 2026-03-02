@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from claude_vis.parsers.session_parser import (
+from agent_vis.parsers.session_parser import (
     calculate_session_statistics,
     parse_jsonl_file,
     parse_session_file,

@@ -1,6 +1,6 @@
 # Output Levels (`--human --level`)
 
-The `claude-vis parse --human` command supports three verbosity levels that control how much detail is displayed. Select a level with `--level <1|2|3>` (default: 2).
+The `agent-vis parse --human` command supports three verbosity levels that control how much detail is displayed. Select a level with `--level <1|2|3>` (default: 2).
 
 | Level | Name     | Use case                                      |
 |-------|----------|-----------------------------------------------|
@@ -213,19 +213,19 @@ Table of every auto-compact (context summarization) event detected in the sessio
 
 ```bash
 # One-line summary
-claude-vis parse --file session.jsonl --human --level 1
+agent-vis parse --file session.jsonl --human --level 1
 
 # Standard report (default)
-claude-vis parse --file session.jsonl --human
-claude-vis parse --file session.jsonl --human --level 2
+agent-vis parse --file session.jsonl --human
+agent-vis parse --file session.jsonl --human --level 2
 
 # Full detail with all tools, all commands, compact events
-claude-vis parse --file session.jsonl --human --level 3
+agent-vis parse --file session.jsonl --human --level 3
 ```
 
-The same levels apply to `claude-vis stats` when used with `--human`:
+The same levels apply to `agent-vis stats` when used with `--human`:
 
 ```bash
-claude-vis stats --level 1                              # All sessions, one-line each
-claude-vis stats --session-id abc123 --level 3          # Single session, full detail
+agent-vis stats --level 1                              # All sessions, one-line each
+agent-vis stats --session-id abc123 --level 3          # Single session, full detail
 ```

@@ -1,5 +1,5 @@
 """
-Unit tests for Pydantic models in claude_vis.models.
+Unit tests for Pydantic models in agent_vis.models.
 
 Tests cover model validation, type checking, and business logic.
 """
@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from claude_vis.models import (
+from agent_vis.models import (
     ClaudeMessage,
     MessageRecord,
     MessageRole,

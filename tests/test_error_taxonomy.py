@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from claude_vis.parsers.error_taxonomy import (
+from agent_vis.parsers.error_taxonomy import (
     ERROR_TAXONOMY_VERSION,
     UNCATEGORIZED_ERROR,
     classify_tool_error,

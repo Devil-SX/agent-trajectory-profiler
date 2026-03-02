@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from claude_vis.api.app import app
-from claude_vis.api.config import Settings, get_settings
-from claude_vis.api.service import SessionService
+from agent_vis.api.app import app
+from agent_vis.api.config import Settings, get_settings
+from agent_vis.api.service import SessionService
 
 
 class TestAPIHealthEndpoints:
@@ -133,7 +133,7 @@ class TestSessionListAPI:
         from importlib import import_module
         from unittest.mock import patch
 
-        api_app_module = import_module("claude_vis.api.app")
+        api_app_module = import_module("agent_vis.api.app")
         _ = sample_codex_rollout_file  # Ensure Codex fixture file is created.
         settings = Settings(
             session_path=multi_session_directory,
@@ -418,7 +418,7 @@ class TestAnalyticsAPI:
         from importlib import import_module
         from unittest.mock import patch
 
-        api_app_module = import_module("claude_vis.api.app")
+        api_app_module = import_module("agent_vis.api.app")
         _ = sample_codex_rollout_file
         settings = Settings(
             session_path=multi_session_directory,

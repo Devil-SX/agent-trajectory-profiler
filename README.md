@@ -49,10 +49,9 @@ uv sync
 ./install.sh
 ```
 
-After installation, both commands are available globally:
+After installation, this command is available globally:
 
-- `agent-vis` (canonical)
-- `claude-vis` (legacy compatibility alias)
+- `agent-vis`
 
 To uninstall:
 ```bash
@@ -67,15 +66,13 @@ cd agent-trajectory-profiler
 uv sync
 ```
 
-Use `uv run agent-vis` for new scripts (recommended).  
-`uv run claude-vis` remains supported as a compatibility alias.
+Use `uv run agent-vis` in local scripts.
 
-## Migration Notes (`claude_vis` -> `agent_vis`)
+## Breaking Change in 1.0.0
 
-- Canonical Python package namespace is now `agent_vis`.
-- Canonical CLI command is now `agent-vis`.
-- Legacy `claude_vis` imports and `claude-vis` command remain supported during migration.
-- Deprecation path: `claude_vis` / `claude-vis` remain backward-compatible throughout `0.x`; removal (if any) will only happen in a future major release with explicit release notes.
+- Legacy `claude_vis` Python package imports were removed.
+- Legacy `claude-vis` CLI command alias was removed.
+- Canonical namespace and command are now `agent_vis` and `agent-vis`.
 
 ## Usage
 
@@ -84,7 +81,7 @@ Use `uv run agent-vis` for new scripts (recommended).
 Start a web server with an interactive visualization UI.
 
 ```bash
-claude-vis serve
+agent-vis serve
 ```
 
 Opens at `http://localhost:8000` with:
@@ -97,10 +94,10 @@ Opens at `http://localhost:8000` with:
 **Options:**
 
 ```bash
-claude-vis serve --port 8080                    # custom port
-claude-vis serve --path /path/to/sessions       # custom session directory
-claude-vis serve --single-session abc123        # load one session only
-claude-vis serve --reload --log-level debug     # dev mode with hot reload
+agent-vis serve --port 8080                    # custom port
+agent-vis serve --path /path/to/sessions       # custom session directory
+agent-vis serve --single-session abc123        # load one session only
+agent-vis serve --reload --log-level debug     # dev mode with hot reload
 ```
 
 Frontend is auto-built on first run (requires Node.js). API docs available at `/docs`.
@@ -110,7 +107,7 @@ Frontend is auto-built on first run (requires Node.js). API docs available at `/
 Parse session data and output structured JSON — no server, no browser needed.
 
 ```bash
-claude-vis parse
+agent-vis parse
 ```
 
 Reads all `.jsonl` files from `~/.claude/projects/` and writes JSON to stdout.
@@ -118,17 +115,17 @@ Reads all `.jsonl` files from `~/.claude/projects/` and writes JSON to stdout.
 **Options:**
 
 ```bash
-claude-vis parse --file session.jsonl --human      # human-readable statistics
-claude-vis parse --file session.jsonl               # JSON to stdout
-claude-vis parse --output sessions.json             # write to file
-claude-vis parse --compact | jq '.sessions[0]'      # pipe to jq
+agent-vis parse --file session.jsonl --human      # human-readable statistics
+agent-vis parse --file session.jsonl               # JSON to stdout
+agent-vis parse --output sessions.json             # write to file
+agent-vis parse --compact | jq '.sessions[0]'      # pipe to jq
 ```
 
 The `--level` flag controls detail depth: `1` = one-line summary, `2` = standard (default), `3` = detailed.
 
 ```bash
-claude-vis parse --file session.jsonl --human --level 1    # one-liner per session
-claude-vis parse --file session.jsonl --human --level 3    # all tools, all bash cmds, compact events
+agent-vis parse --file session.jsonl --human --level 1    # one-liner per session
+agent-vis parse --file session.jsonl --human --level 3    # all tools, all bash cmds, compact events
 ```
 
 This mode is useful for:
@@ -139,12 +136,12 @@ This mode is useful for:
 
 ### Mode 3: Incremental Sync (`sync`)
 
-Scan session directories, detect new/changed files by mtime + size, parse them, and persist results into an SQLite database (`~/.claude-vis/profiler.db`).
+Scan session directories, detect new/changed files by mtime + size, parse them, and persist results into an SQLite database (`~/.agent-vis/profiler.db`).
 
 ```bash
-claude-vis sync                                        # scan default directory
-claude-vis sync --path ~/.claude/projects/my-proj/     # specific directory
-claude-vis sync --force                                # re-parse everything
+agent-vis sync                                        # scan default directory
+agent-vis sync --path ~/.claude/projects/my-proj/     # specific directory
+agent-vis sync --force                                # re-parse everything
 ```
 
 ### Mode 4: Database Stats (`stats`)
@@ -152,9 +149,9 @@ claude-vis sync --force                                # re-parse everything
 Query the SQLite database to view session statistics without re-parsing.
 
 ```bash
-claude-vis stats --level 1                            # one-liner summary of all sessions
-claude-vis stats --session-id abc123 --level 3        # full detail for one session
-claude-vis stats --sort-by total_tokens --limit 10    # top 10 by token usage
+agent-vis stats --level 1                            # one-liner summary of all sessions
+agent-vis stats --session-id abc123 --level 3        # full detail for one session
+agent-vis stats --sort-by total_tokens --limit 10    # top 10 by token usage
 ```
 
 ### Mode 5: AI Analysis (`analyze`)
@@ -162,7 +159,7 @@ claude-vis stats --sort-by total_tokens --limit 10    # top 10 by token usage
 Invoke Claude to read the raw trajectory and produce an actionable Markdown report with bottleneck analysis, automation degree rating, and improvement recommendations.
 
 ```bash
-claude-vis analyze --file session.jsonl
+agent-vis analyze --file session.jsonl
 ```
 
 Requires `claude` CLI in PATH.
@@ -170,9 +167,9 @@ Requires `claude` CLI in PATH.
 **Options:**
 
 ```bash
-claude-vis analyze --file session.jsonl --lang cn          # Chinese report
-claude-vis analyze --file session.jsonl --model sonnet     # specify model
-claude-vis analyze --file session.jsonl -o report.md       # custom output path
+agent-vis analyze --file session.jsonl --lang cn          # Chinese report
+agent-vis analyze --file session.jsonl --model sonnet     # specify model
+agent-vis analyze --file session.jsonl -o report.md       # custom output path
 ```
 
 Output defaults to `output/<session_id>_analysis.md`.
@@ -229,7 +226,7 @@ The category with the largest share of active time is reported as the bottleneck
 
 ```bash
 # Backend with hot reload
-claude-vis serve --reload --log-level debug
+agent-vis serve --reload --log-level debug
 
 # Frontend dev server (separate terminal)
 cd frontend && npm run dev

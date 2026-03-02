@@ -1,8 +1,3 @@
-"""Agent Trajectory Visualizer.
+"""Agent Trajectory Profiler package."""
 
-Canonical package namespace. Legacy imports via ``claude_vis`` remain supported.
-"""
-
-from claude_vis import __version__
-
-__all__ = ["__version__"]
+__version__ = "1.0.0"

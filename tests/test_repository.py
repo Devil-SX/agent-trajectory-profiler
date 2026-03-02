@@ -4,9 +4,9 @@ Tests for SessionRepository CRUD operations.
 
 import pytest
 
-from claude_vis.db.connection import get_connection
-from claude_vis.db.repository import SessionRepository
-from claude_vis.models import SessionStatistics, ToolCallStatistics
+from agent_vis.db.connection import get_connection
+from agent_vis.db.repository import SessionRepository
+from agent_vis.models import SessionStatistics, ToolCallStatistics
 
 
 @pytest.fixture

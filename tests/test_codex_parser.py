@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from claude_vis.parsers import get_parser
-from claude_vis.parsers.codex import (
+from agent_vis.parsers import get_parser
+from agent_vis.parsers.codex import (
     CodexParser,
     find_codex_session_files,
     parse_codex_jsonl_file,

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from claude_vis.parsers import parse_session_file
+from agent_vis.parsers import parse_session_file
 
 
 class TestStatisticsCalculationAccuracy:
@@ -256,7 +256,7 @@ class TestStatisticsEdgeCases:
         # Note: We can't actually create a valid empty session
         # since parse_session_file requires at least one message
         # This test verifies the error handling
-        from claude_vis.parsers import SessionParseError
+        from agent_vis.parsers import SessionParseError
 
         empty_file = temp_session_dir / "empty.jsonl"
         empty_file.touch()
