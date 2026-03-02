@@ -405,6 +405,59 @@ export async function setupMockApi(page: Page) {
     },
   };
 
+  const frontendPreferences = {
+    locale: 'en',
+    theme_mode: 'system',
+    density_mode: 'comfortable',
+    session_view_mode: 'table',
+    session_aggregation_mode: 'logical',
+    updated_at: null as string | null,
+  };
+
+  await page.route(/\/api\/state\/frontend-preferences(?:\?.*)?$/, async (route) => {
+    const method = route.request().method();
+    if (method === 'PUT') {
+      const patch = (await route.request().postDataJSON()) as Record<string, unknown> | null;
+      if (patch && typeof patch === 'object') {
+        if (patch.locale === 'en' || patch.locale === 'zh-CN') {
+          frontendPreferences.locale = patch.locale;
+        }
+        if (
+          patch.theme_mode === 'system' ||
+          patch.theme_mode === 'light' ||
+          patch.theme_mode === 'dark'
+        ) {
+          frontendPreferences.theme_mode = patch.theme_mode;
+        }
+        if (patch.density_mode === 'comfortable' || patch.density_mode === 'compact') {
+          frontendPreferences.density_mode = patch.density_mode;
+        }
+        if (patch.session_view_mode === 'cards' || patch.session_view_mode === 'table') {
+          frontendPreferences.session_view_mode = patch.session_view_mode;
+        }
+        if (
+          patch.session_aggregation_mode === 'logical' ||
+          patch.session_aggregation_mode === 'physical'
+        ) {
+          frontendPreferences.session_aggregation_mode = patch.session_aggregation_mode;
+        }
+      }
+      frontendPreferences.updated_at = '2026-02-27T02:00:00.000Z';
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(frontendPreferences),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(frontendPreferences),
+    });
+  });
+
   // Mock sessions list endpoint
   await page.route(/\/api\/sessions(?:\?.*)?$/, async (route) => {
     await route.fulfill({

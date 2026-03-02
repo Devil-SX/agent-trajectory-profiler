@@ -103,6 +103,27 @@ class SyncStatusResponse(BaseModel):
     last_sync: SyncRunDetail | None = None
 
 
+class FrontendPreferences(BaseModel):
+    """Frontend preference state persisted under ~/.agent-vis/state."""
+
+    locale: Literal["en", "zh-CN"] = "en"
+    theme_mode: Literal["system", "light", "dark"] = "system"
+    density_mode: Literal["comfortable", "compact"] = "comfortable"
+    session_view_mode: Literal["cards", "table"] = "table"
+    session_aggregation_mode: Literal["logical", "physical"] = "logical"
+    updated_at: str | None = None
+
+
+class FrontendPreferencesUpdate(BaseModel):
+    """Partial update payload for frontend preference state."""
+
+    locale: Literal["en", "zh-CN"] | None = None
+    theme_mode: Literal["system", "light", "dark"] | None = None
+    density_mode: Literal["comfortable", "compact"] | None = None
+    session_view_mode: Literal["cards", "table"] | None = None
+    session_aggregation_mode: Literal["logical", "physical"] | None = None
+
+
 class ErrorResponse(BaseModel):
     """Standard error response model."""
 

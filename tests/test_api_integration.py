@@ -5,6 +5,7 @@ Tests cover API endpoints, service layer integration, and error handling
 with test client for realistic request/response testing.
 """
 
+import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -92,6 +93,104 @@ class TestSyncAPI:
         assert "total_files_scanned" in data
         assert "total_file_size_bytes" in data
         assert "ecosystems" in data
+
+
+class TestFrontendStateAPI:
+    """Tests for frontend preference state endpoints."""
+
+    def test_frontend_preferences_defaults_and_update(
+        self,
+        tmp_path: Path,
+        multi_session_directory: Path,
+    ) -> None:
+        from importlib import import_module
+        from unittest.mock import patch
+
+        api_app_module = import_module("agent_vis.api.app")
+        codex_empty = tmp_path / "codex_empty"
+        codex_empty.mkdir(parents=True, exist_ok=True)
+
+        settings = Settings(
+            session_path=multi_session_directory,
+            codex_session_path=codex_empty,
+            db_path=tmp_path / "pref_state.db",
+            api_host="127.0.0.1",
+            api_port=8000,
+            api_reload=False,
+            log_level="INFO",
+            cors_origins=["http://localhost:5173"],
+        )
+
+        get_settings.cache_clear()
+        try:
+            with patch.object(api_app_module, "get_settings", return_value=settings):
+                with TestClient(app) as client:
+                    default_response = client.get("/api/state/frontend-preferences")
+                    assert default_response.status_code == 200
+                    default_payload = default_response.json()
+                    assert default_payload["locale"] == "en"
+                    assert default_payload["theme_mode"] == "system"
+                    assert default_payload["density_mode"] == "comfortable"
+                    assert default_payload["session_view_mode"] == "table"
+                    assert default_payload["session_aggregation_mode"] == "logical"
+                    assert default_payload["updated_at"] is None
+
+                    update_response = client.put(
+                        "/api/state/frontend-preferences",
+                        json={
+                            "locale": "zh-CN",
+                            "theme_mode": "dark",
+                            "density_mode": "compact",
+                            "session_view_mode": "cards",
+                            "session_aggregation_mode": "physical",
+                        },
+                    )
+                    assert update_response.status_code == 200
+                    updated_payload = update_response.json()
+                    assert updated_payload["locale"] == "zh-CN"
+                    assert updated_payload["theme_mode"] == "dark"
+                    assert updated_payload["density_mode"] == "compact"
+                    assert updated_payload["session_view_mode"] == "cards"
+                    assert updated_payload["session_aggregation_mode"] == "physical"
+                    assert updated_payload["updated_at"] is not None
+
+                    readback = client.get("/api/state/frontend-preferences")
+                    assert readback.status_code == 200
+                    assert readback.json()["locale"] == "zh-CN"
+
+            state_dir = tmp_path / "state"
+            state_file = state_dir / "frontend-preferences.json"
+            assert state_dir.exists()
+            assert state_file.exists()
+            saved = json.loads(state_file.read_text(encoding="utf-8"))
+            assert saved["session_view_mode"] == "cards"
+            assert saved["session_aggregation_mode"] == "physical"
+        finally:
+            get_settings.cache_clear()
+
+
+class TestSettingsCompatibility:
+    """Backward-compatibility tests for AGENT_VIS_* environment settings."""
+
+    def test_env_var_configuration_behavior_is_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("AGENT_VIS_API_PORT", "9123")
+        monkeypatch.setenv("AGENT_VIS_API_HOST", "127.0.0.1")
+        monkeypatch.setenv("AGENT_VIS_LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("AGENT_VIS_INACTIVITY_THRESHOLD", "1234")
+        monkeypatch.setenv("AGENT_VIS_MODEL_TIMEOUT_THRESHOLD", "321")
+
+        get_settings.cache_clear()
+        try:
+            settings = get_settings()
+            assert settings.api_port == 9123
+            assert settings.api_host == "127.0.0.1"
+            assert settings.log_level == "DEBUG"
+            assert settings.inactivity_threshold == 1234
+            assert settings.model_timeout_threshold == 321
+        finally:
+            get_settings.cache_clear()
 
 
 class TestSessionListAPI:

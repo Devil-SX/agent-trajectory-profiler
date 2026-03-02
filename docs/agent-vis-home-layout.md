@@ -18,7 +18,7 @@ This document defines the canonical local directory layout for `~/.agent-vis`, i
 │   ├── settings.toml
 │   └── telegram.toml
 ├── state/
-│   ├── frontend-state.json
+│   ├── frontend-preferences.json
 │   ├── sync-state.json
 │   └── report-state.json
 ├── data/
@@ -47,7 +47,7 @@ Notes:
 
 - `config/settings.toml`: user-level persistent settings (paths, UI defaults, feature toggles).
 - `config/telegram.toml`: Telegram integration credentials and delivery settings.
-- `state/frontend-state.json`: frontend preference/state snapshot (for example locale/theme/view mode).
+- `state/frontend-preferences.json`: frontend preference snapshot (for example locale/theme/density/view mode).
 - `state/sync-state.json`: sync runtime checkpoints and last sync metadata.
 - `state/report-state.json`: reporting checkpoint (for example last report time/window).
 - `data/profiler.db`: canonical parsed-session database.

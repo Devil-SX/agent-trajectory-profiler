@@ -8,6 +8,8 @@ import type {
   AnalyticsInterval,
   AnalyticsOverviewResponse,
   AnalyticsTimeseriesResponse,
+  FrontendPreferences,
+  FrontendPreferencesUpdate,
   ProjectComparisonResponse,
   ProjectSwimlaneResponse,
   SyncRunDetail,
@@ -427,6 +429,44 @@ export async function triggerSync(force: boolean = false): Promise<SyncRunDetail
   } catch (error) {
     if (import.meta.env.DEV) {
       console.error('Failed to trigger sync:', error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch persisted frontend preferences from local state storage.
+ */
+export async function fetchFrontendPreferences(): Promise<FrontendPreferences> {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/state/frontend-preferences`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to fetch frontend preferences:', error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Persist partial frontend preference updates.
+ */
+export async function updateFrontendPreferences(
+  payload: FrontendPreferencesUpdate
+): Promise<FrontendPreferences> {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/state/frontend-preferences`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to update frontend preferences:', error);
     }
     throw error;
   }

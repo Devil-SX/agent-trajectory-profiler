@@ -23,6 +23,8 @@ from agent_vis.api.models import (
     AnalyticsOverviewResponse,
     AnalyticsTimeseriesResponse,
     ErrorResponse,
+    FrontendPreferences,
+    FrontendPreferencesUpdate,
     ProjectComparisonResponse,
     ProjectSwimlaneResponse,
     SessionDetailResponse,
@@ -531,6 +533,36 @@ async def run_sync(
 
     detail = await session_service.trigger_sync(force=payload.force)
     return SyncRunDetail(**detail)
+
+
+@app.get(
+    "/api/state/frontend-preferences",
+    response_model=FrontendPreferences,
+    tags=["State"],
+    summary="Get persisted frontend preferences",
+    description=(
+        "Load frontend locale/theme/density/view preferences from local ~/.agent-vis state."
+    ),
+)
+async def get_frontend_preferences() -> FrontendPreferences:
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return session_service.get_frontend_preferences()
+
+
+@app.put(
+    "/api/state/frontend-preferences",
+    response_model=FrontendPreferences,
+    tags=["State"],
+    summary="Update persisted frontend preferences",
+    description="Persist partial frontend preferences to local ~/.agent-vis state storage.",
+)
+async def update_frontend_preferences(
+    payload: FrontendPreferencesUpdate,
+) -> FrontendPreferences:
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return session_service.update_frontend_preferences(payload)
 
 
 @app.exception_handler(Exception)

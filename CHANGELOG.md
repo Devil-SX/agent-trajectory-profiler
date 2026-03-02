@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - New control-plane file statistics in analytics overview include tracked-file parse status counts, tracked/trajectory byte totals, and last parsed timestamp.
 - New standalone local-state specification document for `~/.agent-vis` (`docs/agent-vis-home-layout.md`) covering directory tree, naming rules, permission guidance, and security notes (explicitly excluding migration strategy).
 - New capability-manifest specification document (`docs/agent-capability-manifest.md`) defining schema fields, compatibility/versioning rules, Codex/Claude examples, and ecosystem onboarding checklist.
+- Frontend state persistence API: `GET/PUT /api/state/frontend-preferences` with local file storage at `~/.agent-vis/state/frontend-preferences.json` (locale/theme/density/session view/aggregation).
+- One-time frontend migration flow from legacy `localStorage` keys to backend-backed state storage, including post-migration key cleanup and reload persistence.
+- Regression coverage for state unification:
+  - backend API integration tests for frontend preference read/write, directory initialization, and env compatibility (`tests/test_api_integration.py`)
+  - frontend smoke test for localStorage-to-state migration and persisted reload behavior (`frontend/tests/preferences-migration.spec.ts`).
 - Regression coverage for Codex logical-session behavior:
   - parser lineage extraction test (`tests/test_codex_parser.py`)
   - API logical-vs-physical list behavior test (`tests/test_api_integration.py`)

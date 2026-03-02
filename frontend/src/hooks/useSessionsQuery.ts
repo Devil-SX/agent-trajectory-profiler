@@ -14,11 +14,13 @@ import {
   fetchAnalyticsTimeseries,
   fetchProjectComparison,
   fetchProjectSwimlane,
+  fetchFrontendPreferences,
   fetchSyncStatus,
   fetchSessions,
   fetchSessionDetail,
   fetchSessionStatistics,
   triggerSync,
+  updateFrontendPreferences,
 } from '../api/sessions';
 import type {
   AnalyticsDimension,
@@ -26,6 +28,8 @@ import type {
   AnalyticsInterval,
   AnalyticsOverviewResponse,
   AnalyticsTimeseriesResponse,
+  FrontendPreferences,
+  FrontendPreferencesUpdate,
   ProjectComparisonResponse,
   ProjectSwimlaneResponse,
   SyncRunDetail,
@@ -82,6 +86,7 @@ export const sessionKeys = {
       { interval, startDate, endDate, projectLimit },
     ] as const,
   syncStatus: () => [...sessionKeys.all, 'sync-status'] as const,
+  frontendPreferences: () => [...sessionKeys.all, 'frontend-preferences'] as const,
 };
 
 /**
@@ -229,6 +234,31 @@ export function useRunSyncMutation() {
         queryClient.invalidateQueries({ queryKey: sessionKeys.syncStatus() }),
         queryClient.invalidateQueries({ queryKey: sessionKeys.lists() }),
       ]);
+    },
+  });
+}
+
+/**
+ * Hook to fetch persisted frontend preferences.
+ */
+export function useFrontendPreferencesQuery(): UseQueryResult<FrontendPreferences, Error> {
+  return useQuery({
+    queryKey: sessionKeys.frontendPreferences(),
+    queryFn: fetchFrontendPreferences,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Hook to persist frontend preferences.
+ */
+export function useUpdateFrontendPreferencesMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<FrontendPreferences, Error, FrontendPreferencesUpdate>({
+    mutationFn: updateFrontendPreferences,
+    onSuccess: (data) => {
+      queryClient.setQueryData(sessionKeys.frontendPreferences(), data);
     },
   });
 }

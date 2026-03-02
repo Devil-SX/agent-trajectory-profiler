@@ -1,9 +1,20 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import './App.css';
 import { SessionBrowser } from './components/SessionBrowser';
 import { useI18n } from './i18n';
 import type { Locale } from './i18n';
+import {
+  useFrontendPreferencesQuery,
+  useUpdateFrontendPreferencesMutation,
+} from './hooks/useSessionsQuery';
+import type {
+  DensityMode,
+  FrontendPreferencesUpdate,
+  SessionAggregationMode,
+  SessionViewMode,
+  ThemeMode,
+} from './types/session';
 
 // Lazy load heavy components for code splitting
 const MessageTimeline = lazy(() => import('./components/MessageTimeline').then(m => ({ default: m.MessageTimeline })));
@@ -13,9 +24,7 @@ const AdvancedAnalytics = lazy(() => import('./components/AdvancedAnalytics').th
 
 type PrimaryView = 'session-detail' | 'cross-session';
 type SessionDetailTab = 'timeline' | 'statistics';
-type ThemeMode = 'system' | 'light' | 'dark';
 type ResolvedTheme = 'light' | 'dark';
-type DensityMode = 'comfortable' | 'compact';
 
 interface RouteState {
   view: PrimaryView;
@@ -23,36 +32,72 @@ interface RouteState {
   tab: SessionDetailTab;
 }
 
-const THEME_MODE_STORAGE_KEY = 'agent-vis:theme-mode';
-const DENSITY_MODE_STORAGE_KEY = 'agent-vis:density-mode';
-
-function readInitialThemeMode(): ThemeMode {
-  if (typeof window === 'undefined') {
-    return 'system';
-  }
-  const saved = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
-  if (saved === 'light' || saved === 'dark' || saved === 'system') {
-    return saved;
-  }
-  return 'system';
-}
-
-function readInitialDensityMode(): DensityMode {
-  if (typeof window === 'undefined') {
-    return 'comfortable';
-  }
-  const saved = window.localStorage.getItem(DENSITY_MODE_STORAGE_KEY);
-  if (saved === 'compact' || saved === 'comfortable') {
-    return saved;
-  }
-  return 'comfortable';
-}
+const LEGACY_LOCALE_STORAGE_KEY = 'agent-vis:locale';
+const LEGACY_THEME_MODE_STORAGE_KEY = 'agent-vis:theme-mode';
+const LEGACY_DENSITY_MODE_STORAGE_KEY = 'agent-vis:density-mode';
+const LEGACY_SESSION_VIEW_MODE_STORAGE_KEY = 'agent-vis:session-browser:view-mode';
+const LEGACY_SESSION_AGGREGATION_MODE_STORAGE_KEY = 'agent-vis:session-browser:aggregation-mode';
 
 function readSystemThemePreference(): boolean {
   if (typeof window === 'undefined') {
     return false;
   }
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+interface LegacyPreferences {
+  locale?: Locale;
+  theme_mode?: ThemeMode;
+  density_mode?: DensityMode;
+  session_view_mode?: SessionViewMode;
+  session_aggregation_mode?: SessionAggregationMode;
+}
+
+function readLegacyPreferences(): LegacyPreferences {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const locale = window.localStorage.getItem(LEGACY_LOCALE_STORAGE_KEY);
+  const themeMode = window.localStorage.getItem(LEGACY_THEME_MODE_STORAGE_KEY);
+  const densityMode = window.localStorage.getItem(LEGACY_DENSITY_MODE_STORAGE_KEY);
+  const sessionViewMode = window.localStorage.getItem(LEGACY_SESSION_VIEW_MODE_STORAGE_KEY);
+  const sessionAggregationMode = window.localStorage.getItem(
+    LEGACY_SESSION_AGGREGATION_MODE_STORAGE_KEY
+  );
+
+  return {
+    locale: locale === 'en' || locale === 'zh-CN' ? locale : undefined,
+    theme_mode:
+      themeMode === 'system' || themeMode === 'light' || themeMode === 'dark'
+        ? themeMode
+        : undefined,
+    density_mode:
+      densityMode === 'comfortable' || densityMode === 'compact'
+        ? densityMode
+        : undefined,
+    session_view_mode:
+      sessionViewMode === 'cards' || sessionViewMode === 'table'
+        ? sessionViewMode
+        : undefined,
+    session_aggregation_mode:
+      sessionAggregationMode === 'logical' || sessionAggregationMode === 'physical'
+        ? sessionAggregationMode
+        : undefined,
+  };
+}
+
+function clearLegacyPreferenceKeys(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  [
+    LEGACY_LOCALE_STORAGE_KEY,
+    LEGACY_THEME_MODE_STORAGE_KEY,
+    LEGACY_DENSITY_MODE_STORAGE_KEY,
+    LEGACY_SESSION_VIEW_MODE_STORAGE_KEY,
+    LEGACY_SESSION_AGGREGATION_MODE_STORAGE_KEY,
+  ].forEach((key) => window.localStorage.removeItem(key));
 }
 
 function normalizeDetailTab(value: string | null): SessionDetailTab {
@@ -112,18 +157,36 @@ function buildRouteUrl(route: RouteState): string {
 
 function App() {
   const { locale, setLocale, t } = useI18n();
+  const preferencesQuery = useFrontendPreferencesQuery();
+  const updatePreferencesMutation = useUpdateFrontendPreferencesMutation();
+  const hasHydratedPreferencesRef = useRef(false);
   const initialRoute = readRouteState();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialRoute.sessionId);
   const [primaryView, setPrimaryView] = useState<PrimaryView>(initialRoute.view);
   const [sessionDetailTab, setSessionDetailTab] = useState<SessionDetailTab>(initialRoute.tab);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(readInitialThemeMode);
-  const [densityMode, setDensityMode] = useState<DensityMode>(readInitialDensityMode);
+  const [themeMode, setThemeMode] = useState<ThemeMode>('system');
+  const [densityMode, setDensityMode] = useState<DensityMode>('comfortable');
+  const [sessionViewMode, setSessionViewMode] = useState<SessionViewMode>('table');
+  const [sessionAggregationMode, setSessionAggregationMode] =
+    useState<SessionAggregationMode>('logical');
   const [systemPrefersDark, setSystemPrefersDark] = useState(readSystemThemePreference);
 
   const resolvedTheme: ResolvedTheme =
     themeMode === 'system' ? (systemPrefersDark ? 'dark' : 'light') : themeMode;
+
+  const persistPreferencesPatch = (patch: FrontendPreferencesUpdate): void => {
+    updatePreferencesMutation.mutate(patch, {
+      onSuccess: (saved) => {
+        setLocale(saved.locale);
+        setThemeMode(saved.theme_mode);
+        setDensityMode(saved.density_mode);
+        setSessionViewMode(saved.session_view_mode);
+        setSessionAggregationMode(saved.session_aggregation_mode);
+      },
+    });
+  };
 
   const applyRouteState = (next: RouteState, mode: 'push' | 'replace' = 'push') => {
     const shouldResetScroll =
@@ -175,18 +238,63 @@ function App() {
   }, [densityMode]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (!preferencesQuery.data || hasHydratedPreferencesRef.current) {
       return;
     }
-    window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
-  }, [themeMode]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
+    const apply = (next: {
+      locale: Locale;
+      theme_mode: ThemeMode;
+      density_mode: DensityMode;
+      session_view_mode: SessionViewMode;
+      session_aggregation_mode: SessionAggregationMode;
+    }) => {
+      setLocale(next.locale);
+      setThemeMode(next.theme_mode);
+      setDensityMode(next.density_mode);
+      setSessionViewMode(next.session_view_mode);
+      setSessionAggregationMode(next.session_aggregation_mode);
+    };
+
+    const server = preferencesQuery.data;
+    const legacy = readLegacyPreferences();
+    const hasLegacy = Object.values(legacy).some((value) => value !== undefined);
+
+    if (server.updated_at === null && hasLegacy) {
+      const patch: FrontendPreferencesUpdate = {};
+      if (legacy.locale) patch.locale = legacy.locale;
+      if (legacy.theme_mode) patch.theme_mode = legacy.theme_mode;
+      if (legacy.density_mode) patch.density_mode = legacy.density_mode;
+      if (legacy.session_view_mode) patch.session_view_mode = legacy.session_view_mode;
+      if (legacy.session_aggregation_mode) {
+        patch.session_aggregation_mode = legacy.session_aggregation_mode;
+      }
+
+      updatePreferencesMutation.mutate(patch, {
+        onSuccess: (saved) => {
+          apply(saved);
+          clearLegacyPreferenceKeys();
+          hasHydratedPreferencesRef.current = true;
+        },
+        onError: () => {
+          apply({
+            locale: patch.locale ?? server.locale,
+            theme_mode: patch.theme_mode ?? server.theme_mode,
+            density_mode: patch.density_mode ?? server.density_mode,
+            session_view_mode: patch.session_view_mode ?? server.session_view_mode,
+            session_aggregation_mode:
+              patch.session_aggregation_mode ?? server.session_aggregation_mode,
+          });
+          clearLegacyPreferenceKeys();
+          hasHydratedPreferencesRef.current = true;
+        },
+      });
       return;
     }
-    window.localStorage.setItem(DENSITY_MODE_STORAGE_KEY, densityMode);
-  }, [densityMode]);
+
+    apply(server);
+    hasHydratedPreferencesRef.current = true;
+  }, [preferencesQuery.data, setLocale, updatePreferencesMutation]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -321,7 +429,11 @@ function App() {
             <select
               id="language-mode-select"
               value={locale}
-              onChange={(event) => setLocale(event.target.value as Locale)}
+              onChange={(event) => {
+                const next = event.target.value as Locale;
+                setLocale(next);
+                persistPreferencesPatch({ locale: next });
+              }}
               aria-label={t('language.label')}
             >
               <option value="en">{t('language.english')}</option>
@@ -333,7 +445,11 @@ function App() {
             <select
               id="theme-mode-select"
               value={themeMode}
-              onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
+              onChange={(event) => {
+                const next = event.target.value as ThemeMode;
+                setThemeMode(next);
+                persistPreferencesPatch({ theme_mode: next });
+              }}
               aria-label={t('theme.label')}
             >
               <option value="system">{t('theme.system')}</option>
@@ -346,7 +462,11 @@ function App() {
             <select
               id="density-mode-select"
               value={densityMode}
-              onChange={(event) => setDensityMode(event.target.value as DensityMode)}
+              onChange={(event) => {
+                const next = event.target.value as DensityMode;
+                setDensityMode(next);
+                persistPreferencesPatch({ density_mode: next });
+              }}
               aria-label={t('density.label')}
             >
               <option value="comfortable">{t('density.comfortable')}</option>
@@ -385,6 +505,16 @@ function App() {
                 onSessionChange={handleSessionOpenFromOverview}
                 selectedSessionId={selectedSessionId}
                 autoSelectFirst={false}
+                viewMode={sessionViewMode}
+                onViewModeChange={(next) => {
+                  setSessionViewMode(next);
+                  persistPreferencesPatch({ session_view_mode: next });
+                }}
+                aggregationMode={sessionAggregationMode}
+                onAggregationModeChange={(next) => {
+                  setSessionAggregationMode(next);
+                  persistPreferencesPatch({ session_aggregation_mode: next });
+                }}
               />
             </div>
           </div>

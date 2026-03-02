@@ -3,17 +3,7 @@ import { I18nContext, type I18nContextValue, type Locale, type TranslateOptions 
 import { messages, type TranslationDictionary } from './messages';
 import { formatTokenCount as formatTokenCountCompact } from '../utils/tokenFormat';
 
-const LOCALE_STORAGE_KEY = 'agent-vis:locale';
-
 function getInitialLocale(): Locale {
-  if (typeof window === 'undefined') {
-    return 'en';
-  }
-
-  const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-  if (stored === 'en' || stored === 'zh-CN') {
-    return stored;
-  }
   return 'en';
 }
 
@@ -68,9 +58,6 @@ export function I18nProvider({ children }: I18nProviderProps) {
   const [locale, setLocale] = useState<Locale>(getInitialLocale);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-    }
     document.documentElement.lang = locale;
   }, [locale]);
 

@@ -25,6 +25,8 @@ from agent_vis.api.models import (
     ControlPlaneFileStats,
     ControlPlaneOverview,
     EcosystemAggregate,
+    FrontendPreferences,
+    FrontendPreferencesUpdate,
     ProjectAggregate,
     ProjectComparisonItem,
     ProjectComparisonResponse,
@@ -93,6 +95,45 @@ class SessionService:
             ("claude_code", self.session_path),
             ("codex", self.codex_session_path),
         ]
+
+    def _agent_vis_root(self) -> Path:
+        """Resolve canonical local-state root used for DB and UI state files."""
+        if self._db_path is not None:
+            return self._db_path.expanduser().resolve().parent
+        return Path.home() / ".agent-vis"
+
+    @staticmethod
+    def _ensure_private_dir(path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.chmod(0o700)
+        except OSError:
+            # Permission tightening can fail on some filesystems; keep best effort.
+            pass
+
+    @staticmethod
+    def _ensure_private_file(path: Path) -> None:
+        try:
+            path.chmod(0o600)
+        except OSError:
+            # Permission tightening can fail on some filesystems; keep best effort.
+            pass
+
+    def _frontend_preferences_path(self) -> Path:
+        state_dir = self._agent_vis_root() / "state"
+        self._ensure_private_dir(state_dir)
+        return state_dir / "frontend-preferences.json"
+
+    @staticmethod
+    def _default_frontend_preferences() -> dict[str, Any]:
+        return {
+            "locale": "en",
+            "theme_mode": "system",
+            "density_mode": "comfortable",
+            "session_view_mode": "table",
+            "session_aggregation_mode": "logical",
+            "updated_at": None,
+        }
 
     async def initialize(self) -> None:
         """
@@ -1976,6 +2017,45 @@ class SessionService:
             if created > end:
                 return False
         return True
+
+    def get_frontend_preferences(self) -> FrontendPreferences:
+        """
+        Load frontend preference state from ~/.agent-vis/state/frontend-preferences.json.
+
+        Missing files fall back to defaults.
+        """
+        path = self._frontend_preferences_path()
+        defaults = self._default_frontend_preferences()
+
+        if not path.exists():
+            return FrontendPreferences(**defaults)
+
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return FrontendPreferences(**defaults)
+
+        if not isinstance(raw, dict):
+            return FrontendPreferences(**defaults)
+
+        merged = {**defaults, **raw}
+        return FrontendPreferences(**merged)
+
+    def update_frontend_preferences(
+        self, payload: FrontendPreferencesUpdate
+    ) -> FrontendPreferences:
+        """Persist partial frontend preference updates and return normalized state."""
+        path = self._frontend_preferences_path()
+        current = self.get_frontend_preferences().model_dump()
+        updates = payload.model_dump(exclude_none=True)
+        merged = {**current, **updates, "updated_at": datetime.now(timezone.utc).isoformat()}
+        normalized = FrontendPreferences(**merged)
+        path.write_text(
+            json.dumps(normalized.model_dump(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        self._ensure_private_file(path)
+        return normalized
 
     def get_sync_status(self) -> dict:
         """Return sync status info for the /api/sync/status endpoint."""

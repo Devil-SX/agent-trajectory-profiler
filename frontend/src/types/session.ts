@@ -63,6 +63,29 @@ export interface SyncStatusResponse {
   last_sync: SyncRunDetail | null;
 }
 
+export type LocaleOption = 'en' | 'zh-CN';
+export type ThemeMode = 'system' | 'light' | 'dark';
+export type DensityMode = 'comfortable' | 'compact';
+export type SessionViewMode = 'cards' | 'table';
+export type SessionAggregationMode = 'logical' | 'physical';
+
+export interface FrontendPreferences {
+  locale: LocaleOption;
+  theme_mode: ThemeMode;
+  density_mode: DensityMode;
+  session_view_mode: SessionViewMode;
+  session_aggregation_mode: SessionAggregationMode;
+  updated_at: string | null;
+}
+
+export interface FrontendPreferencesUpdate {
+  locale?: LocaleOption;
+  theme_mode?: ThemeMode;
+  density_mode?: DensityMode;
+  session_view_mode?: SessionViewMode;
+  session_aggregation_mode?: SessionAggregationMode;
+}
+
 export interface ErrorResponse {
   error: string;
   detail?: string;

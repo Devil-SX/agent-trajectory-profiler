@@ -32,12 +32,14 @@ interface SessionBrowserProps {
   selectedSessionId?: string | null;
   comparisonSessionId?: string | null;
   autoSelectFirst?: boolean;
+  viewMode?: SessionViewMode;
+  onViewModeChange?: (mode: SessionViewMode) => void;
+  aggregationMode?: SessionAggregationMode;
+  onAggregationModeChange?: (mode: SessionAggregationMode) => void;
 }
 
 type SessionViewMode = 'cards' | 'table';
 type SessionAggregationMode = 'logical' | 'physical';
-const SESSION_VIEW_MODE_STORAGE_KEY = 'agent-vis:session-browser:view-mode';
-const SESSION_AGGREGATION_MODE_STORAGE_KEY = 'agent-vis:session-browser:aggregation-mode';
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 
@@ -52,6 +54,10 @@ export function SessionBrowser({
   selectedSessionId: controlledSelectedSessionId = null,
   comparisonSessionId,
   autoSelectFirst = true,
+  viewMode: controlledViewMode,
+  onViewModeChange,
+  aggregationMode: controlledAggregationMode,
+  onAggregationModeChange,
 }: SessionBrowserProps) {
   const { t, formatNumber } = useI18n();
   const [page] = useState(1);
@@ -68,26 +74,10 @@ export function SessionBrowser({
   );
 
   const [isPickingComparison, setIsPickingComparison] = useState(false);
-  const [viewMode, setViewMode] = useState<SessionViewMode>(() => {
-    if (typeof window === 'undefined') {
-      return 'table';
-    }
-    const stored = window.localStorage.getItem(SESSION_VIEW_MODE_STORAGE_KEY);
-    if (stored === 'cards' || stored === 'table') {
-      return stored;
-    }
-    return 'table';
-  });
-  const [aggregationMode, setAggregationMode] = useState<SessionAggregationMode>(() => {
-    if (typeof window === 'undefined') {
-      return 'logical';
-    }
-    const stored = window.localStorage.getItem(SESSION_AGGREGATION_MODE_STORAGE_KEY);
-    if (stored === 'logical' || stored === 'physical') {
-      return stored;
-    }
-    return 'logical';
-  });
+  const [viewModeState, setViewModeState] = useState<SessionViewMode>('table');
+  const [aggregationModeState, setAggregationModeState] = useState<SessionAggregationMode>('logical');
+  const viewMode = controlledViewMode ?? viewModeState;
+  const aggregationMode = controlledAggregationMode ?? aggregationModeState;
 
   // Filter and sort state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -123,16 +113,16 @@ export function SessionBrowser({
   }, [error]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(SESSION_VIEW_MODE_STORAGE_KEY, viewMode);
+    if (controlledViewMode !== undefined) {
+      setViewModeState(controlledViewMode);
     }
-  }, [viewMode]);
+  }, [controlledViewMode]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(SESSION_AGGREGATION_MODE_STORAGE_KEY, aggregationMode);
+    if (controlledAggregationMode !== undefined) {
+      setAggregationModeState(controlledAggregationMode);
     }
-  }, [aggregationMode]);
+  }, [controlledAggregationMode]);
 
   // Initialize selection on first load
   useEffect(() => {
@@ -263,6 +253,19 @@ export function SessionBrowser({
   };
 
   const showComparison = onComparisonSessionChange !== undefined;
+  const handleViewModeChange = (next: SessionViewMode) => {
+    if (controlledViewMode === undefined) {
+      setViewModeState(next);
+    }
+    onViewModeChange?.(next);
+  };
+
+  const handleAggregationModeChange = (next: SessionAggregationMode) => {
+    if (controlledAggregationMode === undefined) {
+      setAggregationModeState(next);
+    }
+    onAggregationModeChange?.(next);
+  };
 
   const handleRunSync = () => {
     runSyncMutation.mutate(
@@ -356,7 +359,7 @@ export function SessionBrowser({
                   <button
                     className={`session-view-toggle__button ${viewMode === 'cards' ? 'active' : ''}`}
                     type="button"
-                    onClick={() => setViewMode('cards')}
+                    onClick={() => handleViewModeChange('cards')}
                     aria-pressed={viewMode === 'cards'}
                   >
                     {t('session.viewMode.card')}
@@ -364,7 +367,7 @@ export function SessionBrowser({
                   <button
                     className={`session-view-toggle__button ${viewMode === 'table' ? 'active' : ''}`}
                     type="button"
-                    onClick={() => setViewMode('table')}
+                    onClick={() => handleViewModeChange('table')}
                     aria-pressed={viewMode === 'table'}
                   >
                     {t('session.viewMode.table')}
@@ -374,7 +377,7 @@ export function SessionBrowser({
                   <button
                     className={`session-view-toggle__button ${aggregationMode === 'logical' ? 'active' : ''}`}
                     type="button"
-                    onClick={() => setAggregationMode('logical')}
+                    onClick={() => handleAggregationModeChange('logical')}
                     aria-pressed={aggregationMode === 'logical'}
                   >
                     {t('session.aggregationMode.logical')}
@@ -382,7 +385,7 @@ export function SessionBrowser({
                   <button
                     className={`session-view-toggle__button ${aggregationMode === 'physical' ? 'active' : ''}`}
                     type="button"
-                    onClick={() => setAggregationMode('physical')}
+                    onClick={() => handleAggregationModeChange('physical')}
                     aria-pressed={aggregationMode === 'physical'}
                   >
                     {t('session.aggregationMode.physical')}
