@@ -60,3 +60,5 @@ tests/fixtures/*.jsonl
 .sisyphus/
 frontend/test-results/
 frontend/playwright-report/
+
+/survey/
