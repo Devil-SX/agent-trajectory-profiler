@@ -124,6 +124,68 @@ class FrontendPreferencesUpdate(BaseModel):
     session_aggregation_mode: Literal["logical", "physical"] | None = None
 
 
+class CapabilityParserInfo(BaseModel):
+    adapter: str
+    session_id_strategy: str
+    supports_logical_session: bool
+    supports_physical_session: bool
+    minimum_agent_version: str | None = None
+    default_roots: list[str] = Field(default_factory=list)
+
+
+class CapabilityEventShape(BaseModel):
+    message_events: bool
+    tool_call_events: bool
+    tool_result_events: bool
+    session_boundary_events: bool
+    timeline_timestamps: bool
+    subagent_events: bool
+    parent_child_session_links: bool
+    streaming_partial_events: bool
+
+
+class CapabilityTokenFieldSupport(BaseModel):
+    input_tokens: bool
+    output_tokens: bool
+    cache_read_tokens: bool
+    cache_creation_tokens: bool
+    reasoning_tokens: bool
+    tool_output_tokens: bool
+    token_units: str
+
+
+class CapabilityToolErrorSupport(BaseModel):
+    categorization_available: bool
+    rule_version: str
+    error_preview_available: bool
+    error_detail_available: bool
+    supports_timestamped_error_timeline: bool
+    supports_tool_name_mapping: bool
+
+
+class CapabilityFallbackBehavior(BaseModel):
+    missing_token_fields: str
+    missing_timestamps: str
+    unknown_tool_errors: str
+
+
+class EcosystemCapabilityResponse(BaseModel):
+    schema_version: str
+    ecosystem: str
+    manifest_version: str
+    display_name: str
+    parser: CapabilityParserInfo
+    event_shape_support: CapabilityEventShape
+    token_field_support: CapabilityTokenFieldSupport
+    tool_error_taxonomy_support: CapabilityToolErrorSupport
+    fallback_behavior: CapabilityFallbackBehavior
+    known_limitations: list[str] = Field(default_factory=list)
+
+
+class CapabilityListResponse(BaseModel):
+    capabilities: list[EcosystemCapabilityResponse]
+
+
 class ErrorResponse(BaseModel):
     """Standard error response model."""
 

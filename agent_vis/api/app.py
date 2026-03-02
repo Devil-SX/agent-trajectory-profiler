@@ -22,6 +22,7 @@ from agent_vis.api.models import (
     AnalyticsDistributionResponse,
     AnalyticsOverviewResponse,
     AnalyticsTimeseriesResponse,
+    CapabilityListResponse,
     ErrorResponse,
     FrontendPreferences,
     FrontendPreferencesUpdate,
@@ -35,6 +36,8 @@ from agent_vis.api.models import (
     SyncTriggerRequest,
 )
 from agent_vis.api.service import SessionService
+from agent_vis.parsers.capabilities import validate_registered_capabilities
+from agent_vis.parsers.registry import list_ecosystems
 
 # Initialize session service
 session_service: SessionService | None = None
@@ -54,6 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Lifespan context manager for FastAPI application."""
     global session_service
     settings = get_settings()
+    validate_registered_capabilities(list_ecosystems())
     session_service = SessionService(
         session_path=settings.session_path,
         codex_session_path=settings.codex_session_path,
@@ -428,6 +432,25 @@ async def get_analytics_timeseries(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to compute timeseries: {str(e)}"
+        ) from e
+
+
+@app.get(
+    "/api/capabilities",
+    response_model=CapabilityListResponse,
+    tags=["Capabilities"],
+    summary="List ecosystem capability manifests",
+    description="Return explicit capability declarations for each registered ecosystem parser.",
+)
+async def get_capabilities() -> CapabilityListResponse:
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    try:
+        return CapabilityListResponse(capabilities=session_service.get_capabilities())
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load capability manifests: {str(e)}"
         ) from e
 
 

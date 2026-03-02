@@ -29,6 +29,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Regression coverage for Telegram reporting:
   - report module tests for config validation, incremental windowing, Telegram API success/failure/timeout mocks, and failed-send timestamp rollback (`tests/test_telegram_reporting.py`)
   - CLI command dry-run integration test (`tests/test_cli_report_command.py`).
+- Agent capability manifest implementation:
+  - added manifest loader/validator and drift-warning helper (`agent_vis/parsers/capabilities.py`)
+  - added built-in manifests for `claude_code` and `codex` (`agent_vis/parsers/manifests/*.json`)
+  - added capability query endpoint `GET /api/capabilities`.
+- Sync pipeline now emits capability-aware parser warnings when observed statistics conflict with declared manifest support.
+- Regression coverage for capability manifest contract and API surface:
+  - schema/loader/registry tests (`tests/test_capability_manifest.py`)
+  - `/api/capabilities` integration assertion (`tests/test_api_integration.py`)
+  - sync warning logging regression (`tests/test_sync.py`).
 - Regression coverage for Codex logical-session behavior:
   - parser lineage extraction test (`tests/test_codex_parser.py`)
   - API logical-vs-physical list behavior test (`tests/test_api_integration.py`)

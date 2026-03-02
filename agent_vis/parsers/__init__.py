@@ -10,6 +10,13 @@ from agent_vis.parsers.canonical import (
     list_adapters,
     register_adapter,
 )
+from agent_vis.parsers.capabilities import (
+    CapabilityManifest,
+    get_capability_warnings,
+    list_capability_manifests,
+    load_capability_manifest,
+    validate_registered_capabilities,
+)
 from agent_vis.parsers.claude_code import (
     ClaudeCodeParser,
     parse_session_directory,
@@ -26,6 +33,7 @@ from agent_vis.parsers.registry import get_parser, list_ecosystems, register_par
 __all__ = [
     "CanonicalEvent",
     "CanonicalSession",
+    "CapabilityManifest",
     "ClaudeCodeParser",
     "CodexParser",
     "SessionParseError",
@@ -33,8 +41,11 @@ __all__ = [
     "TrajectoryEventAdapter",
     "get_adapter",
     "list_adapters",
+    "list_capability_manifests",
     "get_parser",
+    "get_capability_warnings",
     "list_ecosystems",
+    "load_capability_manifest",
     "parse_codex_jsonl_file",
     "parse_codex_session_directory",
     "parse_codex_session_file",
@@ -42,4 +53,5 @@ __all__ = [
     "parse_session_file",
     "register_adapter",
     "register_parser",
+    "validate_registered_capabilities",
 ]

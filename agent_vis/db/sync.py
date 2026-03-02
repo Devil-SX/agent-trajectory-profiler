@@ -14,6 +14,7 @@ from pathlib import Path
 from agent_vis.db.repository import SessionRepository
 from agent_vis.exceptions import SessionParseError
 from agent_vis.parsers.base import TrajectoryParser
+from agent_vis.parsers.capabilities import get_capability_warnings
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,23 @@ class SyncEngine:
 
             meta = session.metadata
             stats = session.statistics
+
+            if stats is not None:
+                warnings = get_capability_warnings(
+                    self._parser.ecosystem_name,
+                    total_tool_calls=stats.total_tool_calls,
+                    cache_read_tokens=stats.cache_read_tokens,
+                    cache_creation_tokens=stats.cache_creation_tokens,
+                    has_tool_error_records=bool(stats.tool_error_records),
+                    has_subagent_sessions=bool(session.subagent_sessions),
+                )
+                for warning in warnings:
+                    logger.warning(
+                        "Capability warning [%s][%s]: %s",
+                        self._parser.ecosystem_name,
+                        meta.session_id,
+                        warning,
+                    )
 
             # Compute bottleneck and automation ratio
             bottleneck: str | None = None

@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "ecosystem": "codex",
+  "manifest_version": "1.0.0",
+  "display_name": "Codex",
+  "parser": {
+    "adapter": "codex.rollout",
+    "session_id_strategy": "event_field",
+    "supports_logical_session": true,
+    "supports_physical_session": true,
+    "minimum_agent_version": null,
+    "default_roots": [
+      "~/.codex/sessions"
+    ]
+  },
+  "capabilities": {
+    "event_shape_support": {
+      "message_events": true,
+      "tool_call_events": true,
+      "tool_result_events": true,
+      "session_boundary_events": true,
+      "timeline_timestamps": true,
+      "subagent_events": true,
+      "parent_child_session_links": true,
+      "streaming_partial_events": true
+    },
+    "token_field_support": {
+      "input_tokens": true,
+      "output_tokens": true,
+      "cache_read_tokens": true,
+      "cache_creation_tokens": true,
+      "reasoning_tokens": false,
+      "tool_output_tokens": true,
+      "token_units": "token"
+    },
+    "tool_error_taxonomy_support": {
+      "categorization_available": true,
+      "rule_version": "1.0.0",
+      "error_preview_available": true,
+      "error_detail_available": true,
+      "supports_timestamped_error_timeline": true,
+      "supports_tool_name_mapping": true
+    },
+    "fallback_behavior": {
+      "missing_token_fields": "zero_fill",
+      "missing_timestamps": "infer_best_effort",
+      "unknown_tool_errors": "uncategorized"
+    }
+  },
+  "known_limitations": [
+    "Some streaming partial chunks may omit stable tool identifiers.",
+    "Nested sub-agent sessions can appear as multiple physical sessions under one logical session."
+  ]
+}

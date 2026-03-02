@@ -185,3 +185,19 @@ class TestSyncEngineDataIntegrity:
         assert row["total_messages"] == 2
         assert row["total_tokens"] == 15
         assert row["parsed_at"] is not None
+
+    def test_capability_warning_is_logged(
+        self,
+        engine: SyncEngine,
+        session_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setattr(
+            "agent_vis.db.sync.get_capability_warnings",
+            lambda *args, **kwargs: ["manifest drift warning"],
+        )
+        caplog.set_level("WARNING")
+
+        engine.sync(session_dir)
+        assert "Capability warning" in caplog.text

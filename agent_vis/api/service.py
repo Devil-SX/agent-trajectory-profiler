@@ -22,9 +22,15 @@ from agent_vis.api.models import (
     AnalyticsOverviewResponse,
     AnalyticsTimeseriesPoint,
     AnalyticsTimeseriesResponse,
+    CapabilityEventShape,
+    CapabilityFallbackBehavior,
+    CapabilityParserInfo,
+    CapabilityTokenFieldSupport,
+    CapabilityToolErrorSupport,
     ControlPlaneFileStats,
     ControlPlaneOverview,
     EcosystemAggregate,
+    EcosystemCapabilityResponse,
     FrontendPreferences,
     FrontendPreferencesUpdate,
     ProjectAggregate,
@@ -41,6 +47,7 @@ from agent_vis.db.repository import SessionRepository
 from agent_vis.db.sync import SyncEngine
 from agent_vis.models import Session, SessionStatistics
 from agent_vis.parsers import SessionParseError, get_parser
+from agent_vis.parsers.capabilities import list_capability_manifests
 
 AnalyticsDimension = Literal[
     "bottleneck",
@@ -2056,6 +2063,35 @@ class SessionService:
         )
         self._ensure_private_file(path)
         return normalized
+
+    def get_capabilities(self) -> list[EcosystemCapabilityResponse]:
+        """Return capability manifests for all registered ecosystems."""
+        manifests = list_capability_manifests()
+        capabilities: list[EcosystemCapabilityResponse] = []
+        for manifest in manifests:
+            capabilities.append(
+                EcosystemCapabilityResponse(
+                    schema_version=manifest.schema_version,
+                    ecosystem=manifest.ecosystem,
+                    manifest_version=manifest.manifest_version,
+                    display_name=manifest.display_name,
+                    parser=CapabilityParserInfo(**manifest.parser.model_dump()),
+                    event_shape_support=CapabilityEventShape(
+                        **manifest.capabilities.event_shape_support.model_dump()
+                    ),
+                    token_field_support=CapabilityTokenFieldSupport(
+                        **manifest.capabilities.token_field_support.model_dump()
+                    ),
+                    tool_error_taxonomy_support=CapabilityToolErrorSupport(
+                        **manifest.capabilities.tool_error_taxonomy_support.model_dump()
+                    ),
+                    fallback_behavior=CapabilityFallbackBehavior(
+                        **manifest.capabilities.fallback_behavior.model_dump()
+                    ),
+                    known_limitations=list(manifest.known_limitations),
+                )
+            )
+        return capabilities
 
     def get_sync_status(self) -> dict:
         """Return sync status info for the /api/sync/status endpoint."""

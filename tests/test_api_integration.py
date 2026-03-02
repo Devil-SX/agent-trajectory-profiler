@@ -193,6 +193,32 @@ class TestSettingsCompatibility:
             get_settings.cache_clear()
 
 
+class TestCapabilitiesAPI:
+    """Tests for capability manifest API exposure."""
+
+    def test_capability_endpoint_exposes_registered_ecosystems(
+        self, test_client: TestClient
+    ) -> None:
+        response = test_client.get("/api/capabilities")
+        assert response.status_code == 200
+        payload = response.json()
+        assert "capabilities" in payload
+        assert isinstance(payload["capabilities"], list)
+
+        ecosystems = {item["ecosystem"] for item in payload["capabilities"]}
+        assert "claude_code" in ecosystems
+        assert "codex" in ecosystems
+
+        first = payload["capabilities"][0]
+        assert "schema_version" in first
+        assert "manifest_version" in first
+        assert "parser" in first
+        assert "event_shape_support" in first
+        assert "token_field_support" in first
+        assert "tool_error_taxonomy_support" in first
+        assert "fallback_behavior" in first
+
+
 class TestSessionListAPI:
     """Tests for session listing API endpoint."""
 
