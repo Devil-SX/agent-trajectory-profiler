@@ -170,19 +170,19 @@ test.describe('@full Cross Session Char Metrics', () => {
       'Chars (CJK/Latin): 90,000 / 330,000'
     );
     await expect(page.locator('.kpi-card', { hasText: 'Automation efficiency' })).toContainText(
-      'Token leverage (mean/median/p90): 2.40x / 2.20x / 3.10x'
+      /Token leverage \(mean\/median\/p90\)\??: 2\.40x \/ 2\.20x \/ 3\.10x/
     );
     await expect(page.locator('.kpi-card', { hasText: 'Automation efficiency' })).toContainText(
-      'Char leverage (mean/median/p90): 3.50x / 3.30x / 4.20x'
+      /Char leverage \(mean\/median\/p90\)\??: 3\.50x \/ 3\.30x \/ 4\.20x/
     );
     await expect(page.locator('.kpi-card', { hasText: 'Tool execution' })).toContainText(
-      'Model tok/s (mean/median/p90): 12.40 / 11.80 / 15.90'
+      /Model tok\/s \(mean\/median\/p90\)\??: 12\.40 \/ 11\.80 \/ 15\.90/
     );
     await expect(page.locator('.kpi-card', { hasText: 'Tool execution' })).toContainText(
-      'Read/Output tok/s mean: 7.20 / 5.20'
+      /Read\/Output tok\/s mean\??: 7\.20 \/ 5\.20/
     );
     await expect(page.locator('.kpi-card', { hasText: 'Tool execution' })).toContainText(
-      'Cache tok/s mean: 1.60 (1.10 / 0.50)'
+      /Cache tok\/s mean\??: 1\.60 \(1\.10 \/ 0\.50\)/
     );
     await expect(page.locator('.kpi-card', { hasText: 'Code capacity estimate' })).toContainText(
       '5,460'

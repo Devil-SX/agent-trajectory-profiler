@@ -41,6 +41,8 @@ test.describe('@full Time Breakdown Analytics', () => {
     });
 
     await page.goto('/');
+    await page.waitForSelector('.session-table tbody tr[data-session-id]', { timeout: 10000 });
+    await page.locator('.session-table tbody tr[data-session-id]').first().click();
     await page.getByRole('button', { name: 'Statistics' }).click();
     await page.waitForSelector('.time-breakdown-chart', { timeout: 10000 });
 
