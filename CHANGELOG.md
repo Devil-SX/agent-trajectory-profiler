@@ -50,6 +50,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Expanded regression coverage for source segmentation:
   - backend API integration assertions for `role_source_breakdown`, bottleneck fields, and ecosystem-filtered analytics endpoints (`tests/test_api_integration.py`)
   - frontend smoke coverage for source filter linkage, role/source dimension switch, and empty-data fallback (`frontend/tests/source-segmentation.spec.ts`).
+- Session detail timeline now includes a right-side interactive minimap (desktop) with smooth `user/model/tool` activity curves, click-to-jump navigation, draggable viewport synchronization, and anomaly markers for `model stall` + `tool error`.
+- Expanded timeline UX regression coverage for long sessions:
+  - minimap click jump, viewport drag synchronization, anomaly toggle/jump highlighting, and bounded windowed-render assertions (`frontend/tests/timeline-scroll-behavior.spec.ts`).
 
 ### Changed
 
@@ -57,6 +60,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-session analytics row normalization now deduplicates by `ecosystem + logical_session_id` to avoid Codex parent/sub-agent double-counting in aggregate session totals.
 - Cross-session overview UI now separates ingestion controls and runtime analytics into dedicated `Control/Ingestion Plane` and `Runtime/Behavior Plane` sections.
 - Quality-gates Playwright smoke tests were updated to align with the current two-layer navigation flow (overview first, then open session detail).
+- Session detail message rendering now uses windowed virtualization with dynamic row measurement to keep long timelines responsive and avoid full DOM expansion.
 
 ### Fixed
 

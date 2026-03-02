@@ -2,10 +2,15 @@ import { expect, test, type Page } from '@playwright/test';
 import { setupMockApi } from './fixtures/mockServer';
 
 function buildLongSessionDetail(sessionId: string) {
-  const start = new Date('2024-02-01T10:00:00Z').getTime();
+  let current = new Date('2024-02-01T10:00:00Z').getTime();
   const messages = Array.from({ length: 180 }, (_, index) => {
-    const timestamp = new Date(start + index * 60_000).toISOString();
     const isUser = index % 2 === 0;
+    if (index > 0) {
+      const isStallTransition = !isUser && index % 48 === 1;
+      current += isStallTransition ? 12 * 60_000 : 60_000;
+    }
+    const timestamp = new Date(current).toISOString();
+    const includeToolError = !isUser && index % 36 === 1;
     return {
       sessionId,
       uuid: `${sessionId}-msg-${index + 1}`,
@@ -18,12 +23,31 @@ function buildLongSessionDetail(sessionId: string) {
           }
         : {
             role: 'assistant',
-            content: [
-              {
-                type: 'text',
-                text: `Assistant response ${index + 1}: ${'long output '.repeat(12)}`,
-              },
-            ],
+            content: includeToolError
+              ? [
+                  {
+                    type: 'tool_use',
+                    id: `tool-${sessionId}-${index + 1}`,
+                    name: 'Bash',
+                    input: { command: 'false' },
+                  },
+                  {
+                    type: 'tool_result',
+                    tool_use_id: `tool-${sessionId}-${index + 1}`,
+                    content: 'Command failed with non-zero exit status',
+                    is_error: true,
+                  },
+                  {
+                    type: 'text',
+                    text: `Assistant tool error response ${index + 1}: ${'long output '.repeat(10)}`,
+                  },
+                ]
+              : [
+                  {
+                    type: 'text',
+                    text: `Assistant response ${index + 1}: ${'long output '.repeat(12)}`,
+                  },
+                ],
             usage: {
               input_tokens: 120,
               output_tokens: 80,
@@ -116,5 +140,122 @@ test.describe('@smoke Timeline scroll behavior', () => {
 
     const secondSessionScrollY = await getWindowScrollY(page);
     expect(secondSessionScrollY).toBeLessThan(40);
+  });
+
+  test('@full minimap click jumps to a deeper timeline region', async ({ page }) => {
+    await setupLongTimelineMocks(page);
+    await page.goto('/');
+
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 10000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('[data-testid="timeline-minimap-track"]', { timeout: 10000 });
+
+    const beforeScrollTop = await page
+      .locator('[data-testid="timeline-message-scroll"]')
+      .evaluate((node) => (node as HTMLElement).scrollTop);
+
+    const track = page.locator('[data-testid="timeline-minimap-track"]');
+    const box = await track.boundingBox();
+    if (!box) {
+      throw new Error('Expected minimap track to have a visible bounding box');
+    }
+
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.85);
+    await page.waitForTimeout(160);
+
+    const afterScrollTop = await page
+      .locator('[data-testid="timeline-message-scroll"]')
+      .evaluate((node) => (node as HTMLElement).scrollTop);
+
+    expect(afterScrollTop).toBeGreaterThan(beforeScrollTop + 120);
+  });
+
+  test('@full minimap viewport drag keeps message scroll synchronized', async ({ page }) => {
+    await setupLongTimelineMocks(page);
+    await page.goto('/');
+
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 10000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('[data-testid="timeline-minimap-viewport"]', { timeout: 10000 });
+
+    const viewport = page.locator('[data-testid="timeline-minimap-viewport"]');
+    const viewportBox = await viewport.boundingBox();
+    if (!viewportBox) {
+      throw new Error('Expected minimap viewport bounding box');
+    }
+
+    const startScrollTop = await page
+      .locator('[data-testid="timeline-message-scroll"]')
+      .evaluate((node) => (node as HTMLElement).scrollTop);
+
+    await page.mouse.move(viewportBox.x + viewportBox.width / 2, viewportBox.y + viewportBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      viewportBox.x + viewportBox.width / 2,
+      viewportBox.y + viewportBox.height / 2 + 120,
+      { steps: 6 }
+    );
+    await page.mouse.up();
+    await page.waitForTimeout(120);
+
+    const endScrollTop = await page
+      .locator('[data-testid="timeline-message-scroll"]')
+      .evaluate((node) => (node as HTMLElement).scrollTop);
+
+    expect(endScrollTop).toBeGreaterThan(startScrollTop + 80);
+  });
+
+  test('@full anomaly toggles filter markers and click jumps to highlighted message', async ({ page }) => {
+    await setupLongTimelineMocks(page);
+    await page.goto('/');
+
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 10000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('[data-testid="timeline-minimap-panel"]', { timeout: 10000 });
+
+    await expect(page.locator('[data-testid="timeline-anomaly-model_stall"]').first()).toBeVisible();
+    await expect(page.locator('[data-testid="timeline-anomaly-tool_error"]').first()).toBeVisible();
+
+    await page.getByLabel('Toggle model stall anomalies').uncheck();
+    await expect(page.locator('[data-testid="timeline-anomaly-model_stall"]')).toHaveCount(0);
+
+    await page.getByLabel('Toggle model stall anomalies').check();
+    await expect(page.locator('[data-testid="timeline-anomaly-model_stall"]').first()).toBeVisible();
+
+    const beforeJump = await page
+      .locator('[data-testid="timeline-message-scroll"]')
+      .evaluate((node) => (node as HTMLElement).scrollTop);
+    await page.locator('[data-testid="timeline-anomaly-tool_error"]').first().click();
+    await page.waitForTimeout(180);
+
+    const afterJump = await page
+      .locator('[data-testid="timeline-message-scroll"]')
+      .evaluate((node) => (node as HTMLElement).scrollTop);
+    expect(afterJump).toBeGreaterThan(beforeJump + 40);
+    await expect(page.locator('.message-row-highlighted').first()).toBeVisible();
+  });
+
+  test('@full long session keeps windowed rendering size bounded while scrolling', async ({ page }) => {
+    await setupLongTimelineMocks(page);
+    await page.goto('/');
+
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 10000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('[data-testid="timeline-message-scroll"]', { timeout: 10000 });
+
+    const initialRenderedCount = await page.locator('.message-row').count();
+    expect(initialRenderedCount).toBeGreaterThan(0);
+    expect(initialRenderedCount).toBeLessThan(120);
+
+    await page.locator('[data-testid="timeline-message-scroll"]').evaluate((node) => {
+      const element = node as HTMLElement;
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event('scroll'));
+    });
+    await page.waitForTimeout(140);
+
+    const afterScrollRenderedCount = await page.locator('.message-row').count();
+    expect(afterScrollRenderedCount).toBeGreaterThan(0);
+    expect(afterScrollRenderedCount).toBeLessThan(120);
   });
 });
