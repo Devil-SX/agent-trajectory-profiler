@@ -11,15 +11,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Codex session lineage parsing now derives `physical_session_id` / `logical_session_id` plus parent/root references from rollout metadata (`session_meta`), and persists them in session metadata + SQLite (`sessions` table).
 - `GET /api/sessions` now supports `view=logical|physical`; default logical view deduplicates Codex parent/sub-agent physical sessions while retaining a physical drill-down mode.
 - Session list API/TS models now expose both logical and physical session identifiers to make view-mode semantics explicit for frontend consumers.
+- Cross-session analytics API now exposes explicit dual-plane payloads: `control_plane` (ingestion/sync/file state) and `runtime_plane` (behavior/time/token/tool aggregates).
+- New control-plane file statistics in analytics overview include tracked-file parse status counts, tracked/trajectory byte totals, and last parsed timestamp.
 - Regression coverage for Codex logical-session behavior:
   - parser lineage extraction test (`tests/test_codex_parser.py`)
   - API logical-vs-physical list behavior test (`tests/test_api_integration.py`)
   - frontend smoke coverage for logical/physical view switching (`frontend/tests/session-browser.spec.ts`).
+- Regression coverage for dual-plane architecture:
+  - API integration assertions for control/runtime plane schema separation (`tests/test_api_integration.py`)
+  - frontend cross-session segmentation smoke assertions for plane rendering (`frontend/tests/source-segmentation.spec.ts`).
 
 ### Changed
 
 - Session browser now sends explicit aggregation mode (`logical`/`physical`) with session list requests and adds a UI toggle for switching between deduplicated logical sessions and raw physical sessions.
 - Cross-session analytics row normalization now deduplicates by `ecosystem + logical_session_id` to avoid Codex parent/sub-agent double-counting in aggregate session totals.
+- Cross-session overview UI now separates ingestion controls and runtime analytics into dedicated `Control/Ingestion Plane` and `Runtime/Behavior Plane` sections.
 - Quality-gates Playwright smoke tests were updated to align with the current two-layer navigation flow (overview first, then open session detail).
 
 ### Fixed

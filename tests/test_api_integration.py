@@ -411,6 +411,14 @@ class TestAnalyticsAPI:
         assert "night_inactive_time_seconds" in payload
         assert "source_breakdown" in payload
         assert isinstance(payload["source_breakdown"], list)
+        assert "control_plane" in payload
+        assert "runtime_plane" in payload
+        assert isinstance(payload["control_plane"], dict)
+        assert isinstance(payload["runtime_plane"], dict)
+        assert "last_sync" in payload["control_plane"]
+        assert "files" in payload["control_plane"]
+        assert "bottleneck_distribution" in payload["runtime_plane"]
+        assert "top_tools" in payload["runtime_plane"]
 
         start = date.fromisoformat(payload["start_date"])
         end = date.fromisoformat(payload["end_date"])
@@ -455,6 +463,10 @@ class TestAnalyticsAPI:
             + payload["night_inactive_time_seconds"]
         )
         assert day_total + night_total == pytest.approx(span, abs=1e-3)
+
+        control_keys = set(payload["control_plane"].keys())
+        runtime_keys = set(payload["runtime_plane"].keys())
+        assert control_keys.isdisjoint(runtime_keys)
 
     def test_analytics_overview_source_breakdown_with_mixed_sources(
         self,
@@ -730,6 +742,8 @@ class TestSessionServiceIntegration:
         assert payload.leverage_chars_mean == 0.0
         assert payload.top_projects[0].leverage_tokens_mean is None
         assert payload.top_projects[0].leverage_chars_mean is None
+        assert payload.control_plane.logical_sessions == 1
+        assert payload.runtime_plane.total_tokens == 20
 
 
 class TestAPIErrorHandling:

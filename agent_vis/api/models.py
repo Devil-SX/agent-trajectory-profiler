@@ -194,6 +194,98 @@ class AnalyticsTimeseriesPoint(BaseModel):
     avg_duration_seconds: float
 
 
+class ControlPlaneFileStats(BaseModel):
+    """Tracked file status summary for ingestion/control plane."""
+
+    total_files: int
+    parsed_files: int
+    error_files: int
+    pending_files: int
+    total_tracked_file_size_bytes: int
+    total_trajectory_file_size_bytes: int
+    last_parsed_at: str | None = None
+
+
+class ControlPlaneOverview(BaseModel):
+    """Control/Ingestion-plane metrics and sync state."""
+
+    logical_sessions: int
+    physical_sessions: int
+    files: ControlPlaneFileStats
+    sync_running: bool
+    last_sync: SyncRunDetail
+
+
+class RuntimePlaneOverview(BaseModel):
+    """Runtime/Behavior-plane analytics summary."""
+
+    total_messages: int
+    total_tokens: int
+    total_tool_calls: int
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tool_output_tokens: int
+    total_cache_read_tokens: int
+    total_cache_creation_tokens: int
+    total_chars: int
+    total_user_chars: int
+    total_model_chars: int
+    total_tool_chars: int
+    total_cjk_chars: int
+    total_latin_chars: int
+    total_other_chars: int
+    yield_ratio_tokens_mean: float
+    yield_ratio_tokens_median: float
+    yield_ratio_tokens_p90: float
+    yield_ratio_chars_mean: float
+    yield_ratio_chars_median: float
+    yield_ratio_chars_p90: float
+    leverage_tokens_mean: float
+    leverage_tokens_median: float
+    leverage_tokens_p90: float
+    leverage_chars_mean: float
+    leverage_chars_median: float
+    leverage_chars_p90: float
+    avg_tokens_per_second_mean: float
+    avg_tokens_per_second_median: float
+    avg_tokens_per_second_p90: float
+    read_tokens_per_second_mean: float
+    read_tokens_per_second_median: float
+    read_tokens_per_second_p90: float
+    output_tokens_per_second_mean: float
+    output_tokens_per_second_median: float
+    output_tokens_per_second_p90: float
+    cache_tokens_per_second_mean: float
+    cache_tokens_per_second_median: float
+    cache_tokens_per_second_p90: float
+    cache_read_tokens_per_second_mean: float
+    cache_read_tokens_per_second_median: float
+    cache_read_tokens_per_second_p90: float
+    cache_creation_tokens_per_second_mean: float
+    cache_creation_tokens_per_second_median: float
+    cache_creation_tokens_per_second_p90: float
+    avg_automation_ratio: float
+    avg_session_duration_seconds: float
+    model_time_seconds: float
+    tool_time_seconds: float
+    user_time_seconds: float
+    inactive_time_seconds: float
+    day_model_time_seconds: float
+    day_tool_time_seconds: float
+    day_user_time_seconds: float
+    day_inactive_time_seconds: float
+    night_model_time_seconds: float
+    night_tool_time_seconds: float
+    night_user_time_seconds: float
+    night_inactive_time_seconds: float
+    active_time_ratio: float
+    model_timeout_count: int
+    source_breakdown: list[EcosystemAggregate]
+    bottleneck_distribution: list[AnalyticsBucket]
+    top_projects: list[ProjectAggregate]
+    top_tools: list[ToolAggregate]
+
+
 class AnalyticsOverviewResponse(BaseModel):
     """Response model for GET /api/analytics/overview."""
 
@@ -266,6 +358,8 @@ class AnalyticsOverviewResponse(BaseModel):
     bottleneck_distribution: list[AnalyticsBucket]
     top_projects: list[ProjectAggregate]
     top_tools: list[ToolAggregate]
+    control_plane: ControlPlaneOverview
+    runtime_plane: RuntimePlaneOverview
 
 
 class ProjectComparisonResponse(BaseModel):

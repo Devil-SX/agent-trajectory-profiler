@@ -108,7 +108,9 @@ test.describe('@smoke Statistics Dashboard - Tool Errors', () => {
     await expect(totalTokensCard).toContainText('5K');
 
     const tokenDistributionCard = page.locator('.chart-card').filter({ hasText: 'Token Distribution' }).first();
-    const firstSector = tokenDistributionCard.locator('.recharts-sector').first();
+    await tokenDistributionCard.scrollIntoViewIfNeeded();
+    const firstSector = tokenDistributionCard.locator('.recharts-sector:visible').first();
+    await expect(firstSector).toBeVisible();
     await firstSector.hover({ force: true });
 
     const tooltip = page.locator('.recharts-tooltip-wrapper').filter({ hasText: 'Input Tokens' }).first();

@@ -6,6 +6,20 @@ test.describe('@smoke Cross-session source segmentation', () => {
     await setupMockApi(page);
     await page.goto('/');
 
+    await page.waitForSelector('.plane-section--control', { timeout: 10000 });
+    await page.waitForSelector('.plane-section--runtime', { timeout: 10000 });
+
+    const controlPlane = page.locator('.plane-section--control');
+    await expect(controlPlane).toContainText('Control/Ingestion Plane');
+    await expect(controlPlane).toContainText('Parsed');
+    await expect(controlPlane).toContainText('Skipped');
+    await expect(controlPlane).toContainText('Errors');
+
+    const runtimePlane = page.locator('.plane-section--runtime');
+    await expect(runtimePlane).toContainText('Runtime/Behavior Plane');
+    await expect(runtimePlane).toContainText('Token volume');
+    await expect(runtimePlane).not.toContainText('Parse status');
+
     await page.waitForSelector('.overview-card:has-text("Source ecosystem distribution")', {
       timeout: 10000,
     });

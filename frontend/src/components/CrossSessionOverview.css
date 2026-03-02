@@ -46,6 +46,38 @@
   gap: calc(0.6rem * var(--density-font-scale));
 }
 
+.plane-section {
+  margin-top: calc(0.8rem * var(--density-font-scale));
+}
+
+.plane-section__header {
+  margin-bottom: calc(0.55rem * var(--density-font-scale));
+}
+
+.plane-section__header h4 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: calc(0.92rem * var(--density-font-scale));
+}
+
+.plane-section__header p {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-secondary);
+  font-size: calc(0.78rem * var(--density-font-scale));
+}
+
+.control-plane-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: calc(0.65rem * var(--density-font-scale));
+}
+
+.control-plane-card p {
+  margin: calc(0.28rem * var(--density-font-scale)) 0 0;
+  color: var(--color-text-secondary);
+  font-size: calc(0.8rem * var(--density-font-scale));
+}
+
 .preset-buttons {
   display: flex;
   gap: calc(0.45rem * var(--density-font-scale));

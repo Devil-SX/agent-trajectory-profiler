@@ -76,6 +76,14 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(seconds)}s`;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / Math.pow(1024, index);
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
 function formatLeverage(value: number | null | undefined): string {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return 'N/A';
@@ -286,9 +294,105 @@ export function CrossSessionOverview() {
     return null;
   }
 
-  const topProjects = overview.top_projects.slice(0, 8);
-  const topTools = overview.top_tools.slice(0, 8);
-  const sourceBreakdown = overview.source_breakdown || [];
+  const runtime = overview.runtime_plane ?? {
+    total_messages: overview.total_messages,
+    total_tokens: overview.total_tokens,
+    total_tool_calls: overview.total_tool_calls,
+    total_input_tokens: overview.total_input_tokens,
+    total_output_tokens: overview.total_output_tokens,
+    total_tool_output_tokens: overview.total_tool_output_tokens,
+    total_cache_read_tokens: overview.total_cache_read_tokens,
+    total_cache_creation_tokens: overview.total_cache_creation_tokens,
+    total_chars: overview.total_chars,
+    total_user_chars: overview.total_user_chars,
+    total_model_chars: overview.total_model_chars,
+    total_tool_chars: overview.total_tool_chars,
+    total_cjk_chars: overview.total_cjk_chars,
+    total_latin_chars: overview.total_latin_chars,
+    total_other_chars: overview.total_other_chars,
+    yield_ratio_tokens_mean: overview.yield_ratio_tokens_mean,
+    yield_ratio_tokens_median: overview.yield_ratio_tokens_median,
+    yield_ratio_tokens_p90: overview.yield_ratio_tokens_p90,
+    yield_ratio_chars_mean: overview.yield_ratio_chars_mean,
+    yield_ratio_chars_median: overview.yield_ratio_chars_median,
+    yield_ratio_chars_p90: overview.yield_ratio_chars_p90,
+    leverage_tokens_mean: overview.leverage_tokens_mean,
+    leverage_tokens_median: overview.leverage_tokens_median,
+    leverage_tokens_p90: overview.leverage_tokens_p90,
+    leverage_chars_mean: overview.leverage_chars_mean,
+    leverage_chars_median: overview.leverage_chars_median,
+    leverage_chars_p90: overview.leverage_chars_p90,
+    avg_tokens_per_second_mean: overview.avg_tokens_per_second_mean,
+    avg_tokens_per_second_median: overview.avg_tokens_per_second_median,
+    avg_tokens_per_second_p90: overview.avg_tokens_per_second_p90,
+    read_tokens_per_second_mean: overview.read_tokens_per_second_mean,
+    read_tokens_per_second_median: overview.read_tokens_per_second_median,
+    read_tokens_per_second_p90: overview.read_tokens_per_second_p90,
+    output_tokens_per_second_mean: overview.output_tokens_per_second_mean,
+    output_tokens_per_second_median: overview.output_tokens_per_second_median,
+    output_tokens_per_second_p90: overview.output_tokens_per_second_p90,
+    cache_tokens_per_second_mean: overview.cache_tokens_per_second_mean,
+    cache_tokens_per_second_median: overview.cache_tokens_per_second_median,
+    cache_tokens_per_second_p90: overview.cache_tokens_per_second_p90,
+    cache_read_tokens_per_second_mean: overview.cache_read_tokens_per_second_mean,
+    cache_read_tokens_per_second_median: overview.cache_read_tokens_per_second_median,
+    cache_read_tokens_per_second_p90: overview.cache_read_tokens_per_second_p90,
+    cache_creation_tokens_per_second_mean: overview.cache_creation_tokens_per_second_mean,
+    cache_creation_tokens_per_second_median: overview.cache_creation_tokens_per_second_median,
+    cache_creation_tokens_per_second_p90: overview.cache_creation_tokens_per_second_p90,
+    avg_automation_ratio: overview.avg_automation_ratio,
+    avg_session_duration_seconds: overview.avg_session_duration_seconds,
+    model_time_seconds: overview.model_time_seconds,
+    tool_time_seconds: overview.tool_time_seconds,
+    user_time_seconds: overview.user_time_seconds,
+    inactive_time_seconds: overview.inactive_time_seconds,
+    day_model_time_seconds: overview.day_model_time_seconds,
+    day_tool_time_seconds: overview.day_tool_time_seconds,
+    day_user_time_seconds: overview.day_user_time_seconds,
+    day_inactive_time_seconds: overview.day_inactive_time_seconds,
+    night_model_time_seconds: overview.night_model_time_seconds,
+    night_tool_time_seconds: overview.night_tool_time_seconds,
+    night_user_time_seconds: overview.night_user_time_seconds,
+    night_inactive_time_seconds: overview.night_inactive_time_seconds,
+    active_time_ratio: overview.active_time_ratio,
+    model_timeout_count: overview.model_timeout_count,
+    source_breakdown: overview.source_breakdown,
+    bottleneck_distribution: overview.bottleneck_distribution,
+    top_projects: overview.top_projects,
+    top_tools: overview.top_tools,
+  };
+
+  const control = overview.control_plane ?? {
+    logical_sessions: overview.total_sessions,
+    physical_sessions: overview.total_sessions,
+    files: {
+      total_files: 0,
+      parsed_files: 0,
+      error_files: 0,
+      pending_files: 0,
+      total_tracked_file_size_bytes: 0,
+      total_trajectory_file_size_bytes: overview.total_trajectory_file_size_bytes,
+      last_parsed_at: null,
+    },
+    sync_running: false,
+    last_sync: {
+      status: 'idle' as const,
+      trigger: 'startup' as const,
+      started_at: null,
+      finished_at: null,
+      parsed: 0,
+      skipped: 0,
+      errors: 0,
+      total_files_scanned: 0,
+      total_file_size_bytes: 0,
+      ecosystems: [],
+      error_samples: [],
+    },
+  };
+
+  const topProjects = runtime.top_projects.slice(0, 8);
+  const topTools = runtime.top_tools.slice(0, 8);
+  const sourceBreakdown = runtime.source_breakdown || [];
   const comparisonProjects = projectComparison.projects;
   const defaultProjectPaths = comparisonProjects.slice(0, 3).map((project) => project.project_path);
   const selectedProjectPaths = comparisonProjects
@@ -502,105 +606,184 @@ export function CrossSessionOverview() {
         </div>
       </div>
 
+      <section className="plane-section plane-section--control" aria-label={t('cross.plane.control.title')}>
+        <div className="plane-section__header">
+          <h4>{t('cross.plane.control.title')}</h4>
+          <p>{t('cross.plane.control.subtitle')}</p>
+        </div>
+        <div className="control-plane-grid">
+          <article className="overview-card control-plane-card">
+            <h4>{t('cross.control.syncStatus')}</h4>
+            <p>
+              {t('sync.lastSync')}
+              : {control.last_sync.finished_at ? formatDate(control.last_sync.finished_at) : t('sync.never')}
+            </p>
+            <p>
+              {t('cross.control.syncStatus')}
+              : {control.last_sync.status}
+            </p>
+            <p>
+              {t('sync.summary.parsed')}
+              /{t('sync.summary.skipped')}
+              /{t('sync.summary.errors')}
+              : {formatNumber(control.last_sync.parsed)}
+              /{formatNumber(control.last_sync.skipped)}
+              /{formatNumber(control.last_sync.errors)}
+            </p>
+          </article>
+
+          <article className="overview-card control-plane-card">
+            <h4>{t('sync.summary.files')}</h4>
+            <p>
+              {formatNumber(control.files.total_files)}
+              {' '}
+              {t('sync.filesSuffix')}
+            </p>
+            <p>
+              {t('sync.summary.size')}
+              : {formatBytes(control.files.total_tracked_file_size_bytes)}
+            </p>
+            <p>
+              {t('cross.kpi.trajectorySize')}
+              : {formatBytes(control.files.total_trajectory_file_size_bytes)}
+            </p>
+          </article>
+
+          <article className="overview-card control-plane-card">
+            <h4>{t('cross.control.parseStatus')}</h4>
+            <p>
+              {t('sync.summary.parsed')}
+              : {formatNumber(control.files.parsed_files)}
+            </p>
+            <p>
+              {t('sync.summary.errors')}
+              : {formatNumber(control.files.error_files)}
+            </p>
+            <p>
+              {t('cross.control.pending')}
+              : {formatNumber(control.files.pending_files)}
+            </p>
+          </article>
+
+          <article className="overview-card control-plane-card">
+            <h4>{t('cross.control.sessionScope')}</h4>
+            <p>
+              {t('cross.control.logicalSessions')}
+              : {formatNumber(control.logical_sessions)}
+            </p>
+            <p>
+              {t('cross.control.physicalSessions')}
+              : {formatNumber(control.physical_sessions)}
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section className="plane-section plane-section--runtime" aria-label={t('cross.plane.runtime.title')}>
+        <div className="plane-section__header">
+          <h4>{t('cross.plane.runtime.title')}</h4>
+          <p>{t('cross.plane.runtime.subtitle')}</p>
+        </div>
+
       <div className="kpi-grid">
         <article className="kpi-card">
           <h4>{t('cross.kpi.totalSessions')}</h4>
-          <div className="kpi-value">{formatNumber(overview.total_sessions)}</div>
+          <div className="kpi-value">{formatNumber(control.logical_sessions)}</div>
           <p>
             <MetricTerm metricId="bottleneck">{t('cross.kpi.primaryBottleneck')}</MetricTerm>
-            : {getLeadingBucket(overview.bottleneck_distribution)}
+            : {getLeadingBucket(runtime.bottleneck_distribution)}
           </p>
         </article>
 
         <article className="kpi-card">
           <h4>{t('cross.kpi.automationEfficiency')}</h4>
-          <div className="kpi-value">{overview.avg_automation_ratio.toFixed(2)}x</div>
+          <div className="kpi-value">{runtime.avg_automation_ratio.toFixed(2)}x</div>
           <p>
             <MetricTerm metricId="active_ratio">{t('cross.kpi.activeRatio')}</MetricTerm>
-            : {formatPercentPoint(overview.active_time_ratio)}
+            : {formatPercentPoint(runtime.active_time_ratio)}
           </p>
           <p>
             <MetricTerm metricId="leverage">{t('cross.kpi.tokenLeverage')}</MetricTerm>
             : {formatLeverage(
-              overview.leverage_tokens_mean ?? overview.yield_ratio_tokens_mean
+              runtime.leverage_tokens_mean ?? runtime.yield_ratio_tokens_mean
             )} /
             {' '}
-            {formatLeverage(overview.leverage_tokens_median ?? overview.yield_ratio_tokens_median)} /
+            {formatLeverage(runtime.leverage_tokens_median ?? runtime.yield_ratio_tokens_median)} /
             {' '}
-            {formatLeverage(overview.leverage_tokens_p90 ?? overview.yield_ratio_tokens_p90)}
+            {formatLeverage(runtime.leverage_tokens_p90 ?? runtime.yield_ratio_tokens_p90)}
           </p>
           <p>
             <MetricTerm metricId="yield">{t('cross.kpi.charLeverage')}</MetricTerm>
             : {formatLeverage(
-              overview.leverage_chars_mean ?? overview.yield_ratio_chars_mean
+              runtime.leverage_chars_mean ?? runtime.yield_ratio_chars_mean
             )} /
             {' '}
-            {formatLeverage(overview.leverage_chars_median ?? overview.yield_ratio_chars_median)} /
+            {formatLeverage(runtime.leverage_chars_median ?? runtime.yield_ratio_chars_median)} /
             {' '}
-            {formatLeverage(overview.leverage_chars_p90 ?? overview.yield_ratio_chars_p90)}
+            {formatLeverage(runtime.leverage_chars_p90 ?? runtime.yield_ratio_chars_p90)}
           </p>
         </article>
 
         <article className="kpi-card">
           <h4>{t('cross.kpi.tokenVolume')}</h4>
-          <div className="kpi-value" title={formatNumber(overview.total_tokens)}>
-            {formatTokenCount(overview.total_tokens)}
+          <div className="kpi-value" title={formatNumber(runtime.total_tokens)}>
+            {formatTokenCount(runtime.total_tokens)}
           </div>
           <p>
             {t('cross.kpi.inputOutput')}
-            : <span title={formatNumber(overview.total_input_tokens)}>
-              {formatTokenCount(overview.total_input_tokens)}
+            : <span title={formatNumber(runtime.total_input_tokens)}>
+              {formatTokenCount(runtime.total_input_tokens)}
             </span>
             {' / '}
-            <span title={formatNumber(overview.total_output_tokens)}>
-              {formatTokenCount(overview.total_output_tokens)}
+            <span title={formatNumber(runtime.total_output_tokens)}>
+              {formatTokenCount(runtime.total_output_tokens)}
             </span>
           </p>
           <p>
             {t('cross.kpi.trajectorySize')}
-            : {formatNumber(overview.total_trajectory_file_size_bytes)}
+            : {formatNumber(control.files.total_trajectory_file_size_bytes)}
             {' '}
             {t('cross.kpi.bytes')}
           </p>
           <p>
             {t('cross.kpi.charsCjkLatin')}
-            : {formatNumber(overview.total_cjk_chars)}
+            : {formatNumber(runtime.total_cjk_chars)}
             {' / '}
-            {formatNumber(overview.total_latin_chars)}
+            {formatNumber(runtime.total_latin_chars)}
           </p>
         </article>
 
         <article className="kpi-card">
           <h4>{t('cross.kpi.toolExecution')}</h4>
-          <div className="kpi-value">{formatNumber(overview.total_tool_calls)}</div>
+          <div className="kpi-value">{formatNumber(runtime.total_tool_calls)}</div>
           <p>
             {t('cross.kpi.avgSessionDuration')}
-            : {formatDuration(overview.avg_session_duration_seconds)} ·
+            : {formatDuration(runtime.avg_session_duration_seconds)} ·
             {' '}
             {t('cross.kpi.modelTimeouts')}
-            : {formatNumber(overview.model_timeout_count)}
+            : {formatNumber(runtime.model_timeout_count)}
           </p>
           <p>
             <MetricTerm metricId="tokens_per_second">{t('cross.kpi.modelTokS')}</MetricTerm>
-            : {overview.avg_tokens_per_second_mean.toFixed(2)} /
+            : {runtime.avg_tokens_per_second_mean.toFixed(2)} /
             {' '}
-            {overview.avg_tokens_per_second_median.toFixed(2)} /
+            {runtime.avg_tokens_per_second_median.toFixed(2)} /
             {' '}
-            {overview.avg_tokens_per_second_p90.toFixed(2)}
+            {runtime.avg_tokens_per_second_p90.toFixed(2)}
           </p>
           <p>
             <MetricTerm metricId="tokens_per_second">{t('cross.kpi.readOutputTokS')}</MetricTerm>
-            : {overview.read_tokens_per_second_mean.toFixed(2)}
+            : {runtime.read_tokens_per_second_mean.toFixed(2)}
             {' / '}
-            {overview.output_tokens_per_second_mean.toFixed(2)}
+            {runtime.output_tokens_per_second_mean.toFixed(2)}
           </p>
           <p>
             <MetricTerm metricId="tokens_per_second">{t('cross.kpi.cacheTokS')}</MetricTerm>
-            : {overview.cache_tokens_per_second_mean.toFixed(2)}
+            : {runtime.cache_tokens_per_second_mean.toFixed(2)}
             {' ('}
-            {overview.cache_read_tokens_per_second_mean.toFixed(2)}
+            {runtime.cache_read_tokens_per_second_mean.toFixed(2)}
             {' / '}
-            {overview.cache_creation_tokens_per_second_mean.toFixed(2)}
+            {runtime.cache_creation_tokens_per_second_mean.toFixed(2)}
             {')'}
           </p>
         </article>
@@ -1023,13 +1206,13 @@ export function CrossSessionOverview() {
           <h4>
             <MetricTerm metricId="bottleneck">{t('cross.bottleneckDistribution')}</MetricTerm>
           </h4>
-          {overview.bottleneck_distribution.length === 0 ? (
+          {runtime.bottleneck_distribution.length === 0 ? (
             <p className="empty-hint">{t('cross.noBottleneckData')}</p>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie
-                  data={overview.bottleneck_distribution}
+                  data={runtime.bottleneck_distribution}
                   dataKey="count"
                   nameKey="label"
                   cx="50%"
@@ -1039,7 +1222,7 @@ export function CrossSessionOverview() {
                     `${name || t('table.unknown')}: ${formatPercentPoint(percent || 0)}`
                   }
                 >
-                  {overview.bottleneck_distribution.map((entry, index) => (
+                  {runtime.bottleneck_distribution.map((entry, index) => (
                     <Cell key={entry.key} fill={DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]} />
                   ))}
                 </Pie>
@@ -1151,6 +1334,7 @@ export function CrossSessionOverview() {
           )}
         </section>
       </div>
+      </section>
     </section>
   );
 }

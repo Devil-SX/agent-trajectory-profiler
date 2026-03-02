@@ -400,6 +400,92 @@ export interface EcosystemAggregate {
   percent_tokens: number;
 }
 
+export interface ControlPlaneFileStats {
+  total_files: number;
+  parsed_files: number;
+  error_files: number;
+  pending_files: number;
+  total_tracked_file_size_bytes: number;
+  total_trajectory_file_size_bytes: number;
+  last_parsed_at: string | null;
+}
+
+export interface ControlPlaneOverview {
+  logical_sessions: number;
+  physical_sessions: number;
+  files: ControlPlaneFileStats;
+  sync_running: boolean;
+  last_sync: SyncRunDetail;
+}
+
+export interface RuntimePlaneOverview {
+  total_messages: number;
+  total_tokens: number;
+  total_tool_calls: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tool_output_tokens: number;
+  total_cache_read_tokens: number;
+  total_cache_creation_tokens: number;
+  total_chars: number;
+  total_user_chars: number;
+  total_model_chars: number;
+  total_tool_chars: number;
+  total_cjk_chars: number;
+  total_latin_chars: number;
+  total_other_chars: number;
+  yield_ratio_tokens_mean: number;
+  yield_ratio_tokens_median: number;
+  yield_ratio_tokens_p90: number;
+  yield_ratio_chars_mean: number;
+  yield_ratio_chars_median: number;
+  yield_ratio_chars_p90: number;
+  leverage_tokens_mean: number;
+  leverage_tokens_median: number;
+  leverage_tokens_p90: number;
+  leverage_chars_mean: number;
+  leverage_chars_median: number;
+  leverage_chars_p90: number;
+  avg_tokens_per_second_mean: number;
+  avg_tokens_per_second_median: number;
+  avg_tokens_per_second_p90: number;
+  read_tokens_per_second_mean: number;
+  read_tokens_per_second_median: number;
+  read_tokens_per_second_p90: number;
+  output_tokens_per_second_mean: number;
+  output_tokens_per_second_median: number;
+  output_tokens_per_second_p90: number;
+  cache_tokens_per_second_mean: number;
+  cache_tokens_per_second_median: number;
+  cache_tokens_per_second_p90: number;
+  cache_read_tokens_per_second_mean: number;
+  cache_read_tokens_per_second_median: number;
+  cache_read_tokens_per_second_p90: number;
+  cache_creation_tokens_per_second_mean: number;
+  cache_creation_tokens_per_second_median: number;
+  cache_creation_tokens_per_second_p90: number;
+  avg_automation_ratio: number;
+  avg_session_duration_seconds: number;
+  model_time_seconds: number;
+  tool_time_seconds: number;
+  user_time_seconds: number;
+  inactive_time_seconds: number;
+  day_model_time_seconds: number;
+  day_tool_time_seconds: number;
+  day_user_time_seconds: number;
+  day_inactive_time_seconds: number;
+  night_model_time_seconds: number;
+  night_tool_time_seconds: number;
+  night_user_time_seconds: number;
+  night_inactive_time_seconds: number;
+  active_time_ratio: number;
+  model_timeout_count: number;
+  source_breakdown: EcosystemAggregate[];
+  bottleneck_distribution: AnalyticsBucket[];
+  top_projects: ProjectAggregate[];
+  top_tools: ToolAggregate[];
+}
+
 export interface AnalyticsOverviewResponse {
   start_date: string;
   end_date: string;
@@ -470,6 +556,8 @@ export interface AnalyticsOverviewResponse {
   bottleneck_distribution: AnalyticsBucket[];
   top_projects: ProjectAggregate[];
   top_tools: ToolAggregate[];
+  control_plane: ControlPlaneOverview;
+  runtime_plane: RuntimePlaneOverview;
 }
 
 export type AnalyticsDimension =

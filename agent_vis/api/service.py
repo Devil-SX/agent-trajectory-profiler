@@ -22,12 +22,15 @@ from agent_vis.api.models import (
     AnalyticsOverviewResponse,
     AnalyticsTimeseriesPoint,
     AnalyticsTimeseriesResponse,
+    ControlPlaneFileStats,
+    ControlPlaneOverview,
     EcosystemAggregate,
     ProjectAggregate,
     ProjectComparisonItem,
     ProjectComparisonResponse,
     ProjectSwimlanePoint,
     ProjectSwimlaneResponse,
+    RuntimePlaneOverview,
     SessionSummary,
     ToolAggregate,
 )
@@ -528,6 +531,103 @@ class SessionService:
             return session.statistics
         return None
 
+    def _get_tracked_file_stats(self) -> dict[str, int | str | None]:
+        """Return tracked-files level parse stats for control plane."""
+        if self._repo is None:
+            return {
+                "total_files": 0,
+                "parsed_files": 0,
+                "error_files": 0,
+                "pending_files": 0,
+                "total_tracked_file_size_bytes": 0,
+                "last_parsed_at": None,
+            }
+
+        conn = self._repo._conn
+        cur = conn.execute("""
+            SELECT
+                parse_status,
+                COUNT(*) AS count,
+                COALESCE(SUM(file_size), 0) AS size_bytes
+            FROM tracked_files
+            GROUP BY parse_status
+            """)
+
+        parsed_files = 0
+        error_files = 0
+        pending_files = 0
+        total_files = 0
+        total_size = 0
+
+        for row in cur.fetchall():
+            status = str(row["parse_status"] or "").strip().lower()
+            count = int(row["count"] or 0)
+            size = int(row["size_bytes"] or 0)
+            total_files += count
+            total_size += size
+
+            if status == "parsed":
+                parsed_files += count
+            elif status == "error":
+                error_files += count
+            else:
+                pending_files += count
+
+        cur = conn.execute(
+            "SELECT MAX(last_parsed_at) FROM tracked_files WHERE parse_status = 'parsed'"
+        )
+        row = cur.fetchone()
+        last_parsed_at = row[0] if row else None
+
+        return {
+            "total_files": total_files,
+            "parsed_files": parsed_files,
+            "error_files": error_files,
+            "pending_files": pending_files,
+            "total_tracked_file_size_bytes": total_size,
+            "last_parsed_at": last_parsed_at,
+        }
+
+    def _build_control_plane_overview(
+        self,
+        *,
+        logical_sessions: int,
+        total_trajectory_file_size_bytes: int,
+    ) -> ControlPlaneOverview:
+        sync_status = self.get_sync_status()
+        file_stats = self._get_tracked_file_stats()
+        last_sync = sync_status.get("last_sync") or {
+            "status": "idle",
+            "trigger": "startup",
+            "started_at": None,
+            "finished_at": None,
+            "parsed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "total_files_scanned": 0,
+            "total_file_size_bytes": 0,
+            "ecosystems": [],
+            "error_samples": [],
+        }
+
+        return ControlPlaneOverview(
+            logical_sessions=logical_sessions,
+            physical_sessions=int(sync_status.get("total_sessions") or 0),
+            files=ControlPlaneFileStats(
+                total_files=int(file_stats["total_files"]),
+                parsed_files=int(file_stats["parsed_files"]),
+                error_files=int(file_stats["error_files"]),
+                pending_files=int(file_stats["pending_files"]),
+                total_tracked_file_size_bytes=int(file_stats["total_tracked_file_size_bytes"]),
+                total_trajectory_file_size_bytes=total_trajectory_file_size_bytes,
+                last_parsed_at=(
+                    str(file_stats["last_parsed_at"]) if file_stats["last_parsed_at"] else None
+                ),
+            ),
+            sync_running=bool(sync_status.get("sync_running")),
+            last_sync=cast(dict[str, Any], last_sync),
+        )
+
     async def get_analytics_overview(
         self, start_date: str, end_date: str
     ) -> AnalyticsOverviewResponse:
@@ -536,6 +636,77 @@ class SessionService:
         total_sessions = len(rows)
 
         if total_sessions == 0:
+            runtime_plane = RuntimePlaneOverview(
+                total_messages=0,
+                total_tokens=0,
+                total_tool_calls=0,
+                total_input_tokens=0,
+                total_output_tokens=0,
+                total_tool_output_tokens=0,
+                total_cache_read_tokens=0,
+                total_cache_creation_tokens=0,
+                total_chars=0,
+                total_user_chars=0,
+                total_model_chars=0,
+                total_tool_chars=0,
+                total_cjk_chars=0,
+                total_latin_chars=0,
+                total_other_chars=0,
+                yield_ratio_tokens_mean=0.0,
+                yield_ratio_tokens_median=0.0,
+                yield_ratio_tokens_p90=0.0,
+                yield_ratio_chars_mean=0.0,
+                yield_ratio_chars_median=0.0,
+                yield_ratio_chars_p90=0.0,
+                leverage_tokens_mean=0.0,
+                leverage_tokens_median=0.0,
+                leverage_tokens_p90=0.0,
+                leverage_chars_mean=0.0,
+                leverage_chars_median=0.0,
+                leverage_chars_p90=0.0,
+                avg_tokens_per_second_mean=0.0,
+                avg_tokens_per_second_median=0.0,
+                avg_tokens_per_second_p90=0.0,
+                read_tokens_per_second_mean=0.0,
+                read_tokens_per_second_median=0.0,
+                read_tokens_per_second_p90=0.0,
+                output_tokens_per_second_mean=0.0,
+                output_tokens_per_second_median=0.0,
+                output_tokens_per_second_p90=0.0,
+                cache_tokens_per_second_mean=0.0,
+                cache_tokens_per_second_median=0.0,
+                cache_tokens_per_second_p90=0.0,
+                cache_read_tokens_per_second_mean=0.0,
+                cache_read_tokens_per_second_median=0.0,
+                cache_read_tokens_per_second_p90=0.0,
+                cache_creation_tokens_per_second_mean=0.0,
+                cache_creation_tokens_per_second_median=0.0,
+                cache_creation_tokens_per_second_p90=0.0,
+                avg_automation_ratio=0.0,
+                avg_session_duration_seconds=0.0,
+                model_time_seconds=0.0,
+                tool_time_seconds=0.0,
+                user_time_seconds=0.0,
+                inactive_time_seconds=0.0,
+                day_model_time_seconds=0.0,
+                day_tool_time_seconds=0.0,
+                day_user_time_seconds=0.0,
+                day_inactive_time_seconds=0.0,
+                night_model_time_seconds=0.0,
+                night_tool_time_seconds=0.0,
+                night_user_time_seconds=0.0,
+                night_inactive_time_seconds=0.0,
+                active_time_ratio=0.0,
+                model_timeout_count=0,
+                source_breakdown=[],
+                bottleneck_distribution=[],
+                top_projects=[],
+                top_tools=[],
+            )
+            control_plane = self._build_control_plane_overview(
+                logical_sessions=0,
+                total_trajectory_file_size_bytes=0,
+            )
             return AnalyticsOverviewResponse(
                 start_date=start_date,
                 end_date=end_date,
@@ -606,6 +777,8 @@ class SessionService:
                 bottleneck_distribution=[],
                 top_projects=[],
                 top_tools=[],
+                control_plane=control_plane,
+                runtime_plane=runtime_plane,
             )
 
         total_messages = sum(int(row.get("total_messages") or 0) for row in rows)
@@ -1010,6 +1183,77 @@ class SessionService:
         cache_create_tps_mean, cache_create_tps_median, cache_create_tps_p90 = summarize(
             throughput_values["cache_creation"]
         )
+        runtime_plane = RuntimePlaneOverview(
+            total_messages=total_messages,
+            total_tokens=total_tokens,
+            total_tool_calls=total_tool_calls,
+            total_input_tokens=total_input_tokens,
+            total_output_tokens=total_output_tokens,
+            total_tool_output_tokens=total_tool_output_tokens,
+            total_cache_read_tokens=total_cache_read_tokens,
+            total_cache_creation_tokens=total_cache_creation_tokens,
+            total_chars=total_chars,
+            total_user_chars=total_user_chars,
+            total_model_chars=total_model_chars,
+            total_tool_chars=total_tool_chars,
+            total_cjk_chars=total_cjk_chars,
+            total_latin_chars=total_latin_chars,
+            total_other_chars=total_other_chars,
+            yield_ratio_tokens_mean=mean(token_yield_ratios) if token_yield_ratios else 0.0,
+            yield_ratio_tokens_median=median(token_yield_ratios) if token_yield_ratios else 0.0,
+            yield_ratio_tokens_p90=token_p90,
+            yield_ratio_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
+            yield_ratio_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
+            yield_ratio_chars_p90=chars_p90,
+            leverage_tokens_mean=mean(token_yield_ratios) if token_yield_ratios else 0.0,
+            leverage_tokens_median=median(token_yield_ratios) if token_yield_ratios else 0.0,
+            leverage_tokens_p90=token_p90,
+            leverage_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
+            leverage_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
+            leverage_chars_p90=chars_p90,
+            avg_tokens_per_second_mean=avg_tps_mean,
+            avg_tokens_per_second_median=avg_tps_median,
+            avg_tokens_per_second_p90=avg_tps_p90,
+            read_tokens_per_second_mean=read_tps_mean,
+            read_tokens_per_second_median=read_tps_median,
+            read_tokens_per_second_p90=read_tps_p90,
+            output_tokens_per_second_mean=out_tps_mean,
+            output_tokens_per_second_median=out_tps_median,
+            output_tokens_per_second_p90=out_tps_p90,
+            cache_tokens_per_second_mean=cache_tps_mean,
+            cache_tokens_per_second_median=cache_tps_median,
+            cache_tokens_per_second_p90=cache_tps_p90,
+            cache_read_tokens_per_second_mean=cache_read_tps_mean,
+            cache_read_tokens_per_second_median=cache_read_tps_median,
+            cache_read_tokens_per_second_p90=cache_read_tps_p90,
+            cache_creation_tokens_per_second_mean=cache_create_tps_mean,
+            cache_creation_tokens_per_second_median=cache_create_tps_median,
+            cache_creation_tokens_per_second_p90=cache_create_tps_p90,
+            avg_automation_ratio=mean(automation_values) if automation_values else 0.0,
+            avg_session_duration_seconds=mean(duration_values) if duration_values else 0.0,
+            model_time_seconds=model_time_seconds,
+            tool_time_seconds=tool_time_seconds,
+            user_time_seconds=user_time_seconds,
+            inactive_time_seconds=inactive_time_seconds,
+            day_model_time_seconds=day_model_time_seconds,
+            day_tool_time_seconds=day_tool_time_seconds,
+            day_user_time_seconds=day_user_time_seconds,
+            day_inactive_time_seconds=day_inactive_time_seconds,
+            night_model_time_seconds=night_model_time_seconds,
+            night_tool_time_seconds=night_tool_time_seconds,
+            night_user_time_seconds=night_user_time_seconds,
+            night_inactive_time_seconds=night_inactive_time_seconds,
+            active_time_ratio=active_time_ratio,
+            model_timeout_count=model_timeout_count,
+            source_breakdown=source_breakdown,
+            bottleneck_distribution=bottleneck_distribution,
+            top_projects=top_projects,
+            top_tools=top_tools,
+        )
+        control_plane = self._build_control_plane_overview(
+            logical_sessions=total_sessions,
+            total_trajectory_file_size_bytes=total_trajectory_file_size_bytes,
+        )
 
         return AnalyticsOverviewResponse(
             start_date=start_date,
@@ -1081,6 +1325,8 @@ class SessionService:
             bottleneck_distribution=bottleneck_distribution,
             top_projects=top_projects,
             top_tools=top_tools,
+            control_plane=control_plane,
+            runtime_plane=runtime_plane,
         )
 
     async def get_analytics_distribution(
