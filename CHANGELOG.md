@@ -20,6 +20,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Regression coverage for state unification:
   - backend API integration tests for frontend preference read/write, directory initialization, and env compatibility (`tests/test_api_integration.py`)
   - frontend smoke test for localStorage-to-state migration and persisted reload behavior (`frontend/tests/preferences-migration.spec.ts`).
+- New Telegram incremental report workflow:
+  - CLI command `agent-vis report telegram` with `--dry-run`
+  - TOML config loading from `~/.agent-vis/config/telegram.toml`
+  - incremental window state at `~/.agent-vis/state/report-state.json`
+  - summary payload including new sessions, source distribution, bottleneck distribution, and tool error counts.
+- Telegram reporting docs with config template, state semantics, and security notes (`docs/telegram-report.md`).
+- Regression coverage for Telegram reporting:
+  - report module tests for config validation, incremental windowing, Telegram API success/failure/timeout mocks, and failed-send timestamp rollback (`tests/test_telegram_reporting.py`)
+  - CLI command dry-run integration test (`tests/test_cli_report_command.py`).
 - Regression coverage for Codex logical-session behavior:
   - parser lineage extraction test (`tests/test_codex_parser.py`)
   - API logical-vs-physical list behavior test (`tests/test_api_integration.py`)

@@ -841,5 +841,89 @@ def analyze(
     click.echo(f"Analysis report written to: {output}", err=True)
 
 
+@main.group()
+def report() -> None:
+    """Reporting commands (incremental summaries)."""
+    pass
+
+
+@report.command("telegram")
+@click.option(
+    "--config-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Telegram config path (default: ~/.agent-vis/config/telegram.toml)",
+)
+@click.option(
+    "--state-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Report state path (default: ~/.agent-vis/state/report-state.json)",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Generate report and print result without sending to Telegram",
+)
+def report_telegram(
+    config_path: Path | None,
+    state_path: Path | None,
+    db_path: Path | None,
+    dry_run: bool,
+) -> None:
+    """Send incremental summary report to Telegram Bot chat."""
+    from agent_vis.reporting.telegram import (
+        DEFAULT_CONFIG_PATH,
+        DEFAULT_STATE_PATH,
+        run_telegram_incremental_report,
+    )
+
+    resolved_config_path = config_path or DEFAULT_CONFIG_PATH
+    resolved_state_path = state_path or DEFAULT_STATE_PATH
+
+    try:
+        result = run_telegram_incremental_report(
+            config_path=resolved_config_path,
+            state_path=resolved_state_path,
+            db_path=db_path,
+            dry_run=dry_run,
+        )
+    except Exception as exc:
+        click.echo(f"Telegram report failed: {exc}", err=True)
+        click.echo(f"Config: {resolved_config_path}", err=True)
+        click.echo(f"State:  {resolved_state_path}", err=True)
+        sys.exit(1)
+
+    click.echo("=" * 60)
+    click.echo("Telegram Incremental Report")
+    click.echo("=" * 60)
+    click.echo(f"Status:         {result.status}")
+    click.echo(f"Target chat:    {result.chat_id}")
+    click.echo(f"Window start:   {result.window_start or 'initial-sync'}")
+    click.echo(f"Window end:     {result.window_end}")
+    click.echo(f"New sessions:   {result.summary.session_count}")
+    click.echo(f"Tool errors:    {result.summary.total_tool_errors}")
+    click.echo(
+        "Sources:        "
+        + ", ".join(f"{k}={v}" for k, v in sorted(result.summary.source_counts.items()))
+        if result.summary.source_counts
+        else "Sources:        (none)"
+    )
+    click.echo(
+        "Bottlenecks:    "
+        + ", ".join(f"{k}={v}" for k, v in sorted(result.summary.bottleneck_counts.items()))
+        if result.summary.bottleneck_counts
+        else "Bottlenecks:    (none)"
+    )
+    click.echo("=" * 60)
+
+
 if __name__ == "__main__":
     main()
