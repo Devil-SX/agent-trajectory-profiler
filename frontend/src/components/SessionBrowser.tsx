@@ -35,7 +35,9 @@ interface SessionBrowserProps {
 }
 
 type SessionViewMode = 'cards' | 'table';
+type SessionAggregationMode = 'logical' | 'physical';
 const SESSION_VIEW_MODE_STORAGE_KEY = 'agent-vis:session-browser:view-mode';
+const SESSION_AGGREGATION_MODE_STORAGE_KEY = 'agent-vis:session-browser:aggregation-mode';
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 
@@ -61,15 +63,6 @@ export function SessionBrowser({
     end_date: null,
   });
 
-  const { data, isLoading, error: queryError } = useSessionsQuery(
-    page,
-    pageSize,
-    dateRange.start_date,
-    dateRange.end_date
-  );
-  const syncStatusQuery = useSyncStatusQuery();
-  const runSyncMutation = useRunSyncMutation();
-
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     controlledSelectedSessionId
   );
@@ -85,6 +78,16 @@ export function SessionBrowser({
     }
     return 'table';
   });
+  const [aggregationMode, setAggregationMode] = useState<SessionAggregationMode>(() => {
+    if (typeof window === 'undefined') {
+      return 'logical';
+    }
+    const stored = window.localStorage.getItem(SESSION_AGGREGATION_MODE_STORAGE_KEY);
+    if (stored === 'logical' || stored === 'physical') {
+      return stored;
+    }
+    return 'logical';
+  });
 
   // Filter and sort state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -92,6 +95,16 @@ export function SessionBrowser({
   const [bottleneckFilter, setBottleneckFilter] = useState<BottleneckFilter>(
     'all'
   );
+
+  const { data, isLoading, error: queryError } = useSessionsQuery(
+    page,
+    pageSize,
+    dateRange.start_date,
+    dateRange.end_date,
+    aggregationMode
+  );
+  const syncStatusQuery = useSyncStatusQuery();
+  const runSyncMutation = useRunSyncMutation();
 
   const sessions: SessionSummary[] = data?.sessions ?? EMPTY_SESSIONS;
   const loading = isLoading && !data;
@@ -114,6 +127,12 @@ export function SessionBrowser({
       window.localStorage.setItem(SESSION_VIEW_MODE_STORAGE_KEY, viewMode);
     }
   }, [viewMode]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SESSION_AGGREGATION_MODE_STORAGE_KEY, aggregationMode);
+    }
+  }, [aggregationMode]);
 
   // Initialize selection on first load
   useEffect(() => {
@@ -349,6 +368,24 @@ export function SessionBrowser({
                     aria-pressed={viewMode === 'table'}
                   >
                     {t('session.viewMode.table')}
+                  </button>
+                </div>
+                <div className="session-view-toggle" role="group" aria-label={t('session.aggregationMode.aria')}>
+                  <button
+                    className={`session-view-toggle__button ${aggregationMode === 'logical' ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => setAggregationMode('logical')}
+                    aria-pressed={aggregationMode === 'logical'}
+                  >
+                    {t('session.aggregationMode.logical')}
+                  </button>
+                  <button
+                    className={`session-view-toggle__button ${aggregationMode === 'physical' ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => setAggregationMode('physical')}
+                    aria-pressed={aggregationMode === 'physical'}
+                  >
+                    {t('session.aggregationMode.physical')}
                   </button>
                 </div>
                 <div className="session-count">

@@ -41,8 +41,14 @@ import type {
 export const sessionKeys = {
   all: ['sessions'] as const,
   lists: () => [...sessionKeys.all, 'list'] as const,
-  list: (page: number, pageSize: number, startDate?: string | null, endDate?: string | null) =>
-    [...sessionKeys.lists(), { page, pageSize, startDate, endDate }] as const,
+  list: (
+    page: number,
+    pageSize: number,
+    startDate?: string | null,
+    endDate?: string | null,
+    viewMode: 'logical' | 'physical' = 'logical',
+  ) =>
+    [...sessionKeys.lists(), { page, pageSize, startDate, endDate, viewMode }] as const,
   details: () => [...sessionKeys.all, 'detail'] as const,
   detail: (id: string) => [...sessionKeys.details(), id] as const,
   statistics: () => [...sessionKeys.all, 'statistics'] as const,
@@ -85,11 +91,12 @@ export function useSessionsQuery(
   page: number = 1,
   pageSize: number = 50,
   startDate: string | null = null,
-  endDate: string | null = null
+  endDate: string | null = null,
+  viewMode: 'logical' | 'physical' = 'logical',
 ): UseQueryResult<SessionListResponse, Error> {
   return useQuery({
-    queryKey: sessionKeys.list(page, pageSize, startDate, endDate),
-    queryFn: () => fetchSessions(page, pageSize, startDate, endDate),
+    queryKey: sessionKeys.list(page, pageSize, startDate, endDate, viewMode),
+    queryFn: () => fetchSessions(page, pageSize, startDate, endDate, viewMode),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

@@ -8,7 +8,7 @@
  * - Visual "Filtered" state on toggle button
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
 import { useI18n } from '../i18n';
 import './DateRangePicker.css';
 
@@ -26,6 +26,7 @@ interface DateRangePickerProps {
 export function DateRangePicker({ value, onChange, onClear }: DateRangePickerProps) {
   const { t, formatDate } = useI18n();
   const [showPicker, setShowPicker] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<CSSProperties | undefined>(undefined);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -48,6 +49,57 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
+  }, [showPicker]);
+
+  useEffect(() => {
+    if (!showPicker) {
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      if (!buttonRef.current || !dropdownRef.current) {
+        return;
+      }
+
+      const buttonRect = buttonRef.current.getBoundingClientRect();
+      const dropdownRect = dropdownRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const desiredWidth = Math.min(Math.max(dropdownRect.width || 320, 280), viewportWidth - 16);
+
+      let left = buttonRect.left;
+      if (left + desiredWidth > viewportWidth - 8) {
+        left = viewportWidth - desiredWidth - 8;
+      }
+      if (left < 8) {
+        left = 8;
+      }
+
+      let top = buttonRect.bottom + 8;
+      let maxHeight = viewportHeight - top - 8;
+
+      if (maxHeight < 220) {
+        const desiredHeight = Math.min(dropdownRect.height || 420, viewportHeight - 16);
+        top = Math.max(8, buttonRect.top - desiredHeight - 8);
+        maxHeight = viewportHeight - top - 8;
+      }
+
+      setDropdownStyle({
+        top: `${top}px`,
+        left: `${left}px`,
+        maxWidth: `${viewportWidth - 16}px`,
+        maxHeight: `${Math.max(maxHeight, 180)}px`,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
   }, [showPicker]);
 
   const handleStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,7 +167,7 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
       </button>
 
       {showPicker && (
-        <div ref={dropdownRef} className="date-picker-dropdown">
+        <div ref={dropdownRef} className="date-picker-dropdown" style={dropdownStyle}>
           <div className="date-picker-header">
             <h4>{t('dateRange.header')}</h4>
           </div>

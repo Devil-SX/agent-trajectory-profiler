@@ -31,6 +31,20 @@ _UUID_TAIL_RE = re.compile(
     re.IGNORECASE,
 )
 _EXIT_CODE_RE = re.compile(r"Process exited with code\s+(-?\d+)")
+_PARENT_ID_KEYS = (
+    "parent_session_id",
+    "parent_thread_id",
+    "parent_id",
+    "parentSessionId",
+    "parentThreadId",
+)
+_ROOT_ID_KEYS = (
+    "root_session_id",
+    "root_thread_id",
+    "root_id",
+    "rootSessionId",
+    "rootThreadId",
+)
 
 
 def _session_id_from_source_path(source_path: str) -> str:
@@ -39,6 +53,59 @@ def _session_id_from_source_path(source_path: str) -> str:
     if match:
         return match.group(1)
     return stem
+
+
+def _extract_non_empty_str(payload: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized
+    return None
+
+
+def _resolve_codex_lineage(file_path: Path, session_id: str) -> tuple[str, str | None, str | None]:
+    """Resolve logical lineage for one Codex rollout file.
+
+    Returns (logical_session_id, parent_session_id, root_session_id).
+    """
+    parent_session_id: str | None = None
+    root_session_id: str | None = None
+
+    try:
+        with open(file_path, encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    raw = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if raw.get("type") != "session_meta":
+                    continue
+                payload = raw.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+
+                nested_lineage = payload.get("lineage")
+                lineage_payload = nested_lineage if isinstance(nested_lineage, dict) else payload
+
+                parent_session_id = parent_session_id or _extract_non_empty_str(
+                    lineage_payload,
+                    _PARENT_ID_KEYS,
+                )
+                root_session_id = root_session_id or _extract_non_empty_str(
+                    lineage_payload,
+                    _ROOT_ID_KEYS,
+                )
+    except OSError:
+        # Fall back to physical-only view if lineage cannot be inspected.
+        pass
+
+    logical_session_id = root_session_id or parent_session_id or session_id
+    return logical_session_id, parent_session_id, root_session_id
 
 
 def _safe_timestamp(raw_timestamp: Any, line_number: int) -> str:
@@ -326,6 +393,13 @@ def parse_codex_session_file(
 
     session_id = _resolve_codex_session_id(messages, file_path)
     metadata = extract_session_metadata(messages, session_id, file_path)
+    logical_session_id, parent_session_id, root_session_id = _resolve_codex_lineage(
+        file_path, session_id
+    )
+    metadata.physical_session_id = session_id
+    metadata.logical_session_id = logical_session_id
+    metadata.parent_session_id = parent_session_id
+    metadata.root_session_id = root_session_id
     statistics = calculate_session_statistics(
         messages,
         inactivity_threshold=inactivity_threshold,

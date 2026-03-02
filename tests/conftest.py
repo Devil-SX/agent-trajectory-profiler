@@ -365,6 +365,69 @@ def sample_codex_rollout_file(codex_session_root: Path) -> Path:
 
 
 @pytest.fixture
+def codex_logical_hierarchy_root(codex_session_root: Path) -> Path:
+    """Create Codex rollout files for one logical session with two child physical sessions."""
+    session_root = "11111111-1111-1111-1111-111111111111"
+    session_child_a = "22222222-2222-2222-2222-222222222222"
+    session_child_b = "33333333-3333-3333-3333-333333333333"
+
+    day_dir = codex_session_root / "2026" / "02" / "27"
+    day_dir.mkdir(parents=True, exist_ok=True)
+
+    def _write_rollout(path: Path, events: list[dict[str, object]]) -> None:
+        with open(path, "w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+    _write_rollout(
+        day_dir / f"rollout-2026-02-27T10-00-00-{session_root}.jsonl",
+        [
+            {
+                "timestamp": "2026-02-27T10:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_root,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.105.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-02-27T10:00:01.000Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "Root task"},
+            },
+        ],
+    )
+
+    for child_id, suffix in ((session_child_a, "10-10-00"), (session_child_b, "10-20-00")):
+        _write_rollout(
+            day_dir / f"rollout-2026-02-27T{suffix}-{child_id}.jsonl",
+            [
+                {
+                    "timestamp": f"2026-02-27T{suffix.replace('-', ':')}.000Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": child_id,
+                        "cwd": "/tmp/codex-project",
+                        "cli_version": "0.105.0",
+                        "source": "thread_spawn",
+                        "parent_session_id": session_root,
+                        "root_session_id": session_root,
+                    },
+                },
+                {
+                    "timestamp": f"2026-02-27T{suffix.replace('-', ':')}.500Z",
+                    "type": "event_msg",
+                    "payload": {"type": "user_message", "message": "Child task"},
+                },
+            ],
+        )
+
+    return codex_session_root
+
+
+@pytest.fixture
 def test_settings(temp_session_dir: Path, tmp_path: Path) -> Settings:
     """Create test settings with temporary session directory and database."""
     codex_session_dir = tmp_path / "codex_sessions_empty"

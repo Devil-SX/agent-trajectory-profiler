@@ -40,3 +40,23 @@ class TestCodexParser:
     def test_parser_registry_includes_codex(self) -> None:
         parser = get_parser("codex")
         assert isinstance(parser, CodexParser)
+
+    def test_parse_codex_session_file_extracts_logical_lineage(
+        self, codex_logical_hierarchy_root: Path
+    ) -> None:
+        root_id = "11111111-1111-1111-1111-111111111111"
+        child_id = "22222222-2222-2222-2222-222222222222"
+        child_file = (
+            codex_logical_hierarchy_root
+            / "2026"
+            / "02"
+            / "27"
+            / f"rollout-2026-02-27T10-10-00-{child_id}.jsonl"
+        )
+
+        session = parse_codex_session_file(child_file)
+        assert session.metadata.session_id == child_id
+        assert session.metadata.physical_session_id == child_id
+        assert session.metadata.parent_session_id == root_id
+        assert session.metadata.root_session_id == root_id
+        assert session.metadata.logical_session_id == root_id

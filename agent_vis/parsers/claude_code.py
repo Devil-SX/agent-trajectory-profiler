@@ -338,6 +338,8 @@ def extract_session_metadata(
 
     return SessionMetadata(
         session_id=session_id,
+        physical_session_id=session_id,
+        logical_session_id=session_id,
         project_path=project_path,
         git_branch=first_msg.gitBranch,
         version=first_msg.version or "unknown",

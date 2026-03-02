@@ -188,6 +188,10 @@ async def list_sessions(
         default=None,
         description="Filter sessions by ecosystem (e.g. claude_code, codex)",
     ),
+    view: Literal["logical", "physical"] = Query(
+        default="logical",
+        description="Session view mode: logical (dedup parent/sub-agent) or physical (raw files)",
+    ),
 ) -> SessionListResponse:
     """
     List all available sessions with pagination and optional date filtering.
@@ -219,6 +223,7 @@ async def list_sessions(
             start_date=start_date,
             end_date=end_date,
             ecosystem=ecosystem,
+            view_mode=view,
         )
         total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
 

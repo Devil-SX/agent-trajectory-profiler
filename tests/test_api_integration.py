@@ -177,6 +177,55 @@ class TestSessionListAPI:
             for i in range(len(sessions) - 1):
                 assert sessions[i]["created_at"] >= sessions[i + 1]["created_at"]
 
+    def test_list_sessions_defaults_to_logical_view_for_codex_hierarchy(
+        self,
+        tmp_path: Path,
+        codex_logical_hierarchy_root: Path,
+    ) -> None:
+        from importlib import import_module
+        from unittest.mock import patch
+
+        api_app_module = import_module("agent_vis.api.app")
+        claude_empty = tmp_path / "claude_empty"
+        claude_empty.mkdir(parents=True, exist_ok=True)
+        settings = Settings(
+            session_path=claude_empty,
+            codex_session_path=codex_logical_hierarchy_root,
+            db_path=tmp_path / "logical_view.db",
+            api_host="127.0.0.1",
+            api_port=8000,
+            api_reload=False,
+            log_level="INFO",
+            cors_origins=["http://localhost:5173"],
+        )
+
+        get_settings.cache_clear()
+        try:
+            with patch.object(api_app_module, "get_settings", return_value=settings):
+                with TestClient(app) as client:
+                    logical_response = client.get("/api/sessions")
+                    assert logical_response.status_code == 200
+                    logical_payload = logical_response.json()
+                    assert logical_payload["count"] == 1
+                    assert len(logical_payload["sessions"]) == 1
+
+                    logical_session = logical_payload["sessions"][0]
+                    root_id = "11111111-1111-1111-1111-111111111111"
+                    assert logical_session["logical_session_id"] == root_id
+                    assert logical_session["physical_session_id"] == root_id
+
+                    physical_response = client.get("/api/sessions?view=physical")
+                    assert physical_response.status_code == 200
+                    physical_payload = physical_response.json()
+                    assert physical_payload["count"] == 3
+                    assert len(physical_payload["sessions"]) == 3
+                    assert all(
+                        session["logical_session_id"] == root_id
+                        for session in physical_payload["sessions"]
+                    )
+        finally:
+            get_settings.cache_clear()
+
 
 class TestSessionDetailAPI:
     """Tests for session detail API endpoint."""

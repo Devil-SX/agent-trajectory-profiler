@@ -366,6 +366,10 @@ class SessionMetadata(BaseModel):
     """Metadata about a Claude Code session."""
 
     session_id: str
+    physical_session_id: str | None = None
+    logical_session_id: str | None = None
+    parent_session_id: str | None = None
+    root_session_id: str | None = None
     project_path: str
     git_branch: str | None = None
     version: str

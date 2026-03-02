@@ -5,6 +5,8 @@
 
 export interface SessionSummary {
   session_id: string;
+  physical_session_id?: string | null;
+  logical_session_id?: string | null;
   ecosystem: string;
   project_path: string;
   created_at: string;

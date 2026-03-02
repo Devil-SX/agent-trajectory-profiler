@@ -335,6 +335,7 @@ class SessionService:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        view_mode: Literal["logical", "physical"] = "logical",
     ) -> tuple[list[SessionSummary], int]:
         """
         Get list of all available sessions with pagination.
@@ -350,8 +351,16 @@ class SessionService:
                 start_date,
                 end_date,
                 ecosystem,
+                view_mode,
             )
-        return self._list_from_memory(page, page_size, start_date, end_date, ecosystem)
+        return self._list_from_memory(
+            page,
+            page_size,
+            start_date,
+            end_date,
+            ecosystem,
+            view_mode,
+        )
 
     def _list_from_db(
         self,
@@ -362,12 +371,14 @@ class SessionService:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        view_mode: Literal["logical", "physical"] = "logical",
     ) -> tuple[list[SessionSummary], int]:
         assert self._repo is not None
         total_count = self._repo.count_sessions(
             start_date=start_date,
             end_date=end_date,
             ecosystem=ecosystem,
+            view_mode=view_mode,
         )
         offset = (page - 1) * page_size
         rows = self._repo.list_sessions(
@@ -378,12 +389,15 @@ class SessionService:
             start_date=start_date,
             end_date=end_date,
             ecosystem=ecosystem,
+            view_mode=view_mode,
         )
         summaries = []
         for row in rows:
             summaries.append(
                 SessionSummary(
                     session_id=row["session_id"],
+                    physical_session_id=row["physical_session_id"] or row["session_id"],
+                    logical_session_id=row["logical_session_id"] or row["session_id"],
                     ecosystem=row["ecosystem"] or "claude_code",
                     project_path=row["project_path"] or "",
                     created_at=row["created_at"] or "",
@@ -407,6 +421,7 @@ class SessionService:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        view_mode: Literal["logical", "physical"] = "logical",
     ) -> tuple[list[SessionSummary], int]:
         summaries = []
         for session in self._sessions.values():
@@ -429,6 +444,8 @@ class SessionService:
 
             summary = SessionSummary(
                 session_id=sid,
+                physical_session_id=session.metadata.physical_session_id or sid,
+                logical_session_id=session.metadata.logical_session_id or sid,
                 ecosystem=session_ecosystem,
                 project_path=session.metadata.project_path,
                 created_at=session.metadata.created_at,
@@ -441,6 +458,20 @@ class SessionService:
             summaries.append(summary)
 
         summaries.sort(key=lambda x: str(x.created_at), reverse=True)
+        if view_mode == "logical":
+            deduped: dict[str, SessionSummary] = {}
+            for summary in summaries:
+                logical_id = summary.logical_session_id or summary.session_id
+                existing = deduped.get(logical_id)
+                if existing is None:
+                    deduped[logical_id] = summary
+                    continue
+                existing_is_root = existing.session_id == logical_id
+                current_is_root = summary.session_id == logical_id
+                if current_is_root and not existing_is_root:
+                    deduped[logical_id] = summary
+            summaries = list(deduped.values())
+
         total_count = len(summaries)
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
@@ -1504,6 +1535,8 @@ class SessionService:
                 normalized.append(
                     {
                         "session_id": row["session_id"],
+                        "physical_session_id": row["physical_session_id"] or row["session_id"],
+                        "logical_session_id": row["logical_session_id"] or row["session_id"],
                         "ecosystem": (
                             row["ecosystem"] if "ecosystem" in row.keys() else "claude_code"
                         ),
@@ -1520,7 +1553,7 @@ class SessionService:
                         "statistics": stats,
                     }
                 )
-            return normalized
+            return self._dedupe_analytics_rows(normalized)
 
         # In-memory fallback
         rows: list[dict[str, Any]] = []
@@ -1531,6 +1564,12 @@ class SessionService:
             rows.append(
                 {
                     "session_id": session.metadata.session_id,
+                    "physical_session_id": (
+                        session.metadata.physical_session_id or session.metadata.session_id
+                    ),
+                    "logical_session_id": (
+                        session.metadata.logical_session_id or session.metadata.session_id
+                    ),
                     "ecosystem": self._session_ecosystem.get(
                         session.metadata.session_id, "claude_code"
                     ),
@@ -1561,7 +1600,27 @@ class SessionService:
                     "statistics": (session.statistics.model_dump() if session.statistics else {}),
                 }
             )
-        return rows
+        return self._dedupe_analytics_rows(rows)
+
+    @staticmethod
+    def _dedupe_analytics_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        deduped: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in rows:
+            ecosystem = str(row.get("ecosystem") or "claude_code")
+            logical_id = str(row.get("logical_session_id") or row.get("session_id") or "")
+            key = (ecosystem, logical_id)
+
+            existing = deduped.get(key)
+            if existing is None:
+                deduped[key] = row
+                continue
+
+            existing_is_root = existing.get("session_id") == logical_id
+            row_is_root = row.get("session_id") == logical_id
+            if row_is_root and not existing_is_root:
+                deduped[key] = row
+
+        return list(deduped.values())
 
     @staticmethod
     def _derive_bottleneck(statistics: SessionStatistics) -> str | None:

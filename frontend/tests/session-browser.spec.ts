@@ -79,6 +79,73 @@ test.describe('SessionBrowser - Session Count', () => {
     // Format is "N of N sessions" (e.g., "2 of 2 sessions")
     await expect(page.locator('.session-count')).toContainText('2 of 2 sessions');
   });
+
+  test('@smoke should switch between logical and physical session views', async ({ page }) => {
+    await setupMockApi(page);
+
+    const requestedViews: string[] = [];
+    await page.route('**/api/sessions?**', async (route) => {
+      const url = new URL(route.request().url());
+      const view = url.searchParams.get('view') ?? 'missing';
+      requestedViews.push(view);
+
+      const baseSession = {
+        ecosystem: 'codex',
+        project_path: '/tmp/codex-project',
+        created_at: '2026-02-27T10:00:00Z',
+        updated_at: '2026-02-27T10:30:00Z',
+        total_messages: 12,
+        total_tokens: 4000,
+        git_branch: 'main',
+        version: '0.1.0',
+        parsed_at: '2026-02-27T10:31:00Z',
+        duration_seconds: 1200,
+        bottleneck: 'Model',
+        automation_ratio: 2.5,
+      };
+
+      const logicalSessions = [
+        {
+          ...baseSession,
+          session_id: 'test-session-001',
+          physical_session_id: 'test-session-001',
+          logical_session_id: 'test-session-001',
+        },
+      ];
+      const physicalSessions = [
+        ...logicalSessions,
+        {
+          ...baseSession,
+          session_id: 'test-session-002',
+          physical_session_id: 'test-session-002',
+          logical_session_id: 'test-session-001',
+          updated_at: '2026-02-27T10:40:00Z',
+        },
+      ];
+      const sessions = view === 'physical' ? physicalSessions : logicalSessions;
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sessions,
+          count: sessions.length,
+          page: 1,
+          page_size: 200,
+          total_pages: 1,
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.session-browser:not(.loading)', { timeout: 10000 });
+    await expect(page.locator('.session-count')).toContainText('1 of 1 sessions');
+
+    await page.getByRole('button', { name: 'Physical' }).click();
+    await expect(page.locator('.session-count')).toContainText('2 of 2 sessions');
+    expect(requestedViews).toContain('logical');
+    expect(requestedViews).toContain('physical');
+  });
 });
 
 test.describe('SessionBrowser - Loading State', () => {

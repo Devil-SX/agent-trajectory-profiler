@@ -5,8 +5,11 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from agent_vis.models import SessionStatistics
+
+SessionViewMode = Literal["logical", "physical"]
 
 
 class SessionRepository:
@@ -91,18 +94,30 @@ class SessionRepository:
         bottleneck: str | None,
         automation_ratio: float | None,
         version: str = "",
+        physical_session_id: str | None = None,
+        logical_session_id: str | None = None,
+        parent_session_id: str | None = None,
+        root_session_id: str | None = None,
     ) -> None:
         """Insert or update a session summary row."""
         now = datetime.now(timezone.utc).isoformat()
+        physical_id = physical_session_id or session_id
+        logical_id = logical_session_id or physical_id
         self._conn.execute(
             """\
             INSERT INTO sessions (
-                session_id, file_id, ecosystem, project_path, git_branch,
+                session_id, physical_session_id, logical_session_id,
+                parent_session_id, root_session_id,
+                file_id, ecosystem, project_path, git_branch,
                 created_at, updated_at, total_messages, total_tokens,
                 parsed_at, duration_seconds, total_tool_calls,
                 bottleneck, automation_ratio, version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id) DO UPDATE SET
+                physical_session_id = excluded.physical_session_id,
+                logical_session_id  = excluded.logical_session_id,
+                parent_session_id   = excluded.parent_session_id,
+                root_session_id     = excluded.root_session_id,
                 file_id          = excluded.file_id,
                 ecosystem        = excluded.ecosystem,
                 project_path     = excluded.project_path,
@@ -120,6 +135,10 @@ class SessionRepository:
             """,
             (
                 session_id,
+                physical_id,
+                logical_id,
+                parent_session_id,
+                root_session_id,
                 file_id,
                 ecosystem,
                 project_path,
@@ -155,6 +174,7 @@ class SessionRepository:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        view_mode: SessionViewMode = "physical",
     ) -> list[sqlite3.Row]:
         """
         List session summaries with sorting, pagination, and optional date filtering.
@@ -187,6 +207,16 @@ class SessionRepository:
         )
         where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
 
+        if view_mode == "logical":
+            all_rows = self._fetch_sessions(
+                sort_by=sort_by,
+                sort_order=sort_order,
+                where_sql=where_sql,
+                params=params,
+            )
+            deduped = self._dedupe_logical_sessions(all_rows)
+            return deduped[offset : offset + limit]
+
         params.extend([limit, offset])
         cur = self._conn.execute(
             f"SELECT * FROM sessions {where_sql}ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?",
@@ -199,6 +229,7 @@ class SessionRepository:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        view_mode: SessionViewMode = "physical",
     ) -> int:
         """Return total number of sessions, optionally filtered by date range."""
         where_clauses, params = self._build_date_filter(
@@ -207,6 +238,15 @@ class SessionRepository:
             ecosystem=ecosystem,
         )
         where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
+
+        if view_mode == "logical":
+            rows = self._fetch_sessions(
+                sort_by="created_at",
+                sort_order="DESC",
+                where_sql=where_sql,
+                params=params,
+            )
+            return len(self._dedupe_logical_sessions(rows))
 
         cur = self._conn.execute(f"SELECT COUNT(*) FROM sessions {where_sql}", params)
         return cur.fetchone()[0]
@@ -230,6 +270,8 @@ class SessionRepository:
             f"""\
             SELECT
                 s.session_id,
+                s.physical_session_id,
+                s.logical_session_id,
                 s.ecosystem,
                 s.project_path,
                 s.git_branch,
@@ -269,6 +311,8 @@ class SessionRepository:
             f"""\
             SELECT
                 s.session_id,
+                s.physical_session_id,
+                s.logical_session_id,
                 s.ecosystem,
                 s.project_path,
                 s.git_branch,
@@ -382,3 +426,32 @@ class SessionRepository:
         )
         row = cur.fetchone()
         return Path(row["file_path"]) if row else None
+
+    def _fetch_sessions(
+        self,
+        *,
+        sort_by: str,
+        sort_order: str,
+        where_sql: str,
+        params: list[str],
+    ) -> list[sqlite3.Row]:
+        cur = self._conn.execute(
+            f"SELECT * FROM sessions {where_sql}ORDER BY {sort_by} {sort_order}",
+            params,
+        )
+        return cur.fetchall()
+
+    def _dedupe_logical_sessions(self, rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
+        deduped: dict[str, sqlite3.Row] = {}
+        for row in rows:
+            logical_id = row["logical_session_id"] or row["session_id"]
+            existing = deduped.get(logical_id)
+            if existing is None:
+                deduped[logical_id] = row
+                continue
+
+            existing_is_root = existing["session_id"] == logical_id
+            row_is_root = row["session_id"] == logical_id
+            if row_is_root and not existing_is_root:
+                deduped[logical_id] = row
+        return list(deduped.values())

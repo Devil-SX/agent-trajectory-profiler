@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS tracked_files (
 
 CREATE TABLE IF NOT EXISTS sessions (
     session_id       TEXT PRIMARY KEY,
+    physical_session_id TEXT,
+    logical_session_id  TEXT,
+    parent_session_id   TEXT,
+    root_session_id     TEXT,
     file_id          INTEGER REFERENCES tracked_files(id),
     ecosystem        TEXT,
     project_path     TEXT,
@@ -40,10 +44,30 @@ CREATE TABLE IF NOT EXISTS session_statistics (
 CREATE INDEX IF NOT EXISTS idx_sessions_created_at  ON sessions(created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at  ON sessions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_parsed_at   ON sessions(parsed_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_logical_id  ON sessions(logical_session_id);
 CREATE INDEX IF NOT EXISTS idx_tracked_files_path   ON tracked_files(file_path);
 """
+
+
+def _ensure_sessions_columns(conn: sqlite3.Connection) -> None:
+    """Backfill newly introduced session columns for existing databases."""
+    cur = conn.execute("PRAGMA table_info(sessions)")
+    existing_columns = {row[1] for row in cur.fetchall()}
+    required_columns: dict[str, str] = {
+        "physical_session_id": "TEXT",
+        "logical_session_id": "TEXT",
+        "parent_session_id": "TEXT",
+        "root_session_id": "TEXT",
+        "version": "TEXT DEFAULT ''",
+    }
+    for column, ddl in required_columns.items():
+        if column in existing_columns:
+            continue
+        conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {ddl}")
 
 
 def create_tables(conn: sqlite3.Connection) -> None:
     """Create all tables and indexes if they don't exist."""
     conn.executescript(_DDL)
+    _ensure_sessions_columns(conn)
+    conn.commit()

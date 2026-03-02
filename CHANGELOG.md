@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Codex session lineage parsing now derives `physical_session_id` / `logical_session_id` plus parent/root references from rollout metadata (`session_meta`), and persists them in session metadata + SQLite (`sessions` table).
+- `GET /api/sessions` now supports `view=logical|physical`; default logical view deduplicates Codex parent/sub-agent physical sessions while retaining a physical drill-down mode.
+- Session list API/TS models now expose both logical and physical session identifiers to make view-mode semantics explicit for frontend consumers.
+- Regression coverage for Codex logical-session behavior:
+  - parser lineage extraction test (`tests/test_codex_parser.py`)
+  - API logical-vs-physical list behavior test (`tests/test_api_integration.py`)
+  - frontend smoke coverage for logical/physical view switching (`frontend/tests/session-browser.spec.ts`).
+
+### Changed
+
+- Session browser now sends explicit aggregation mode (`logical`/`physical`) with session list requests and adds a UI toggle for switching between deduplicated logical sessions and raw physical sessions.
+- Cross-session analytics row normalization now deduplicates by `ecosystem + logical_session_id` to avoid Codex parent/sub-agent double-counting in aggregate session totals.
+- Quality-gates Playwright smoke tests were updated to align with the current two-layer navigation flow (overview first, then open session detail).
+
+### Fixed
+
+- Date range picker dropdown positioning now uses viewport-clamped fixed placement with resize/scroll reflow, preventing off-screen clipping in smoke regression scenarios.
+- Quality-gates scroll-path assertions now target the current layout containers instead of removed legacy selectors.
+
 ## [1.0.0] - 2026-03-02
 
 > **Code Stats** | Total: 56,061 lines | Delta: +11,984 (-2,861) = **+9,123 net** | Change: **+19.4%** vs v0.6.0

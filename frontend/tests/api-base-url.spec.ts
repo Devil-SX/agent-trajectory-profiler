@@ -6,7 +6,7 @@ test.describe('@smoke API base URL host alignment', () => {
     await setupMockApi(page);
 
     const sessionsRequestPromise = page.waitForRequest((request) =>
-      request.url().includes('/api/sessions?page=1&page_size=200')
+      request.url().includes('/api/sessions?page=1&page_size=200&view=logical')
     );
 
     await page.goto('http://127.0.0.1:5173');

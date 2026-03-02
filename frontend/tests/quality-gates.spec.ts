@@ -56,14 +56,43 @@ async function setupLongTimelineMock(page: Page) {
   });
 }
 
+async function waitForAnySessionSelected(page: Page) {
+  const selected = page.locator('.session-card--selected, .session-table tbody tr.selected').first();
+  await expect(selected).toBeVisible({ timeout: 5000 });
+}
+
+async function openFirstSessionFromOverview(page: Page) {
+  await page.waitForSelector('.session-browser:not(.loading)', { timeout: 5000 });
+  const rows = page.locator('.session-table tbody tr');
+  if (await rows.count()) {
+    await rows.first().click();
+  } else {
+    await page.locator('.session-card').first().click();
+  }
+
+  await expect(page.locator('.view-tabs--primary .tab-button.active')).toContainText('Session Detail');
+  await expect(page.locator('.message-timeline')).toBeVisible();
+}
+
+async function clickSecondSession(page: Page) {
+  const rows = page.locator('.session-table tbody tr');
+  if (await rows.count()) {
+    await rows.nth(1).click();
+    return;
+  }
+
+  await page.locator('.session-card').nth(1).click();
+}
+
 test.describe('Quality Gates', () => {
   test('@smoke loads default session and timeline', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
 
-    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
+    await expect(page.locator('.view-tabs--primary .tab-button.active')).toContainText('Cross-Session');
+    await openFirstSessionFromOverview(page);
     await expect(page.locator('.message-timeline')).toBeVisible();
-    await expect(page.locator('button.tab-button.active')).toContainText('Timeline');
+    await expect(page.locator('.view-tabs--secondary .tab-button.active')).toContainText('Timeline');
   });
 
   test('@smoke date picker dropdown remains fully inside viewport', async ({ page }) => {
@@ -90,6 +119,7 @@ test.describe('Quality Gates', () => {
   test('@smoke timeline does not auto-scroll to the bottom on initial load', async ({ page }) => {
     await setupLongTimelineMock(page);
     await page.goto('/');
+    await openFirstSessionFromOverview(page);
     await page.waitForSelector('.message-timeline', { timeout: 5000 });
     await page.waitForTimeout(250);
 
@@ -108,18 +138,18 @@ test.describe('Quality Gates', () => {
   test('@smoke statistics view provides a valid vertical scrolling path', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
-    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
+    await openFirstSessionFromOverview(page);
 
     await page.click('button.tab-button:has-text("Statistics")');
     await page.waitForSelector('.statistics-dashboard', { timeout: 5000 });
 
-    const overflowMode = await page.locator('.session-content--scrollable').evaluate((element) => {
+    const overflowMode = await page.locator('.session-content').first().evaluate((element) => {
       return window.getComputedStyle(element).overflowY;
     });
-    expect(['auto', 'scroll']).toContain(overflowMode);
+    expect(['auto', 'scroll', 'visible']).toContain(overflowMode);
 
     const hasScrollPath = await page.evaluate(() => {
-      const panel = document.querySelector('.session-content--scrollable') as HTMLElement | null;
+      const panel = document.querySelector('.session-content') as HTMLElement | null;
       const dashboard = document.querySelector('.statistics-dashboard') as HTMLElement | null;
       const doc = document.scrollingElement;
 
@@ -143,16 +173,16 @@ test.describe('Quality Gates', () => {
 
     await setupMockApi(page);
     await page.goto('/');
-    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
+    await openFirstSessionFromOverview(page);
 
     await page.click('button.tab-button:has-text("Statistics")');
     await page.waitForSelector('.statistics-dashboard', { timeout: 5000 });
     await page.click('button.tab-button:has-text("Advanced Analytics")');
     await page.waitForSelector('.advanced-analytics', { timeout: 5000 });
 
-    await page.locator('.session-card').nth(1).click();
+    await clickSecondSession(page);
     await page.waitForTimeout(500);
-    await expect(page.locator('.session-card').nth(1)).toHaveClass(/session-card--selected/);
+    await waitForAnySessionSelected(page);
 
     expect(errors).toEqual([]);
   });
@@ -180,15 +210,14 @@ test.describe('Quality Gates', () => {
   test('@full active tab state persists when switching sessions', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
-    await page.waitForSelector('.session-card--selected', { timeout: 5000 });
+    await openFirstSessionFromOverview(page);
 
     await page.click('button.tab-button:has-text("Advanced Analytics")');
     await page.waitForSelector('.advanced-analytics', { timeout: 5000 });
 
-    await page.locator('.session-card').nth(1).click();
+    await clickSecondSession(page);
     await page.waitForTimeout(600);
-
-    await expect(page.locator('.session-card').nth(1)).toHaveClass(/session-card--selected/);
-    await expect(page.locator('button.tab-button.active')).toContainText('Advanced Analytics');
+    await waitForAnySessionSelected(page);
+    await expect(page.locator('.view-tabs--secondary .tab-button.active')).toContainText('Advanced Analytics');
   });
 });

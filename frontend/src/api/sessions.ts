@@ -170,12 +170,14 @@ export async function fetchSessions(
   page: number = 1,
   pageSize: number = 50,
   startDate: string | null = null,
-  endDate: string | null = null
+  endDate: string | null = null,
+  viewMode: 'logical' | 'physical' = 'logical'
 ): Promise<SessionListResponse> {
   try {
     const params = new URLSearchParams({
       page: page.toString(),
       page_size: pageSize.toString(),
+      view: viewMode,
     });
 
     if (startDate) {

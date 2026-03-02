@@ -45,9 +45,9 @@
 
 /* Dropdown panel */
 .date-picker-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
   z-index: 1000;
   background: white;
   border: 1px solid #e5e7eb;
@@ -56,7 +56,8 @@
               0 4px 6px -2px rgba(0, 0, 0, 0.05);
   padding: 1.25rem;
   min-width: 320px;
-  max-width: 400px;
+  max-width: min(400px, calc(100vw - 16px));
+  overflow-y: auto;
 }
 
 .date-picker-header {
@@ -209,8 +210,6 @@
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .date-picker-dropdown {
-    right: 0;
-    left: auto;
     min-width: 280px;
   }
 

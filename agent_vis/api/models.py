@@ -21,6 +21,8 @@ class SessionSummary(BaseModel):
     """
 
     session_id: str
+    physical_session_id: str | None = None
+    logical_session_id: str | None = None
     ecosystem: str = "claude_code"
     project_path: str
     created_at: datetime | str
