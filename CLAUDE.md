@@ -21,6 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [docs/claude-jsonl-format.md](docs/claude-jsonl-format.md) — Claude Code JSONL format spec (English)
 - [docs/claude-jsonl-format.zh.md](docs/claude-jsonl-format.zh.md) — Claude Code JSONL format spec (Chinese)
 - [docs/output-levels.md](docs/output-levels.md) — Output detail levels guide (L1/L2/L3)
+- [docs/agent-vis-home-layout.md](docs/agent-vis-home-layout.md) — `~/.agent-vis` local directory naming and permission specification
 
 ## Commands
 

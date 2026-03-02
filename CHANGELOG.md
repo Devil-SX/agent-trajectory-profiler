@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session list API/TS models now expose both logical and physical session identifiers to make view-mode semantics explicit for frontend consumers.
 - Cross-session analytics API now exposes explicit dual-plane payloads: `control_plane` (ingestion/sync/file state) and `runtime_plane` (behavior/time/token/tool aggregates).
 - New control-plane file statistics in analytics overview include tracked-file parse status counts, tracked/trajectory byte totals, and last parsed timestamp.
+- New standalone local-state specification document for `~/.agent-vis` (`docs/agent-vis-home-layout.md`) covering directory tree, naming rules, permission guidance, and security notes (explicitly excluding migration strategy).
 - Regression coverage for Codex logical-session behavior:
   - parser lineage extraction test (`tests/test_codex_parser.py`)
   - API logical-vs-physical list behavior test (`tests/test_api_integration.py`)
