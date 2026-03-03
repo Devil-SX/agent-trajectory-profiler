@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - New Codex end-to-end parity regression baseline with a golden raw rollout fixture and layered tests:
   - backend parser/API parity contract (`raw -> canonical -> message -> session detail API`) with explicit tool-chain, token-count, and duplicate-user edge assertions
   - frontend smoke parity test that verifies Codex golden-session timeline visibility (non-empty rendering, cross-message tool chain linkage, and filtered-count consistency).
+- Canonical + Codex parser diagnostics for event coverage transparency:
+  - canonical conversion helpers now expose parse/message drop diagnostics (counts + sampled `line/event_kind/reason`)
+  - Codex parser now provides explicit coverage diagnostics (`dropped_top_level_counts`, subtype-level `unmapped_event_counts`, sampled drop lines, dedupe count) and logs summaries during parse.
 
 ### Fixed
 

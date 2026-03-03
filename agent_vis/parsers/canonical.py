@@ -38,6 +38,31 @@ class CanonicalSession(BaseModel):
     events: list[CanonicalEvent]
 
 
+class CanonicalDropSample(BaseModel):
+    """Minimal diagnostic sample for a dropped record/event."""
+
+    line_number: int = Field(ge=1)
+    event_kind: str
+    reason: str
+
+
+class CanonicalParseDiagnostics(BaseModel):
+    """Diagnostics for source JSONL -> canonical conversion."""
+
+    raw_event_count: int = 0
+    raw_event_kind_counts: dict[str, int] = Field(default_factory=dict)
+    dropped_event_kind_counts: dict[str, int] = Field(default_factory=dict)
+    dropped_samples: list[CanonicalDropSample] = Field(default_factory=list)
+
+
+class CanonicalMessageDiagnostics(BaseModel):
+    """Diagnostics for canonical event -> MessageRecord conversion."""
+
+    mapped_count: int = 0
+    dropped_event_kind_counts: dict[str, int] = Field(default_factory=dict)
+    dropped_samples: list[CanonicalDropSample] = Field(default_factory=list)
+
+
 class TrajectoryEventAdapter(ABC):
     """Adapter contract: source JSON record <-> canonical event/message."""
 
@@ -97,7 +122,19 @@ def list_adapters() -> list[str]:
 
 def parse_jsonl_to_canonical(file_path: Path, adapter: TrajectoryEventAdapter) -> CanonicalSession:
     """Parse JSONL file into canonical events via adapter conversion."""
+    session, _ = parse_jsonl_to_canonical_with_diagnostics(file_path, adapter)
+    return session
+
+
+def parse_jsonl_to_canonical_with_diagnostics(
+    file_path: Path,
+    adapter: TrajectoryEventAdapter,
+    *,
+    sample_limit: int = 12,
+) -> tuple[CanonicalSession, CanonicalParseDiagnostics]:
+    """Parse JSONL file into canonical events and capture drop diagnostics."""
     events: list[CanonicalEvent] = []
+    diagnostics = CanonicalParseDiagnostics()
 
     try:
         with open(file_path, encoding="utf-8") as f:
@@ -113,6 +150,11 @@ def parse_jsonl_to_canonical(file_path: Path, adapter: TrajectoryEventAdapter) -
 
                 if not isinstance(data, dict):
                     continue
+                diagnostics.raw_event_count += 1
+                event_kind = str(data.get("type") or "<missing>")
+                diagnostics.raw_event_kind_counts[event_kind] = (
+                    diagnostics.raw_event_kind_counts.get(event_kind, 0) + 1
+                )
 
                 event = adapter.to_canonical_event(
                     data,
@@ -121,15 +163,30 @@ def parse_jsonl_to_canonical(file_path: Path, adapter: TrajectoryEventAdapter) -
                 )
                 if event is not None:
                     events.append(event)
+                else:
+                    diagnostics.dropped_event_kind_counts[event_kind] = (
+                        diagnostics.dropped_event_kind_counts.get(event_kind, 0) + 1
+                    )
+                    if len(diagnostics.dropped_samples) < sample_limit:
+                        diagnostics.dropped_samples.append(
+                            CanonicalDropSample(
+                                line_number=line_num,
+                                event_kind=event_kind,
+                                reason="adapter_to_canonical_returned_none",
+                            )
+                        )
     except FileNotFoundError as e:
         raise SessionParseError(f"Session file not found: {file_path}") from e
     except OSError as e:
         raise SessionParseError(f"Error reading file {file_path}: {e}") from e
 
-    return CanonicalSession(
-        ecosystem=adapter.ecosystem_name,
-        source_path=str(file_path),
-        events=events,
+    return (
+        CanonicalSession(
+            ecosystem=adapter.ecosystem_name,
+            source_path=str(file_path),
+            events=events,
+        ),
+        diagnostics,
     )
 
 
@@ -137,15 +194,51 @@ def canonical_to_messages(
     canonical_session: CanonicalSession, adapter: TrajectoryEventAdapter
 ) -> list[MessageRecord]:
     """Convert canonical events to internal messages, skipping invalid records."""
+    messages, _ = canonical_to_messages_with_diagnostics(canonical_session, adapter)
+    return messages
+
+
+def canonical_to_messages_with_diagnostics(
+    canonical_session: CanonicalSession,
+    adapter: TrajectoryEventAdapter,
+    *,
+    sample_limit: int = 12,
+) -> tuple[list[MessageRecord], CanonicalMessageDiagnostics]:
+    """Convert canonical events to messages and capture unmapped diagnostics."""
     messages: list[MessageRecord] = []
+    diagnostics = CanonicalMessageDiagnostics()
 
     for event in canonical_session.events:
         try:
             message = adapter.canonical_to_message(event)
         except ValidationError:
+            diagnostics.dropped_event_kind_counts[event.event_kind] = (
+                diagnostics.dropped_event_kind_counts.get(event.event_kind, 0) + 1
+            )
+            if len(diagnostics.dropped_samples) < sample_limit:
+                diagnostics.dropped_samples.append(
+                    CanonicalDropSample(
+                        line_number=event.line_number,
+                        event_kind=event.event_kind,
+                        reason="validation_error",
+                    )
+                )
             continue
 
         if message is not None:
             messages.append(message)
+            diagnostics.mapped_count += 1
+        else:
+            diagnostics.dropped_event_kind_counts[event.event_kind] = (
+                diagnostics.dropped_event_kind_counts.get(event.event_kind, 0) + 1
+            )
+            if len(diagnostics.dropped_samples) < sample_limit:
+                diagnostics.dropped_samples.append(
+                    CanonicalDropSample(
+                        line_number=event.line_number,
+                        event_kind=event.event_kind,
+                        reason="adapter_canonical_to_message_returned_none",
+                    )
+                )
 
-    return messages
+    return messages, diagnostics

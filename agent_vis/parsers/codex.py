@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from pydantic import ValidationError
 
 from agent_vis.exceptions import SessionParseError
 from agent_vis.models import (
@@ -20,9 +23,8 @@ from agent_vis.parsers.base import TrajectoryParser
 from agent_vis.parsers.canonical import (
     CanonicalEvent,
     TrajectoryEventAdapter,
-    canonical_to_messages,
     get_adapter,
-    parse_jsonl_to_canonical,
+    parse_jsonl_to_canonical_with_diagnostics,
     register_adapter,
 )
 from agent_vis.parsers.claude_code import calculate_session_statistics, extract_session_metadata
@@ -46,6 +48,58 @@ _ROOT_ID_KEYS = (
     "rootSessionId",
     "rootThreadId",
 )
+_MAX_DIAGNOSTIC_SAMPLES = 12
+
+logger = logging.getLogger(__name__)
+
+CODEX_EVENT_COVERAGE_MATRIX: dict[str, dict[str, str]] = {
+    "session_meta": {
+        "status": "supported",
+        "behavior": "maps to synthetic metadata marker message",
+    },
+    "event_msg:user_message": {
+        "status": "supported",
+        "behavior": "maps to user text message",
+    },
+    "event_msg:token_count": {
+        "status": "supported",
+        "behavior": "maps to assistant token_count message with usage",
+    },
+    "event_msg:turn_context": {
+        "status": "ignored_expected",
+        "behavior": "tracked in diagnostics as unmapped context-only event",
+    },
+    "response_item:message": {
+        "status": "supported",
+        "behavior": "maps to role-preserving message",
+    },
+    "response_item:function_call": {
+        "status": "supported",
+        "behavior": "maps to assistant tool_use block",
+    },
+    "response_item:custom_tool_call": {
+        "status": "supported",
+        "behavior": "maps to assistant tool_use block",
+    },
+    "response_item:function_call_output": {
+        "status": "supported",
+        "behavior": "maps to user tool_result block",
+    },
+    "response_item:custom_tool_call_output": {
+        "status": "supported",
+        "behavior": "maps to user tool_result block",
+    },
+    "response_item:reasoning": {
+        "status": "pending",
+        "behavior": "currently unmapped; diagnostics capture line + subtype",
+    },
+    "<unknown_top_level>": {
+        "status": "ignored_expected",
+        "behavior": (
+            "dropped before canonical conversion; " "diagnostics capture top-level type + line"
+        ),
+    },
+}
 
 
 def _session_id_from_source_path(source_path: str) -> str:
@@ -214,6 +268,36 @@ def _dedupe_overlapping_user_prompts(
         # Else keep existing canonical message and drop current duplicate.
 
     return deduped
+
+
+def _coverage_key_from_raw_event(raw_event: dict[str, Any]) -> str:
+    top_type = str(raw_event.get("type") or "<missing_top_level>")
+    payload = raw_event.get("payload")
+    if not isinstance(payload, dict):
+        return top_type
+    subtype = payload.get("type")
+    if not isinstance(subtype, str) or not subtype.strip():
+        return top_type
+    return f"{top_type}:{subtype.strip()}"
+
+
+def _append_drop_sample(
+    samples: list[dict[str, Any]],
+    *,
+    line_number: int,
+    event_type: str,
+    reason: str,
+    sample_limit: int,
+) -> None:
+    if len(samples) >= sample_limit:
+        return
+    samples.append(
+        {
+            "line_number": line_number,
+            "event_type": event_type,
+            "reason": reason,
+        }
+    )
 
 
 def _extract_text_blocks(content: Any) -> str | list[dict[str, Any]]:
@@ -459,12 +543,95 @@ class CodexEventAdapter(TrajectoryEventAdapter):
         return None
 
 
+def parse_codex_jsonl_file_with_diagnostics(
+    file_path: Path,
+    *,
+    sample_limit: int = _MAX_DIAGNOSTIC_SAMPLES,
+) -> tuple[list[MessageRecord], dict[str, Any]]:
+    """Parse one Codex rollout file and expose explicit coverage/drop diagnostics."""
+    adapter = get_adapter("codex")
+    canonical_session, canonical_diag = parse_jsonl_to_canonical_with_diagnostics(
+        file_path,
+        adapter,
+        sample_limit=sample_limit,
+    )
+
+    pre_dedupe_messages: list[MessageRecord] = []
+    unmapped_event_counts: dict[str, int] = {}
+    dropped_samples: list[dict[str, Any]] = []
+
+    for sample in canonical_diag.dropped_samples:
+        _append_drop_sample(
+            dropped_samples,
+            line_number=sample.line_number,
+            event_type=sample.event_kind,
+            reason=sample.reason,
+            sample_limit=sample_limit,
+        )
+
+    for event in canonical_session.events:
+        coverage_key = _coverage_key_from_raw_event(event.payload)
+        try:
+            message = adapter.canonical_to_message(event)
+        except ValidationError:
+            unmapped_event_counts[coverage_key] = unmapped_event_counts.get(coverage_key, 0) + 1
+            _append_drop_sample(
+                dropped_samples,
+                line_number=event.line_number,
+                event_type=coverage_key,
+                reason="validation_error",
+                sample_limit=sample_limit,
+            )
+            continue
+
+        if message is not None:
+            pre_dedupe_messages.append(message)
+            continue
+
+        unmapped_event_counts[coverage_key] = unmapped_event_counts.get(coverage_key, 0) + 1
+        _append_drop_sample(
+            dropped_samples,
+            line_number=event.line_number,
+            event_type=coverage_key,
+            reason="canonical_to_message_returned_none",
+            sample_limit=sample_limit,
+        )
+
+    messages = _dedupe_overlapping_user_prompts(pre_dedupe_messages)
+    deduped_user_prompt_count = max(0, len(pre_dedupe_messages) - len(messages))
+    diagnostics: dict[str, Any] = {
+        "raw_event_count": canonical_diag.raw_event_count,
+        "raw_event_kind_counts": dict(canonical_diag.raw_event_kind_counts),
+        "dropped_top_level_counts": dict(canonical_diag.dropped_event_kind_counts),
+        "unmapped_event_counts": unmapped_event_counts,
+        "mapped_message_count_before_dedupe": len(pre_dedupe_messages),
+        "mapped_message_count_after_dedupe": len(messages),
+        "deduped_user_prompt_count": deduped_user_prompt_count,
+        "dropped_samples": dropped_samples,
+        "coverage_matrix": CODEX_EVENT_COVERAGE_MATRIX,
+    }
+    return messages, diagnostics
+
+
 def parse_codex_jsonl_file(file_path: Path) -> list[MessageRecord]:
     """Parse one Codex rollout JSONL file into internal message records."""
-    adapter = get_adapter("codex")
-    canonical_session = parse_jsonl_to_canonical(file_path, adapter)
-    messages = canonical_to_messages(canonical_session, adapter)
-    return _dedupe_overlapping_user_prompts(messages)
+    messages, diagnostics = parse_codex_jsonl_file_with_diagnostics(file_path)
+    if (
+        diagnostics["dropped_top_level_counts"]
+        or diagnostics["unmapped_event_counts"]
+        or diagnostics["deduped_user_prompt_count"] > 0
+    ):
+        logger.info(
+            "Codex coverage diagnostics for %s | raw=%s | dropped_top=%s | "
+            "unmapped=%s | deduped=%s | samples=%s",
+            file_path,
+            diagnostics["raw_event_kind_counts"],
+            diagnostics["dropped_top_level_counts"],
+            diagnostics["unmapped_event_counts"],
+            diagnostics["deduped_user_prompt_count"],
+            diagnostics["dropped_samples"],
+        )
+    return messages
 
 
 def _resolve_codex_session_id(messages: list[MessageRecord], file_path: Path) -> str:

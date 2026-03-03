@@ -8,9 +8,11 @@ from agent_vis.parsers.canonical import (
     CanonicalEvent,
     TrajectoryEventAdapter,
     canonical_to_messages,
+    canonical_to_messages_with_diagnostics,
     get_adapter,
     list_adapters,
     parse_jsonl_to_canonical,
+    parse_jsonl_to_canonical_with_diagnostics,
     register_adapter,
 )
 from agent_vis.parsers.claude_code import parse_jsonl_file
@@ -56,6 +58,49 @@ class TestCanonicalConversionContract:
         assert canonical_session.events[0].line_number == 1
         assert canonical_session.events[0].actor == "user"
 
+    def test_parse_jsonl_to_canonical_with_diagnostics_tracks_adapter_drops(
+        self, temp_session_dir: Path
+    ) -> None:
+        file_path = temp_session_dir / "canonical-diagnostics.jsonl"
+        with open(file_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "type": "session_meta",
+                        "timestamp": "2026-03-01T10:00:00.000Z",
+                        "payload": {
+                            "id": "99999999-9999-9999-9999-999999999999",
+                            "cwd": "/tmp/codex-project",
+                            "cli_version": "0.107.0",
+                            "source": "cli",
+                        },
+                    }
+                )
+                + "\n"
+            )
+            handle.write(
+                json.dumps(
+                    {
+                        "type": "turn_context",
+                        "timestamp": "2026-03-01T10:00:01.000Z",
+                        "payload": {"type": "turn_context"},
+                    }
+                )
+                + "\n"
+            )
+
+        adapter = get_adapter("codex")
+        canonical_session, diagnostics = parse_jsonl_to_canonical_with_diagnostics(
+            file_path, adapter
+        )
+
+        assert len(canonical_session.events) == 1
+        assert diagnostics.raw_event_count == 2
+        assert diagnostics.raw_event_kind_counts["session_meta"] == 1
+        assert diagnostics.raw_event_kind_counts["turn_context"] == 1
+        assert diagnostics.dropped_event_kind_counts["turn_context"] == 1
+        assert diagnostics.dropped_samples[0].line_number == 2
+
     def test_canonical_conversion_matches_current_claude_parser_output(
         self, sample_session_file: Path
     ) -> None:
@@ -92,3 +137,30 @@ class TestCanonicalConversionContract:
         assert len(canonical_session.events) == 2
         assert len(messages) == 1
         assert messages[0].uuid == "msg-1"
+
+    def test_canonical_to_messages_with_diagnostics_reports_unmapped_events(
+        self, temp_session_dir: Path
+    ) -> None:
+        file_path = temp_session_dir / "canonical-message-diagnostics.jsonl"
+        with open(file_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "sessionId": "test",
+                        "uuid": "msg-1",
+                        "timestamp": "2026-02-03T13:15:17.231Z",
+                    }
+                )
+                + "\n"
+            )
+            handle.write(json.dumps({"invalid": "data"}) + "\n")
+
+        adapter = get_adapter("claude_code")
+        canonical_session = parse_jsonl_to_canonical(file_path, adapter)
+        messages, diagnostics = canonical_to_messages_with_diagnostics(canonical_session, adapter)
+
+        assert len(messages) == 1
+        assert diagnostics.mapped_count == 1
+        assert diagnostics.dropped_event_kind_counts["message"] == 1
+        assert diagnostics.dropped_samples[0].line_number == 2

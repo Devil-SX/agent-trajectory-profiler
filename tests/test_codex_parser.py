@@ -5,9 +5,11 @@ from pathlib import Path
 
 from agent_vis.parsers import get_parser
 from agent_vis.parsers.codex import (
+    CODEX_EVENT_COVERAGE_MATRIX,
     CodexParser,
     find_codex_session_files,
     parse_codex_jsonl_file,
+    parse_codex_jsonl_file_with_diagnostics,
     parse_codex_session_file,
 )
 
@@ -122,3 +124,68 @@ class TestCodexParser:
             and isinstance(msg.message.content, str)
         ]
         assert user_texts.count(prompt) == 2
+
+    def test_parse_codex_jsonl_file_with_diagnostics_reports_unmapped_event_counts(self) -> None:
+        parity_fixture = (
+            Path(__file__).parent
+            / "fixtures"
+            / "codex_parity"
+            / "rollout-2026-03-01T09-00-00-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.jsonl"
+        )
+        messages, diagnostics = parse_codex_jsonl_file_with_diagnostics(parity_fixture)
+
+        assert len(messages) == 7
+        assert diagnostics["raw_event_count"] == 10
+        assert diagnostics["raw_event_kind_counts"]["session_meta"] == 1
+        assert diagnostics["raw_event_kind_counts"]["event_msg"] == 3
+        assert diagnostics["raw_event_kind_counts"]["response_item"] == 6
+        assert diagnostics["unmapped_event_counts"]["event_msg:turn_context"] == 1
+        assert diagnostics["unmapped_event_counts"]["response_item:reasoning"] == 1
+        assert diagnostics["deduped_user_prompt_count"] == 1
+        assert diagnostics["coverage_matrix"] == CODEX_EVENT_COVERAGE_MATRIX
+        assert any(
+            sample["event_type"] == "event_msg:turn_context"
+            for sample in diagnostics["dropped_samples"]
+        )
+
+    def test_parse_codex_jsonl_file_with_diagnostics_tracks_unknown_top_level_events(
+        self, tmp_path: Path
+    ) -> None:
+        session_id = "55555555-5555-5555-5555-555555555555"
+        rollout = tmp_path / f"rollout-2026-03-01T11-00-00-{session_id}.jsonl"
+        events = [
+            {
+                "timestamp": "2026-03-01T11:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T11:00:00.500Z",
+                "type": "turn_context",
+                "payload": {"type": "turn_context", "turn_id": "turn-1"},
+            },
+            {
+                "timestamp": "2026-03-01T11:00:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "ack"}],
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages, diagnostics = parse_codex_jsonl_file_with_diagnostics(rollout)
+        assert len(messages) == 2
+        assert diagnostics["dropped_top_level_counts"]["turn_context"] == 1
+        assert any(
+            sample["event_type"] == "turn_context" for sample in diagnostics["dropped_samples"]
+        )

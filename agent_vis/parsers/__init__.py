@@ -23,8 +23,10 @@ from agent_vis.parsers.claude_code import (
     parse_session_file,
 )
 from agent_vis.parsers.codex import (
+    CODEX_EVENT_COVERAGE_MATRIX,
     CodexParser,
     parse_codex_jsonl_file,
+    parse_codex_jsonl_file_with_diagnostics,
     parse_codex_session_directory,
     parse_codex_session_file,
 )
@@ -34,6 +36,7 @@ __all__ = [
     "CanonicalEvent",
     "CanonicalSession",
     "CapabilityManifest",
+    "CODEX_EVENT_COVERAGE_MATRIX",
     "ClaudeCodeParser",
     "CodexParser",
     "SessionParseError",
@@ -47,6 +50,7 @@ __all__ = [
     "list_ecosystems",
     "load_capability_manifest",
     "parse_codex_jsonl_file",
+    "parse_codex_jsonl_file_with_diagnostics",
     "parse_codex_session_directory",
     "parse_codex_session_file",
     "parse_session_directory",
