@@ -7,7 +7,7 @@
 
 import { test, expect } from '@playwright/test';
 
-test.describe('Session Loading Integration', () => {
+test.describe('@manual Session Loading Integration', () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to home page
     await page.goto('/');
@@ -173,7 +173,7 @@ test.describe('Session Loading Integration', () => {
   });
 });
 
-test.describe('API Health Check', () => {
+test.describe('@manual API Health Check', () => {
   test('backend API should be accessible', async ({ request }) => {
     const response = await request.get('http://localhost:8000/api/sessions');
 

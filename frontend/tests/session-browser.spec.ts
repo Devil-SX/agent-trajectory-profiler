@@ -13,7 +13,7 @@
 import { test, expect } from '@playwright/test';
 import { setupMockApi } from './fixtures/mockServer';
 
-test.describe('SessionBrowser - Rendering', () => {
+test.describe('@full SessionBrowser - Rendering', () => {
   test('should render the session browser container', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -58,7 +58,7 @@ test.describe('SessionBrowser - Rendering', () => {
   });
 });
 
-test.describe('SessionBrowser - Session Count', () => {
+test.describe('@full SessionBrowser - Session Count', () => {
   test('should display correct session count', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -148,7 +148,7 @@ test.describe('SessionBrowser - Session Count', () => {
   });
 });
 
-test.describe('SessionBrowser - Loading State', () => {
+test.describe('@full SessionBrowser - Loading State', () => {
   test('should display loading state while fetching sessions', async ({ page }) => {
     // Delay the API response to capture loading state
     await page.route('**/api/sessions', async (route) => {
@@ -191,7 +191,7 @@ test.describe('SessionBrowser - Loading State', () => {
   });
 });
 
-test.describe('SessionBrowser - Empty State', () => {
+test.describe('@full SessionBrowser - Empty State', () => {
   test('should display empty state when no sessions are returned', async ({ page }) => {
     await page.route('**/api/sessions', async (route) => {
       await route.fulfill({
@@ -243,7 +243,7 @@ test.describe('SessionBrowser - Empty State', () => {
   });
 });
 
-test.describe('SessionBrowser - Error State', () => {
+test.describe('@full SessionBrowser - Error State', () => {
   test('should display error state when API returns 500', async ({ page }) => {
     await page.route('**/api/sessions', async (route) => {
       await route.fulfill({
@@ -313,7 +313,7 @@ test.describe('SessionBrowser - Error State', () => {
   });
 });
 
-test.describe('SessionBrowser - Auto-selection', () => {
+test.describe('@full SessionBrowser - Auto-selection', () => {
   test('should auto-select first session on load', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');

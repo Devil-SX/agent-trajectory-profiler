@@ -58,9 +58,17 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      - name: Playwright tag contract
+        working-directory: frontend
+        run: npm run test:check-tags
+
       - name: Type check
         working-directory: frontend
         run: npm run type-check
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npm run test:unit
 
       - name: Build
         working-directory: frontend
@@ -68,6 +76,13 @@ jobs:
 
   frontend-e2e-smoke:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/2", "2/2"]
+    env:
+      PLAYWRIGHT_SHARD: ${{ matrix.shard }}
+      PLAYWRIGHT_WORKERS: "50%"
 
     steps:
       - uses: actions/checkout@v4
@@ -83,10 +98,25 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Install Playwright browser
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run smoke E2E
+      - name: Run smoke E2E shard
         working-directory: frontend
-        run: npm run test:e2e:smoke
+        run: npm run test:e2e:smoke:shard
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-smoke-${{ matrix.shard }}
+          path: frontend/playwright-report

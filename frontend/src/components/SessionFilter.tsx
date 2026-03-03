@@ -13,9 +13,12 @@ import { useEffect, useState } from 'react';
 import './SessionFilter.css';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
 import { useI18n } from '../i18n';
+import type {
+  SessionBottleneckFilter as BottleneckFilter,
+  SessionSortOption as SortOption,
+} from '../utils/sessionFilters';
 
-export type SortOption = 'updated' | 'created' | 'tokens' | 'duration' | 'automation';
-export type BottleneckFilter = 'all' | 'model' | 'tool' | 'user';
+export type { SortOption, BottleneckFilter };
 
 export interface SessionFilterProps {
   onSearchChange: (query: string) => void;

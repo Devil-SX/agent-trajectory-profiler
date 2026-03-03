@@ -55,7 +55,15 @@ uv run pytest tests/test_parser.py -v               # Single file
 uv run pytest --cov=agent_vis tests/               # With coverage
 
 # Frontend E2E tests
-cd frontend && npm run test:e2e
+cd frontend && npm run test:e2e          # Default: chromium only, excludes @manual
+cd frontend && npm run test:e2e:quick    # Fast smoke subset
+cd frontend && npm run test:e2e:all      # All configured projects, excludes @manual
+cd frontend && npm run test:e2e:smoke
+cd frontend && npm run test:e2e:full
+cd frontend && npm run test:e2e:visual
+cd frontend && npm run test:e2e:a11y
+cd frontend && npm run test:check-tags   # Enforce Playwright tier tags
+cd frontend && npm run test:unit         # Vitest unit/component layer
 
 # Lint & format
 uv run ruff check .              # Lint (--fix to auto-fix)
@@ -74,6 +82,7 @@ cd frontend && npm run format    # Prettier
 - CLI error output goes to stderr (`click.echo(..., err=True)`), data to stdout
 - Test fixtures in `tests/conftest.py`, composable; test data dir `tests/fixtures/` is gitignored
 - Frontend: strict TypeScript, named exports, props interfaces per component, React Query for all API calls
+- Playwright tier tags are mandatory by file: use at least one of `@smoke`, `@full`, `@visual`, `@a11y`, `@manual`
 - Commits: conventional commits (`feat:`, `fix:`, `refactor:`, etc.)
 - MCP tools named `mcp__<server>__<method>` are grouped into `<server> (MCP)` for aggregated statistics
 - Parser logic lives in `parsers/claude_code.py`; `session_parser.py` is a backward-compatibility shim

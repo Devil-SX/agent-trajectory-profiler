@@ -12,13 +12,20 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "type-check": "tsc --noEmit",
     "preview": "vite preview",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --project=chromium --grep-invert @manual",
+    "test:e2e:all": "playwright test --grep-invert @manual",
+    "test:e2e:quick": "playwright test --grep @smoke --project=chromium",
     "test:e2e:smoke": "playwright test --grep @smoke --project=chromium",
+    "test:e2e:smoke:shard": "sh -c 'playwright test --grep @smoke --project=chromium --shard=${PLAYWRIGHT_SHARD:-1/1}'",
     "test:e2e:full": "playwright test --grep @full --project=chromium",
+    "test:e2e:full:shard": "sh -c 'playwright test --grep @full --project=chromium --shard=${PLAYWRIGHT_SHARD:-1/1}'",
     "test:e2e:visual": "playwright test --grep @visual --project=chromium",
     "test:e2e:a11y": "playwright test --grep @a11y --project=chromium",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e:debug": "playwright test --debug",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:check-tags": "node ./scripts/validate-playwright-tags.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",
@@ -34,6 +41,8 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.58.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/lodash.debounce": "^4.0.9",
     "@types/node": "^24.10.1",
@@ -47,11 +56,13 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jsdom": "^27.0.1",
     "postcss": "^8.5.6",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^3.2.4"
   }
 }

@@ -38,15 +38,19 @@ Use this matrix to determine minimum required test updates.
 - `@full`: nightly broad regression tests.
 - `@visual`: visual snapshot contract tests.
 - `@a11y`: accessibility and keyboard interaction tests.
+- `@manual`: non-blocking exploratory suites (not run in default CI pipelines).
 
 Agents should mark new Playwright tests with one of these tags in the test title.
+Every `frontend/tests/*.spec.ts` file must contain at least one allowed tag. This is enforced by `npm run test:check-tags`.
 
 ## PR Checklist (Required)
 
 - [ ] Code changes are covered by updated/added tests.
 - [ ] `frontend` checks passed locally when frontend code changed:
   - [ ] `npm run lint`
+  - [ ] `npm run test:check-tags`
   - [ ] `npm run type-check`
+  - [ ] `npm run test:unit`
   - [ ] `npm run build`
   - [ ] `npm run test:e2e:smoke`
 - [ ] `backend` checks passed locally when backend code changed:
@@ -63,7 +67,7 @@ Required checks for merge:
 
 - `backend-quality`
 - `frontend-static-checks`
-- `frontend-e2e-smoke`
+- `frontend-e2e-smoke (all shards)`
 
 Nightly quality checks:
 

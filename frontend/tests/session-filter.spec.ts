@@ -156,7 +156,7 @@ async function waitForSessions(page: Page) {
   await page.waitForSelector('.session-card', { state: 'visible', timeout: 5000 });
 }
 
-test.describe('Session Filter - Search', () => {
+test.describe('@full Session Filter - Search', () => {
   test('should filter sessions by project path', async ({ page }) => {
     await setupFilterMockApi(page);
     await page.goto('/');
@@ -233,7 +233,7 @@ test.describe('Session Filter - Search', () => {
   });
 });
 
-test.describe('Session Filter - Sort', () => {
+test.describe('@full Session Filter - Sort', () => {
   test('should default to "Updated (newest first)" sort', async ({ page }) => {
     await setupFilterMockApi(page);
     await page.goto('/');
@@ -292,7 +292,7 @@ test.describe('Session Filter - Sort', () => {
   });
 });
 
-test.describe('Session Filter - Bottleneck', () => {
+test.describe('@full Session Filter - Bottleneck', () => {
   test('should show all sessions when "All" bottleneck is selected', async ({ page }) => {
     await setupFilterMockApi(page);
     await page.goto('/');
@@ -361,7 +361,7 @@ test.describe('Session Filter - Bottleneck', () => {
   });
 });
 
-test.describe('Session Filter - Combined Filters', () => {
+test.describe('@full Session Filter - Combined Filters', () => {
   test('should apply search and bottleneck filter together', async ({ page }) => {
     await setupFilterMockApi(page);
     await page.goto('/');
@@ -436,7 +436,7 @@ test.describe('Session Filter - Combined Filters', () => {
   });
 });
 
-test.describe('Session Filter - UI State', () => {
+test.describe('@full Session Filter - UI State', () => {
   test('should display all filter controls', async ({ page }) => {
     await setupFilterMockApi(page);
     await page.goto('/');

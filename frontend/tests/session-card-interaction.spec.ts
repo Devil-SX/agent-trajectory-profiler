@@ -13,7 +13,7 @@
 import { test, expect } from '@playwright/test';
 import { setupMockApi } from './fixtures/mockServer';
 
-test.describe('SessionCard - Default Selection', () => {
+test.describe('@full SessionCard - Default Selection', () => {
   test('should select the first card by default on page load', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -41,7 +41,7 @@ test.describe('SessionCard - Default Selection', () => {
   });
 });
 
-test.describe('SessionCard - Click to Change Selection', () => {
+test.describe('@full SessionCard - Click to Change Selection', () => {
   test('should select second card when clicked', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -84,7 +84,7 @@ test.describe('SessionCard - Click to Change Selection', () => {
   });
 });
 
-test.describe('SessionCard - Display Content', () => {
+test.describe('@full SessionCard - Display Content', () => {
   test('should display card title with project name and bullet separators', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -137,7 +137,7 @@ test.describe('SessionCard - Display Content', () => {
   });
 });
 
-test.describe('SessionCard - Bottleneck Badges', () => {
+test.describe('@full SessionCard - Bottleneck Badges', () => {
   test('should display bottleneck badge when session has a bottleneck', async ({ page }) => {
     // Override the mock to include bottleneck data
     await page.route('**/api/sessions', async (route) => {
@@ -212,7 +212,7 @@ test.describe('SessionCard - Bottleneck Badges', () => {
   });
 });
 
-test.describe('SessionCard - Fast Consecutive Clicks', () => {
+test.describe('@full SessionCard - Fast Consecutive Clicks', () => {
   test('should handle rapid clicks between cards without crashing', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');

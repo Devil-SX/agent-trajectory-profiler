@@ -13,7 +13,7 @@
 import { test, expect } from '@playwright/test';
 import { setupMockApi } from './fixtures/mockServer';
 
-test.describe('DateRangePicker', () => {
+test.describe('@full DateRangePicker', () => {
   test.beforeEach(async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -240,7 +240,7 @@ test.describe('DateRangePicker', () => {
   });
 });
 
-test.describe('DateRangePicker - Mobile', () => {
+test.describe('@full DateRangePicker - Mobile', () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
   test.beforeEach(async ({ page }) => {

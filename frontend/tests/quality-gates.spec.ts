@@ -104,16 +104,17 @@ test.describe('Quality Gates', () => {
     const dropdown = page.locator('.date-picker-dropdown');
     await expect(dropdown).toBeVisible();
 
-    const viewport = page.viewportSize();
-    const box = await dropdown.boundingBox();
-
-    expect(viewport).not.toBeNull();
-    expect(box).not.toBeNull();
-
-    expect(box!.x).toBeGreaterThanOrEqual(0);
-    expect(box!.y).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 1);
-    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height + 1);
+    await expect.poll(async () => {
+      return await dropdown.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return (
+          rect.left >= 0 &&
+          rect.top >= 0 &&
+          rect.right <= window.innerWidth + 1 &&
+          rect.bottom <= window.innerHeight + 1
+        );
+      });
+    }).toBe(true);
   });
 
   test('@smoke timeline does not auto-scroll to the bottom on initial load', async ({ page }) => {

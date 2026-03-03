@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-03
+
+> **Code Stats** | Total: 62,294 lines | Delta: +8,082 (-1,807) = **+6,275 net** | Change: **+11.2%** vs v1.0.0
+
 ### Added
 
 - Codex session lineage parsing now derives `physical_session_id` / `logical_session_id` plus parent/root references from rollout metadata (`session_meta`), and persists them in session metadata + SQLite (`sessions` table).
@@ -53,6 +57,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session detail timeline now includes a right-side interactive minimap (desktop) with smooth `user/model/tool` activity curves, click-to-jump navigation, draggable viewport synchronization, and anomaly markers for `model stall` + `tool error`.
 - Expanded timeline UX regression coverage for long sessions:
   - minimap click jump, viewport drag synchronization, anomaly toggle/jump highlighting, and bounded windowed-render assertions (`frontend/tests/timeline-scroll-behavior.spec.ts`).
+- Frontend test stack now includes a Vitest unit layer (`frontend/tests/unit/*`) covering token formatting, display utilities, and session filter/sort pure logic.
+- New Playwright tag-contract checker (`npm run test:check-tags`) validates that each spec file declares at least one tier tag (`@smoke/@full/@visual/@a11y/@manual`).
+- Extended frontend npm test scripts for quick/all/sharded E2E execution and unit watch mode (`test:e2e:quick`, `test:e2e:all`, `test:e2e:*:shard`, `test:unit:watch`).
+- CI and nightly workflows now run Playwright smoke/full suites as matrix shards with browser cache reuse and failure-only report artifact upload.
 
 ### Changed
 
@@ -61,6 +69,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-session overview UI now separates ingestion controls and runtime analytics into dedicated `Control/Ingestion Plane` and `Runtime/Behavior Plane` sections.
 - Quality-gates Playwright smoke tests were updated to align with the current two-layer navigation flow (overview first, then open session detail).
 - Session detail message rendering now uses windowed virtualization with dynamic row measurement to keep long timelines responsive and avoid full DOM expansion.
+- Playwright config now restricts test discovery to `*.spec.ts` and supports `PLAYWRIGHT_WORKERS` overrides so CI can run parallel shards without picking up Vitest unit files.
+- `SessionBrowser` filtering/sorting logic was extracted into a shared utility module (`frontend/src/utils/sessionFilters.ts`) and reused by component code/tests.
+- Testing contracts in `AGENTS.md` / `CLAUDE.md` now explicitly require tag validation and frontend unit tests in the local quality checklist.
+- `uv.lock` is now ignored and removed from repository tracking to avoid lockfile churn in this project.
 
 ### Fixed
 

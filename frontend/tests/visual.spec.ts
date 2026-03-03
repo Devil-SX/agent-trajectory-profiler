@@ -12,7 +12,7 @@
 import { test, expect } from '@playwright/test';
 import { setupMockApi } from './fixtures/mockServer';
 
-test.describe('Home Page', () => {
+test.describe('@manual Home Page', () => {
   test('should display home page with session browser', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -70,7 +70,7 @@ test.describe('Home Page', () => {
   });
 });
 
-test.describe('Session Selection', () => {
+test.describe('@manual Session Selection', () => {
   test('should select and display first session by default', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -135,7 +135,7 @@ test.describe('Session Selection', () => {
   });
 });
 
-test.describe('Timeline View', () => {
+test.describe('@manual Timeline View', () => {
   test('should display timeline with messages', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -186,7 +186,7 @@ test.describe('Timeline View', () => {
   });
 });
 
-test.describe('Statistics View', () => {
+test.describe('@manual Statistics View', () => {
   test('should display statistics dashboard', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -233,7 +233,7 @@ test.describe('Statistics View', () => {
   });
 });
 
-test.describe('Cross-Session Analytics View', () => {
+test.describe('@manual Cross-Session Analytics View', () => {
   test('should display cross-session analytics view', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -273,7 +273,7 @@ test.describe('Cross-Session Analytics View', () => {
   });
 });
 
-test.describe('Sidebar', () => {
+test.describe('@manual Sidebar', () => {
   test('should display session metadata sidebar', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -299,7 +299,7 @@ test.describe('Sidebar', () => {
   });
 });
 
-test.describe('Tab Navigation', () => {
+test.describe('@manual Tab Navigation', () => {
   test('should navigate between tabs', async ({ page }) => {
     await setupMockApi(page);
     await page.goto('/');
@@ -332,7 +332,7 @@ test.describe('Tab Navigation', () => {
   });
 });
 
-test.describe('Mobile View', () => {
+test.describe('@manual Mobile View', () => {
   test.use({ viewport: { width: 375, height: 667 } }); // iPhone SE size
 
   test('should display mobile home page', async ({ page }) => {

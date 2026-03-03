@@ -62,3 +62,6 @@ frontend/test-results/
 frontend/playwright-report/
 
 /survey/
+
+# Lockfile managed locally; not tracked in this repo
+uv.lock

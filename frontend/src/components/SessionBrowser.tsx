@@ -24,6 +24,7 @@ import type { DateRange } from './DateRangePicker';
 import { SessionListView } from './SessionListView';
 import { SyncControl } from './SyncControl';
 import { useI18n } from '../i18n';
+import { filterAndSortSessions } from '../utils/sessionFilters';
 import './SessionBrowser.css';
 
 interface SessionBrowserProps {
@@ -168,40 +169,7 @@ export function SessionBrowser({
 
   // Filter and sort sessions
   const filteredAndSortedSessions = useMemo(() => {
-    let filtered = sessions;
-
-    if (searchQuery.trim()) {
-      filtered = filtered.filter((s) =>
-        s.project_path.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.session_id.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    if (bottleneckFilter !== 'all') {
-      filtered = filtered.filter(
-        (s) => s.bottleneck?.toLowerCase() === bottleneckFilter.toLowerCase()
-      );
-    }
-
-    return [...filtered].sort((a, b) => {
-      switch (sortBy) {
-        case 'updated':
-          return (
-            new Date(b.updated_at || b.created_at).getTime() -
-            new Date(a.updated_at || a.created_at).getTime()
-          );
-        case 'created':
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        case 'tokens':
-          return b.total_tokens - a.total_tokens;
-        case 'duration':
-          return (b.duration_seconds || 0) - (a.duration_seconds || 0);
-        case 'automation':
-          return (b.automation_ratio || 0) - (a.automation_ratio || 0);
-        default:
-          return 0;
-      }
-    });
+    return filterAndSortSessions(sessions, searchQuery, bottleneckFilter, sortBy);
   }, [sessions, searchQuery, bottleneckFilter, sortBy]);
 
   useEffect(() => {
