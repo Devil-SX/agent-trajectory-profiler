@@ -4,9 +4,84 @@ Developer documentation for the Agent Trajectory Profiler.
 
 ## Bird's Eye View
 
-Agent Trajectory Profiler is a full-stack tool that ingests Claude Code `.jsonl` session files, computes quantitative analytics (token usage, time attribution, tool latency, bash command breakdown), and surfaces them through four channels: a FastAPI REST API, a React web dashboard, a Click CLI, and an SQLite database for incremental persistence. An `analyze` command invokes `claude -p` headless to produce AI-powered qualitative reports.
+Agent Trajectory Profiler is a full-stack tool that ingests local multi-agent trajectory files (currently Claude Code and Codex JSONL), normalizes them into an agent-neutral contract, computes quantitative analytics (token usage, time attribution, tool latency, bash command breakdown), and surfaces them through four channels: a FastAPI REST API, a React web dashboard, a Click CLI, and an SQLite database for incremental persistence. An `analyze` command invokes `claude -p` headless to produce AI-powered qualitative reports.
 
-The backend is Python (Pydantic models, single-pass parser, FastAPI endpoints, SQLite persistence). The frontend is a React 19 SPA with React Query, Recharts, and TailwindCSS 4. The parser layer is extensible via an abstract base class, with Claude Code as the first supported ecosystem.
+The backend is Python (Pydantic models, single-pass parser, FastAPI endpoints, SQLite persistence). The frontend is a React 19 SPA with React Query, Recharts, and TailwindCSS 4. The parser layer is extensible via an abstract base class and canonical adapters so ecosystems can evolve independently from downstream consumers.
+
+## Design Philosophy: Three Paths
+
+The repository follows a strict three-path architecture. This is the governing design philosophy for code review and feature planning.
+
+### Path 1: Agent Source -> Canonical Contract
+
+- Input: ecosystem-specific source files and event shapes (`~/.claude/projects`, `~/.codex/sessions`, future ecosystems).
+- Core responsibility: isolate source differences in parser/adapter layer and normalize records.
+- Output: canonical event stream plus unified domain model (`MessageRecord`, `Session`, `SessionStatistics`).
+- Ownership: `agent_vis/parsers/*` and capability manifests.
+
+### Path 2: Canonical Contract -> Database Sync
+
+- Input: canonical/unified session objects.
+- Core responsibility: incremental sync, idempotent upsert, parse status tracking, and durability.
+- Output: stable SQLite storage contract (`tracked_files`, `sessions`, `session_statistics`).
+- Ownership: `agent_vis/db/*`, `agent_vis/api/service.py` sync orchestration.
+
+### Path 3: Database -> Query/Export Contract
+
+- Input: persisted canonical-derived records.
+- Core responsibility: provide stable, consumer-facing query/export semantics.
+- Output classes:
+  - session and cross-session analytics summaries
+  - full trajectory detail payloads
+  - timestamp annotation payloads for key timeline events
+- Ownership: API response models/endpoints, CLI export surfaces, frontend adapter layer.
+
+```mermaid
+flowchart LR
+  A[Agent-specific sources<br/>Claude/Codex/... JSONL] --> B[Path 1<br/>Parser + Canonical Adapter]
+  B --> C[Canonical / Unified Model]
+  C --> D[Path 2<br/>Sync + DB Upsert]
+  D --> E[(SQLite)]
+  E --> F[Path 3<br/>Query / Export Contract]
+  F --> G[Frontend]
+  F --> H[CLI]
+  F --> I[External Consumers]
+```
+
+## Terminology and Boundaries
+
+- `source format`: original ecosystem event schema and storage layout.
+- `canonical format`: agent-neutral normalized event/session contract used to bridge ecosystem differences.
+- `storage model`: database schema and persistence semantics (incremental sync, parse status, idempotency).
+- `query contract`: stable response/serialization contract for UI, CLI, and external integrations.
+
+The architecture deliberately separates these terms. A valid design keeps these boundaries explicit.
+
+## Standards First Rule
+
+Contract definitions are not owned by UI components. Frontend is one consumer of Path 3, not the source of truth for Path 1/2/3 semantics.
+
+Anti-patterns (do not do this):
+
+- Embedding ecosystem-specific parsing assumptions directly in React components (for example, branching core metric math by `ecosystem` in view code).
+- Deriving API contract semantics from chart rendering behavior (for example, treating absent fields as zero without capability/fallback definition).
+
+## New Ecosystem Onboarding (Minimum Checklist)
+
+1. Add parser and canonical adapter implementation for the ecosystem.
+2. Add/update capability manifest declaring supported event/token/error dimensions.
+3. Define source discovery rules and session identity strategy (logical/physical lineage).
+4. Add parser and integration tests covering normalization, fallback behavior, and sync.
+5. Update standards docs and ecosystem docs before merging parser behavior changes.
+
+## Standards Index
+
+- Agent ecosystem docs: `docs/agents/*`
+- Capability manifest spec: `docs/agent-capability-manifest.md`
+- Canonical trajectory schema: `docs/standards/canonical-trajectory-schema.md`
+- Canonical-to-DB sync contract: `docs/standards/canonical-db-sync-contract.md`
+- Query/export contract: `docs/standards/query-export-contract.md`
+- Capability coverage matrices: `docs/standards/metric-capability-matrix.md`, `docs/standards/timestamp-annotation-capability-matrix.md`
 
 ## Code Map
 
