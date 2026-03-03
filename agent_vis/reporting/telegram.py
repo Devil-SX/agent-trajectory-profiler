@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import sys
 import urllib.error
 import urllib.request
 from collections import Counter
@@ -11,10 +13,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    import tomllib  # type: ignore[import-not-found]
-except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
-    import tomli as tomllib  # type: ignore[import-not-found]
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover - Python <3.11 fallback
+    tomllib = importlib.import_module("tomli")
 
 from agent_vis.db.connection import get_connection
 from agent_vis.db.repository import SessionRepository
