@@ -56,6 +56,8 @@ const MINIMAP_HEIGHT = 420;
 const MODEL_STALL_SECONDS = 600;
 const MESSAGE_HIGHLIGHT_MS = 2200;
 
+const FALLBACK_TOOL_USE_NAME = 'Tool Result';
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -178,6 +180,20 @@ function inferSubagentType(messages: MessageRecord[]): SubagentType {
   return 'other';
 }
 
+function isToolResultOnlyMessage(message: MessageRecord): boolean {
+  const content = message.message?.content;
+  if (!Array.isArray(content) || content.length === 0) {
+    return false;
+  }
+  return content.every((block) => {
+    if (!block || typeof block !== 'object') {
+      return false;
+    }
+    const typed = block as Record<string, unknown>;
+    return typed.type === 'tool_result';
+  });
+}
+
 export function MessageTimeline({ sessionId, autoScrollToBottom = true }: MessageTimelineProps) {
   const { data, isLoading, error: queryError } = useSessionDetailQuery(sessionId);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -199,10 +215,20 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   const loading = isLoading;
   const error = queryError?.message ?? null;
 
-  const { mainMessages, subagentsByParent, subagentGroups } = useMemo(() => {
+  const {
+    mainMessages,
+    rawMainMessageCount,
+    linkedToolResultsById,
+    toolUseById,
+    subagentsByParent,
+    subagentGroups,
+  } = useMemo(() => {
     if (!session || session.messages.length === 0) {
       return {
         mainMessages: [] as MessageRecord[],
+        rawMainMessageCount: 0,
+        linkedToolResultsById: new Map<string, ToolResultContent>(),
+        toolUseById: new Map<string, ToolUseContent>(),
         subagentsByParent: new Map<string, Map<string, { agentId: string; messages: MessageRecord[] }>>(),
         subagentGroups: new Map<string, { agentId: string; messages: MessageRecord[] }>(),
       };
@@ -211,6 +237,47 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     const baseMessages = session.messages.filter(
       (msg) => (msg.type === 'user' || msg.type === 'assistant') && !msg.isSidechain
     );
+    const toolUseById = new Map<string, ToolUseContent>();
+    const linkedToolResultsById = new Map<string, ToolResultContent>();
+    const messagesToHide = new Set<string>();
+
+    baseMessages.forEach((msg) => {
+      const content = msg.message?.content;
+      if (!Array.isArray(content)) {
+        return;
+      }
+
+      content.forEach((block) => {
+        if (!block || typeof block !== 'object') {
+          return;
+        }
+
+        const typed = block as Record<string, unknown>;
+        if (
+          typed.type === 'tool_use' &&
+          typeof typed.id === 'string' &&
+          typeof typed.name === 'string' &&
+          typed.input &&
+          typeof typed.input === 'object'
+        ) {
+          if (!toolUseById.has(typed.id)) {
+            toolUseById.set(typed.id, typed as unknown as ToolUseContent);
+          }
+          return;
+        }
+
+        if (typed.type === 'tool_result' && typeof typed.tool_use_id === 'string') {
+          if (!linkedToolResultsById.has(typed.tool_use_id)) {
+            linkedToolResultsById.set(typed.tool_use_id, typed as unknown as ToolResultContent);
+          }
+          if (isToolResultOnlyMessage(msg) && toolUseById.has(typed.tool_use_id)) {
+            messagesToHide.add(msg.uuid);
+          }
+        }
+      });
+    });
+
+    const filteredBaseMessages = baseMessages.filter((msg) => !messagesToHide.has(msg.uuid));
 
     const groups = new Map<string, { agentId: string; messages: MessageRecord[] }>();
     session.messages
@@ -234,7 +301,10 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     });
 
     return {
-      mainMessages: baseMessages,
+      mainMessages: filteredBaseMessages,
+      rawMainMessageCount: baseMessages.length,
+      linkedToolResultsById,
+      toolUseById,
       subagentsByParent: byParent,
       subagentGroups: groups,
     };
@@ -581,7 +651,12 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   }, []);
 
   const renderContentBlock = useCallback(
-    (content: unknown, index: number, allContent: unknown[]): ReactElement | null => {
+    (
+      content: unknown,
+      index: number,
+      allContent: unknown[],
+      message: MessageRecord
+    ): ReactElement | null => {
       if (!content || typeof content !== 'object') {
         return null;
       }
@@ -610,18 +685,34 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
           }
           const typed = entry as Record<string, unknown>;
           return typed.type === 'tool_result' && typed.tool_use_id === toolBlock.id;
-        }) as ToolResultContent | undefined;
+        }) as ToolResultContent | undefined
+          ?? linkedToolResultsById.get(toolBlock.id);
 
         return <ToolCallBlock key={index} toolUse={toolBlock} toolResult={toolResult} />;
       }
 
       if (block.type === 'tool_result') {
-        return null;
+        const toolResultBlock = block as unknown as ToolResultContent;
+        const linkedToolUse = toolUseById.get(toolResultBlock.tool_use_id);
+        const syntheticToolUse: ToolUseContent = linkedToolUse ?? {
+          type: 'tool_use',
+          id: toolResultBlock.tool_use_id,
+          name: FALLBACK_TOOL_USE_NAME,
+          input: {},
+        };
+
+        return (
+          <ToolCallBlock
+            key={`${message.uuid}-${index}-tool-result`}
+            toolUse={syntheticToolUse}
+            toolResult={toolResultBlock}
+          />
+        );
       }
 
       return null;
     },
-    [renderTextWithCodeBlocks]
+    [linkedToolResultsById, renderTextWithCodeBlocks, toolUseById]
   );
 
   const renderMessageContent = useCallback(
@@ -638,7 +729,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
 
       if (Array.isArray(content)) {
         const blocks = content
-          .map((block, index) => renderContentBlock(block, index, content))
+          .map((block, index) => renderContentBlock(block, index, content, message))
           .filter((entry): entry is ReactElement => entry !== null);
         return blocks.length > 0 ? <>{blocks}</> : <p className="message-text">(Empty content)</p>;
       }
@@ -760,6 +851,9 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
         <div className="timeline-header-meta">
           <p className="message-count">
             {mainMessages.length} message{mainMessages.length !== 1 ? 's' : ''}
+            {rawMainMessageCount > mainMessages.length
+              ? ` (filtered from ${rawMainMessageCount})`
+              : ''}
             {subagentGroups.size > 0
               ? ` · ${subagentGroups.size} subagent session${subagentGroups.size !== 1 ? 's' : ''}`
               : ''}

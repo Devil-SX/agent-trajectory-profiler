@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Session detail timeline now correctly links Codex-style cross-message `tool_use`/`tool_result` chains, removes misleading empty rows for result-only messages, and preserves result rendering with explicit filtered-count feedback in the header.
+
 ## [1.1.0] - 2026-03-03
 
 > **Code Stats** | Total: 62,294 lines | Delta: +8,082 (-1,807) = **+6,275 net** | Change: **+11.2%** vs v1.0.0

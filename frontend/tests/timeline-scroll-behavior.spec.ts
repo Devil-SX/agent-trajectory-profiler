@@ -99,11 +99,123 @@ async function setupLongTimelineMocks(page: Page) {
   });
 }
 
+function buildSplitToolChainSession(sessionId: string) {
+  const messages = [
+    {
+      sessionId,
+      uuid: `${sessionId}-msg-1`,
+      timestamp: '2024-02-01T10:00:00Z',
+      type: 'user',
+      message: {
+        role: 'user',
+        content: 'Please inspect and fix the issue.',
+      },
+    },
+    {
+      sessionId,
+      uuid: `${sessionId}-msg-2`,
+      timestamp: '2024-02-01T10:01:00Z',
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'I will inspect the file now.',
+          },
+          {
+            type: 'tool_use',
+            id: `tool-${sessionId}-1`,
+            name: 'Read',
+            input: { file_path: '/tmp/demo.py' },
+          },
+        ],
+      },
+    },
+    {
+      sessionId,
+      uuid: `${sessionId}-msg-3`,
+      timestamp: '2024-02-01T10:01:08Z',
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: `tool-${sessionId}-1`,
+            content: 'line 12: NameError: x is not defined',
+            is_error: true,
+          },
+        ],
+      },
+    },
+    {
+      sessionId,
+      uuid: `${sessionId}-msg-4`,
+      timestamp: '2024-02-01T10:02:00Z',
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'I found the root cause and prepared a fix.',
+          },
+        ],
+      },
+    },
+  ];
+
+  return {
+    session: {
+      metadata: {
+        session_id: sessionId,
+        project_path: '/home/user/project',
+        git_branch: 'main',
+        version: '1.0.0',
+        created_at: '2024-02-01T10:00:00Z',
+        updated_at: '2024-02-01T10:02:00Z',
+        total_messages: messages.length,
+        total_tokens: 4000,
+      },
+      messages,
+    },
+  };
+}
+
+async function setupSplitToolChainMock(page: Page) {
+  await setupMockApi(page);
+  await page.unroute('**/api/sessions/test-session-001');
+  await page.route('**/api/sessions/test-session-001', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildSplitToolChainSession('test-session-001')),
+    });
+  });
+}
+
 async function getWindowScrollY(page: Page) {
   return page.evaluate(() => window.scrollY);
 }
 
 test.describe('@smoke Timeline scroll behavior', () => {
+  test('@smoke codex-style split tool_result is linked and does not render empty rows', async ({
+    page,
+  }) => {
+    await setupSplitToolChainMock(page);
+    await page.goto('/');
+
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 10000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('.message-timeline', { timeout: 10000 });
+
+    await expect(page.getByText('(Empty content)')).toHaveCount(0);
+    await expect(page.locator('.tool-call-block')).toHaveCount(1);
+    await page.locator('.result-toggle-button').first().click();
+    await expect(page.getByText('line 12: NameError: x is not defined')).toBeVisible();
+  });
+
   test('enters session detail at top and only scrolls to bottom on explicit user action', async ({
     page,
   }) => {
