@@ -22,6 +22,10 @@ test.describe('@smoke Cross-session source segmentation', () => {
     const comparisonCard = page.locator('.overview-card:has-text("Source comparison table")');
     await expect(comparisonCard).toContainText('Codex');
     await expect(comparisonCard).not.toContainText('Claude Code');
+
+    const capabilityNotes = page.getByTestId('cross-capability-notes');
+    await expect(capabilityNotes).toBeVisible();
+    await expect(capabilityNotes).toContainText('Time-based metrics');
   });
 
   test('supports role/source dimension switch and metric switch', async ({ page }) => {

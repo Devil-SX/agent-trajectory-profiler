@@ -521,6 +521,105 @@ export async function setupMockApi(page: Page) {
     updated_at: null as string | null,
   };
 
+  const mockCapabilities = {
+    capabilities: [
+      {
+        schema_version: '1.0',
+        ecosystem: 'claude_code',
+        manifest_version: '1.0.0',
+        display_name: 'Claude Code',
+        parser: {
+          adapter: 'claude_code.jsonl',
+          session_id_strategy: 'filename',
+          supports_logical_session: true,
+          supports_physical_session: false,
+          minimum_agent_version: null,
+          default_roots: ['~/.claude/projects'],
+        },
+        event_shape_support: {
+          message_events: true,
+          tool_call_events: true,
+          tool_result_events: true,
+          session_boundary_events: true,
+          timeline_timestamps: true,
+          subagent_events: false,
+          parent_child_session_links: false,
+          streaming_partial_events: true,
+        },
+        token_field_support: {
+          input_tokens: true,
+          output_tokens: true,
+          cache_read_tokens: true,
+          cache_creation_tokens: true,
+          reasoning_tokens: false,
+          tool_output_tokens: true,
+          token_units: 'token',
+        },
+        tool_error_taxonomy_support: {
+          categorization_available: true,
+          rule_version: '1.0.0',
+          error_preview_available: true,
+          error_detail_available: true,
+          supports_timestamped_error_timeline: true,
+          supports_tool_name_mapping: true,
+        },
+        fallback_behavior: {
+          missing_token_fields: 'zero_fill',
+          missing_timestamps: 'skip_timing_metrics',
+          unknown_tool_errors: 'uncategorized',
+        },
+        known_limitations: [],
+      },
+      {
+        schema_version: '1.0',
+        ecosystem: 'codex',
+        manifest_version: '1.0.0',
+        display_name: 'Codex',
+        parser: {
+          adapter: 'codex.rollout',
+          session_id_strategy: 'event_field',
+          supports_logical_session: true,
+          supports_physical_session: true,
+          minimum_agent_version: null,
+          default_roots: ['~/.codex/sessions'],
+        },
+        event_shape_support: {
+          message_events: true,
+          tool_call_events: true,
+          tool_result_events: true,
+          session_boundary_events: true,
+          timeline_timestamps: true,
+          subagent_events: true,
+          parent_child_session_links: true,
+          streaming_partial_events: true,
+        },
+        token_field_support: {
+          input_tokens: true,
+          output_tokens: true,
+          cache_read_tokens: true,
+          cache_creation_tokens: true,
+          reasoning_tokens: false,
+          tool_output_tokens: true,
+          token_units: 'token',
+        },
+        tool_error_taxonomy_support: {
+          categorization_available: true,
+          rule_version: '1.0.0',
+          error_preview_available: true,
+          error_detail_available: true,
+          supports_timestamped_error_timeline: true,
+          supports_tool_name_mapping: true,
+        },
+        fallback_behavior: {
+          missing_token_fields: 'zero_fill',
+          missing_timestamps: 'infer_best_effort',
+          unknown_tool_errors: 'uncategorized',
+        },
+        known_limitations: [],
+      },
+    ],
+  };
+
   const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
   const filteredOverview = (ecosystem: string | null) => {
@@ -759,6 +858,14 @@ export async function setupMockApi(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(mockSyncStatus.last_sync),
+    });
+  });
+
+  await page.route(/\/api\/capabilities(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockCapabilities),
     });
   });
 

@@ -9,6 +9,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import {
+  fetchCapabilities,
   fetchAnalyticsDistribution,
   fetchAnalyticsOverview,
   fetchAnalyticsTimeseries,
@@ -28,6 +29,7 @@ import type {
   AnalyticsInterval,
   AnalyticsOverviewResponse,
   AnalyticsTimeseriesResponse,
+  CapabilityListResponse,
   FrontendPreferences,
   FrontendPreferencesUpdate,
   ProjectComparisonResponse,
@@ -99,6 +101,7 @@ export const sessionKeys = {
       { interval, startDate, endDate, projectLimit, ecosystem },
     ] as const,
   syncStatus: () => [...sessionKeys.all, 'sync-status'] as const,
+  capabilities: () => [...sessionKeys.all, 'capabilities'] as const,
   frontendPreferences: () => [...sessionKeys.all, 'frontend-preferences'] as const,
 };
 
@@ -236,6 +239,17 @@ export function useSyncStatusQuery(): UseQueryResult<SyncStatusResponse, Error> 
     queryFn: fetchSyncStatus,
     staleTime: 15 * 1000,
     refetchInterval: 15 * 1000,
+  });
+}
+
+/**
+ * Hook to fetch parser capability manifests.
+ */
+export function useCapabilitiesQuery(): UseQueryResult<CapabilityListResponse, Error> {
+  return useQuery({
+    queryKey: sessionKeys.capabilities(),
+    queryFn: fetchCapabilities,
+    staleTime: 10 * 60 * 1000,
   });
 }
 

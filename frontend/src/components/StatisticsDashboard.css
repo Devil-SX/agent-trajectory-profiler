@@ -292,6 +292,18 @@
   font-weight: 700;
 }
 
+.stats-capability-note {
+  border-left: 4px solid var(--color-border);
+}
+
+.stats-capability-note--info {
+  border-left-color: #2563eb;
+}
+
+.stats-capability-note--warning {
+  border-left-color: #d97706;
+}
+
 @media (max-width: 1200px) {
   .chart-card.wide {
     grid-column: span 1;

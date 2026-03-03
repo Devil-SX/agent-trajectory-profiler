@@ -14,6 +14,7 @@ import {
   getProjectName,
   truncateMiddle,
 } from '../utils/display';
+import { getEcosystemPresentation } from '../utils/contractViewModel';
 import { SessionCard } from './SessionCard';
 import { useI18n } from '../i18n';
 import './SessionListView.css';
@@ -37,16 +38,6 @@ function normalizeEcosystem(ecosystem: string | null | undefined): 'codex' | 'cl
     return 'claude';
   }
   return 'other';
-}
-
-function ecosystemLabel(ecosystem: string | null | undefined, unknownLabel: string): string {
-  if (ecosystem === 'codex') {
-    return 'Codex';
-  }
-  if (ecosystem === 'claude_code') {
-    return 'Claude Code';
-  }
-  return ecosystem || unknownLabel;
 }
 
 function normalizeBottleneck(value: string | null | undefined): 'model' | 'tool' | 'user' | 'unknown' {
@@ -161,6 +152,7 @@ export function SessionListView({
                   hour: '2-digit',
                   minute: '2-digit',
                 });
+                const ecosystemPresentation = getEcosystemPresentation(session.ecosystem, {});
                 return (
                   <tr
                     key={session.session_id}
@@ -199,7 +191,7 @@ export function SessionListView({
                       <span
                         className={`session-tag session-tag--ecosystem-${normalizeEcosystem(session.ecosystem)}`}
                       >
-                        {ecosystemLabel(session.ecosystem, t('table.unknown'))}
+                        {ecosystemPresentation.label || t('table.unknown')}
                       </span>
                     </td>
                     <td title={formatNumber(session.total_tokens)}>{formatTokenCount(session.total_tokens)}</td>

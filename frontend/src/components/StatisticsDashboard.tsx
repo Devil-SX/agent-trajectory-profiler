@@ -8,7 +8,7 @@
  * - Resource Consumption
  */
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   BarChart,
@@ -23,9 +23,13 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { useSessionStatisticsQuery } from '../hooks/useSessionsQuery';
+import { useCapabilitiesQuery, useSessionStatisticsQuery } from '../hooks/useSessionsQuery';
 import type { SessionStatistics } from '../types/session';
 import { formatTokenCount } from '../utils/tokenFormat';
+import {
+  buildCapabilityIndex,
+  buildSessionStatisticsViewModel,
+} from '../utils/contractViewModel';
 import { TimeBreakdownChart } from './TimeBreakdownChart';
 import { BottleneckInsight } from './BottleneckInsight';
 import { BashCommandTable } from './BashCommandTable';
@@ -34,6 +38,7 @@ import './StatisticsDashboard.css';
 
 interface StatisticsDashboardProps {
   sessionId: string | null;
+  ecosystem?: string | null;
 }
 
 const COLORS = [
@@ -98,11 +103,20 @@ function formatTimestamp(value: string): string {
   return date.toLocaleString();
 }
 
-export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
+export function StatisticsDashboard({ sessionId, ecosystem = null }: StatisticsDashboardProps) {
   const { data, isLoading, error: queryError } = useSessionStatisticsQuery(sessionId);
+  const capabilitiesQuery = useCapabilitiesQuery();
   const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({});
 
   const statistics: SessionStatistics | null = data?.statistics || null;
+  const capabilityIndex = useMemo(
+    () => buildCapabilityIndex(capabilitiesQuery.data),
+    [capabilitiesQuery.data]
+  );
+  const selectedCapability = ecosystem ? capabilityIndex[ecosystem] : undefined;
+  const statisticsVm = statistics
+    ? buildSessionStatisticsViewModel(statistics, selectedCapability)
+    : null;
   const loading = isLoading;
   const error = queryError?.message || null;
 
@@ -163,19 +177,6 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
   };
 
   const interactions = statistics.time_breakdown?.user_interaction_count || 0;
-  const automationRatio = interactions > 0
-    ? statistics.total_tool_calls / interactions
-    : null;
-  const tokenYieldRatio = typeof statistics.leverage_ratio_tokens === 'number'
-    ? statistics.leverage_ratio_tokens
-    : typeof statistics.user_yield_ratio_tokens === 'number'
-      ? statistics.user_yield_ratio_tokens
-    : null;
-  const charYieldRatio = typeof statistics.leverage_ratio_chars === 'number'
-    ? statistics.leverage_ratio_chars
-    : typeof statistics.user_yield_ratio_chars === 'number'
-      ? statistics.user_yield_ratio_chars
-    : null;
 
   const withCalls = statistics.tool_calls.filter((item) => item.count > 0);
   const weightedLatency = withCalls.reduce(
@@ -228,6 +229,30 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
     <div className="statistics-dashboard">
       <h2 className="dashboard-title">Session Metrics</h2>
 
+      {statisticsVm && statisticsVm.capabilityNotices.length > 0 && (
+        <section className="metrics-section" data-testid="stats-capability-notes">
+          <div className="section-header">
+            <h3>Capability Notes</h3>
+            <p>Ecosystem-specific support and fallback caveats for derived metrics.</p>
+          </div>
+          <div className="stats-grid">
+            {statisticsVm.capabilityNotices.map((notice) => (
+              <div
+                key={notice.id}
+                className={`stat-card stats-capability-note stats-capability-note--${notice.severity}`}
+              >
+                <h4 className="card-title">{notice.label}</h4>
+                <div className="stat-breakdown">
+                  <div className="breakdown-item">
+                    <span className="breakdown-label">{notice.reason}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {statistics.time_breakdown && (
         <BottleneckInsight timeBreakdown={statistics.time_breakdown} />
       )}
@@ -259,7 +284,9 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
               <MetricTerm metricId="yield">Automation Ratio</MetricTerm>
             </h4>
             <div className="stat-value large">
-              {automationRatio !== null ? `${automationRatio.toFixed(2)}x` : 'N/A'}
+              {statisticsVm && statisticsVm.automationRatio !== null
+                ? `${statisticsVm.automationRatio.toFixed(2)}x`
+                : 'N/A'}
             </div>
             <div className="stat-breakdown">
               <div className="breakdown-item">
@@ -289,13 +316,17 @@ export function StatisticsDashboard({ sessionId }: StatisticsDashboardProps) {
               <MetricTerm metricId="leverage">Leverage Ratio</MetricTerm>
             </h4>
             <div className="stat-value large">
-              {tokenYieldRatio !== null ? `${tokenYieldRatio.toFixed(2)}x` : 'N/A'}
+              {statisticsVm && statisticsVm.tokenYieldRatio !== null
+                ? `${statisticsVm.tokenYieldRatio.toFixed(2)}x`
+                : 'N/A'}
             </div>
             <div className="stat-breakdown">
               <div className="breakdown-item">
                 <span className="breakdown-label">Chars output/input</span>
                 <span className="breakdown-value">
-                  {charYieldRatio !== null ? `${charYieldRatio.toFixed(2)}x` : 'N/A'}
+                  {statisticsVm && statisticsVm.charYieldRatio !== null
+                    ? `${statisticsVm.charYieldRatio.toFixed(2)}x`
+                    : 'N/A'}
                 </span>
               </div>
               <div className="breakdown-item">

@@ -28,7 +28,7 @@ import { filterAndSortSessions } from '../utils/sessionFilters';
 import './SessionBrowser.css';
 
 interface SessionBrowserProps {
-  onSessionChange?: (sessionId: string | null) => void;
+  onSessionChange?: (sessionId: string | null, session?: SessionSummary | null) => void;
   onComparisonSessionChange?: (sessionId: string | null) => void;
   selectedSessionId?: string | null;
   comparisonSessionId?: string | null;
@@ -163,7 +163,8 @@ export function SessionBrowser({
     }
 
     setActiveSessionId(initialSessionId);
-    onSessionChange?.(initialSessionId);
+    const initialSession = sessions.find((item) => item.session_id === initialSessionId) || null;
+    onSessionChange?.(initialSessionId, initialSession);
     initRef.current = true;
   }, [autoSelectFirst, controlledSelectedSessionId, onSessionChange, sessions, t]);
 
@@ -177,7 +178,7 @@ export function SessionBrowser({
       if (activeSessionId) {
         setActiveSessionId(null);
         if (autoSelectFirst) {
-          onSessionChange?.(null);
+          onSessionChange?.(null, null);
         }
       }
       return;
@@ -191,7 +192,9 @@ export function SessionBrowser({
       if (autoSelectFirst) {
         const nextSessionId = filteredAndSortedSessions[0].session_id;
         setActiveSessionId(nextSessionId);
-        onSessionChange?.(nextSessionId);
+        const nextSession =
+          filteredAndSortedSessions.find((item) => item.session_id === nextSessionId) || null;
+        onSessionChange?.(nextSessionId, nextSession);
         if (initRef.current) {
           toast(t('session.search.adjusted'));
         }
@@ -217,7 +220,8 @@ export function SessionBrowser({
     }
 
     setActiveSessionId(sessionId);
-    onSessionChange?.(sessionId);
+    const session = sessions.find((item) => item.session_id === sessionId) || null;
+    onSessionChange?.(sessionId, session);
   };
 
   const showComparison = onComparisonSessionChange !== undefined;

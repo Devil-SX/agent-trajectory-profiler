@@ -8,6 +8,7 @@ import type {
   AnalyticsInterval,
   AnalyticsOverviewResponse,
   AnalyticsTimeseriesResponse,
+  CapabilityListResponse,
   FrontendPreferences,
   FrontendPreferencesUpdate,
   ProjectComparisonResponse,
@@ -428,6 +429,21 @@ export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
   } catch (error) {
     if (import.meta.env.DEV) {
       console.error('Failed to fetch sync status:', error);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch ecosystem capability declarations.
+ */
+export async function fetchCapabilities(): Promise<CapabilityListResponse> {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/capabilities`);
+    return response.json();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Failed to fetch capabilities:', error);
     }
     throw error;
   }

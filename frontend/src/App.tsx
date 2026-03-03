@@ -11,6 +11,7 @@ import {
 import type {
   DensityMode,
   FrontendPreferencesUpdate,
+  SessionSummary,
   SessionAggregationMode,
   SessionViewMode,
   ThemeMode,
@@ -162,6 +163,7 @@ function App() {
   const hasHydratedPreferencesRef = useRef(false);
   const initialRoute = readRouteState();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialRoute.sessionId);
+  const [selectedSessionEcosystem, setSelectedSessionEcosystem] = useState<string | null>(null);
   const [primaryView, setPrimaryView] = useState<PrimaryView>(initialRoute.view);
   const [sessionDetailTab, setSessionDetailTab] = useState<SessionDetailTab>(initialRoute.tab);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -331,11 +333,15 @@ function App() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handleSessionOpenFromOverview = (sessionId: string | null) => {
+  const handleSessionOpenFromOverview = (
+    sessionId: string | null,
+    session?: SessionSummary | null
+  ) => {
     if (!sessionId) {
       return;
     }
 
+    setSelectedSessionEcosystem(session?.ecosystem || null);
     applyRouteState({
       view: 'session-detail',
       sessionId,
@@ -574,7 +580,10 @@ function App() {
                   )}
                   {showStatistics && (
                     <div className="session-content">
-                      <StatisticsDashboard sessionId={selectedSessionId} />
+                      <StatisticsDashboard
+                        sessionId={selectedSessionId}
+                        ecosystem={selectedSessionEcosystem}
+                      />
                     </div>
                   )}
                   {showTimeline && (

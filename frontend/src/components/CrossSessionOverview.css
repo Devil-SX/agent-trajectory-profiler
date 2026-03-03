@@ -504,6 +504,44 @@
   letter-spacing: 0.03em;
 }
 
+.capability-notes {
+  margin-bottom: 1rem;
+}
+
+.capability-notes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.65rem;
+}
+
+.capability-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border-left: 4px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.capability-note strong {
+  font-size: 0.82rem;
+}
+
+.capability-note span {
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.capability-note--info {
+  border-left-color: #2563eb;
+}
+
+.capability-note--warning {
+  border-left-color: #d97706;
+}
+
 @media (max-width: 768px) {
   .cross-session-overview {
     padding: 0.85rem;

@@ -86,6 +86,68 @@ export interface FrontendPreferencesUpdate {
   session_aggregation_mode?: SessionAggregationMode;
 }
 
+export interface CapabilityParserInfo {
+  adapter: string;
+  session_id_strategy: string;
+  supports_logical_session: boolean;
+  supports_physical_session: boolean;
+  minimum_agent_version?: string | null;
+  default_roots: string[];
+}
+
+export interface CapabilityEventShape {
+  message_events: boolean;
+  tool_call_events: boolean;
+  tool_result_events: boolean;
+  session_boundary_events: boolean;
+  timeline_timestamps: boolean;
+  subagent_events: boolean;
+  parent_child_session_links: boolean;
+  streaming_partial_events: boolean;
+}
+
+export interface CapabilityTokenFieldSupport {
+  input_tokens: boolean;
+  output_tokens: boolean;
+  cache_read_tokens: boolean;
+  cache_creation_tokens: boolean;
+  reasoning_tokens: boolean;
+  tool_output_tokens: boolean;
+  token_units: string;
+}
+
+export interface CapabilityToolErrorSupport {
+  categorization_available: boolean;
+  rule_version: string;
+  error_preview_available: boolean;
+  error_detail_available: boolean;
+  supports_timestamped_error_timeline: boolean;
+  supports_tool_name_mapping: boolean;
+}
+
+export interface CapabilityFallbackBehavior {
+  missing_token_fields: string;
+  missing_timestamps: string;
+  unknown_tool_errors: string;
+}
+
+export interface EcosystemCapability {
+  schema_version: string;
+  ecosystem: string;
+  manifest_version: string;
+  display_name: string;
+  parser: CapabilityParserInfo;
+  event_shape_support: CapabilityEventShape;
+  token_field_support: CapabilityTokenFieldSupport;
+  tool_error_taxonomy_support: CapabilityToolErrorSupport;
+  fallback_behavior: CapabilityFallbackBehavior;
+  known_limitations: string[];
+}
+
+export interface CapabilityListResponse {
+  capabilities: EcosystemCapability[];
+}
+
 export interface ErrorResponse {
   error: string;
   detail?: string;

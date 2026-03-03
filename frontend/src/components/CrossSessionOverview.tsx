@@ -18,10 +18,16 @@ import {
   useAnalyticsDistributionQuery,
   useAnalyticsOverviewQuery,
   useAnalyticsTimeseriesQuery,
+  useCapabilitiesQuery,
   useProjectComparisonQuery,
   useProjectSwimlaneQuery,
 } from '../hooks/useSessionsQuery';
 import type { AnalyticsBucket, RoleSourceAggregate } from '../types/session';
+import {
+  buildCapabilityIndex,
+  deriveCapabilityNotices,
+  getEcosystemPresentation,
+} from '../utils/contractViewModel';
 import { truncateMiddle } from '../utils/display';
 import { useI18n } from '../i18n';
 import { MetricTerm } from './MetricHelp';
@@ -44,7 +50,7 @@ interface DayNightRow {
   share: number;
 }
 
-type SourceFilter = 'all' | 'claude_code' | 'codex';
+type SourceFilter = 'all' | string;
 type RoleSourceMetric = 'time' | 'tokens' | 'tool_calls' | 'errors';
 type RoleSourceView = 'source' | 'role';
 
@@ -54,10 +60,13 @@ const ROLE_COLORS: Record<'user' | 'model' | 'tool', string> = {
   tool: '#0891b2',
   user: '#ea580c',
 };
-const SOURCE_COLORS: Record<'claude_code' | 'codex', string> = {
-  claude_code: '#7c3aed',
-  codex: '#16a34a',
-};
+
+function sourceFilterTestId(ecosystem: string): string {
+  if (ecosystem === 'claude_code') {
+    return 'source-filter-claude';
+  }
+  return `source-filter-${ecosystem}`;
+}
 
 function toIsoDate(value: Date): string {
   const adjusted = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
@@ -219,6 +228,7 @@ export function CrossSessionOverview() {
     12,
     ecosystemFilter
   );
+  const capabilitiesQuery = useCapabilitiesQuery();
 
   const isLoading =
     overviewLoading ||
@@ -443,6 +453,30 @@ export function CrossSessionOverview() {
   const topProjects = runtime.top_projects.slice(0, 8);
   const topTools = runtime.top_tools.slice(0, 8);
   const sourceBreakdown = runtime.source_breakdown || [];
+  const capabilityIndex = buildCapabilityIndex(capabilitiesQuery.data);
+  const sourcePresentation = Object.fromEntries(
+    sourceBreakdown.map((source) => [
+      source.ecosystem,
+      getEcosystemPresentation(source.ecosystem, capabilityIndex),
+    ])
+  );
+  const sourceFilterOptions = sourceBreakdown.map((source) => {
+    const present = sourcePresentation[source.ecosystem];
+    return {
+      ecosystem: source.ecosystem,
+      label: present?.label || source.label || source.ecosystem,
+      color: present?.color || '#94a3b8',
+    };
+  });
+  const sourceBreakdownDisplay = sourceBreakdown.map((source) => ({
+    ...source,
+    label:
+      sourcePresentation[source.ecosystem]?.label || source.label || source.ecosystem,
+    color: sourcePresentation[source.ecosystem]?.color || '#94a3b8',
+  }));
+  const selectedCapability =
+    sourceFilter !== 'all' && sourceFilter ? capabilityIndex[sourceFilter] : undefined;
+  const capabilityNotices = deriveCapabilityNotices(selectedCapability);
   const roleSourceBreakdown = runtime.role_source_breakdown;
   const roleSourceMetricLabel =
     roleSourceMetric === 'tokens'
@@ -464,7 +498,8 @@ export function CrossSessionOverview() {
     >();
     for (const row of roleSourceBreakdown) {
       const existing = grouped.get(row.ecosystem) ?? {
-        label: row.ecosystem_label,
+        label:
+          sourcePresentation[row.ecosystem]?.label || row.ecosystem_label || row.ecosystem,
         roleValues: { user: 0, model: 0, tool: 0 },
         total: 0,
       };
@@ -526,6 +561,8 @@ export function CrossSessionOverview() {
       const share = roleSourceTotal > 0 ? value / roleSourceTotal : 0;
       return {
         ...row,
+        ecosystem_label:
+          sourcePresentation[row.ecosystem]?.label || row.ecosystem_label || row.ecosystem,
         value,
         share,
       };
@@ -751,25 +788,38 @@ export function CrossSessionOverview() {
             >
               {t('cross.sourceAll')}
             </button>
-            <button
-              type="button"
-              className={sourceFilter === 'claude_code' ? 'active' : ''}
-              onClick={() => setSourceFilter('claude_code')}
-              data-testid="source-filter-claude"
-            >
-              Claude Code
-            </button>
-            <button
-              type="button"
-              className={sourceFilter === 'codex' ? 'active' : ''}
-              onClick={() => setSourceFilter('codex')}
-              data-testid="source-filter-codex"
-            >
-              Codex
-            </button>
+            {sourceFilterOptions.map((source) => (
+              <button
+                key={source.ecosystem}
+                type="button"
+                className={sourceFilter === source.ecosystem ? 'active' : ''}
+                onClick={() => setSourceFilter(source.ecosystem)}
+                data-testid={sourceFilterTestId(source.ecosystem)}
+              >
+                {source.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
+
+      {capabilityNotices.length > 0 && (
+        <section className="overview-card capability-notes" data-testid="cross-capability-notes">
+          <h4>{t('cross.plane.runtime.title')} - Capability Notes</h4>
+          <div className="capability-notes-grid">
+            {capabilityNotices.map((notice) => (
+              <div
+                key={notice.id}
+                className={`capability-note capability-note--${notice.severity}`}
+                title={notice.reason}
+              >
+                <strong>{notice.label}</strong>
+                <span>{notice.reason}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="plane-section plane-section--control" aria-label={t('cross.plane.control.title')}>
         <div className="plane-section__header">
@@ -1100,18 +1150,12 @@ export function CrossSessionOverview() {
                         <Bar dataKey="user" stackId="role" fill={ROLE_COLORS.user} name={t('cross.user')} />
                       </>
                     ) : (
-                      sourceBreakdown.map((source) => (
+                      sourceBreakdownDisplay.map((source) => (
                         <Bar
                           key={source.ecosystem}
                           dataKey={source.ecosystem}
                           stackId="source"
-                          fill={
-                            source.ecosystem === 'claude_code'
-                              ? SOURCE_COLORS.claude_code
-                              : source.ecosystem === 'codex'
-                                ? SOURCE_COLORS.codex
-                                : '#94a3b8'
-                          }
+                          fill={source.color}
                           name={source.label}
                         />
                       ))
@@ -1177,7 +1221,7 @@ export function CrossSessionOverview() {
             <p className="empty-hint">{t('cross.noSourceData')}</p>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={sourceBreakdown}>
+              <BarChart data={sourceBreakdownDisplay}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" />
                 <YAxis />
@@ -1214,7 +1258,7 @@ export function CrossSessionOverview() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sourceBreakdown.map((source) => (
+                  {sourceBreakdownDisplay.map((source) => (
                     <tr key={source.ecosystem}>
                       <td>{source.label}</td>
                       <td>{formatNumber(source.sessions)}</td>
