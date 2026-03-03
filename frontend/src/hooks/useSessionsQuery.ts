@@ -118,6 +118,8 @@ export function useSessionsQuery(
   return useQuery({
     queryKey: sessionKeys.list(page, pageSize, startDate, endDate, viewMode),
     queryFn: () => fetchSessions(page, pageSize, startDate, endDate, viewMode),
+    placeholderData: (previousData) => previousData,
+    retry: 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -132,6 +134,8 @@ export function useSessionDetailQuery(
     queryKey: sessionKeys.detail(sessionId || ''),
     queryFn: () => fetchSessionDetail(sessionId!),
     enabled: !!sessionId,
+    placeholderData: (previousData) => previousData,
+    retry: 0,
     staleTime: 10 * 60 * 1000, // 10 minutes - session data is immutable
   });
 }
@@ -146,6 +150,8 @@ export function useSessionStatisticsQuery(
     queryKey: sessionKeys.statistic(sessionId || ''),
     queryFn: () => fetchSessionStatistics(sessionId!),
     enabled: !!sessionId,
+    placeholderData: (previousData) => previousData,
+    retry: 0,
     staleTime: 10 * 60 * 1000, // 10 minutes - statistics are immutable
   });
 }

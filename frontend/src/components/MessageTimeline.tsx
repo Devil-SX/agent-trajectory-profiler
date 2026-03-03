@@ -254,7 +254,7 @@ function AnomalyGlyph({ type, className }: AnomalyGlyphProps) {
 }
 
 export function MessageTimeline({ sessionId, autoScrollToBottom = true }: MessageTimelineProps) {
-  const { data, isLoading, error: queryError } = useSessionDetailQuery(sessionId);
+  const { data, isLoading, isFetching, error: queryError, refetch } = useSessionDetailQuery(sessionId);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const minimapTrackRef = useRef<HTMLDivElement>(null);
   const clearHighlightTimeoutRef = useRef<number | null>(null);
@@ -272,8 +272,13 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   const [highlightedMessageUuid, setHighlightedMessageUuid] = useState<string | null>(null);
 
   const session: Session | null = data?.session ?? null;
-  const loading = isLoading;
+  const loading = isLoading && !session;
+  const sessionMismatch = Boolean(session && session.metadata.session_id !== sessionId);
+  const switchingSession = isFetching && Boolean(session) && sessionMismatch;
+  const refreshingSession = isFetching && Boolean(session) && !sessionMismatch;
   const error = queryError?.message ?? null;
+  const blockingError = Boolean(error && !session);
+  const recoverableError = Boolean(error && session);
 
   const {
     allMainMessages,
@@ -912,17 +917,33 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   if (loading) {
     return (
       <div className="message-timeline loading">
-        <div className="loading-spinner">Loading messages...</div>
+        <div className="loading-spinner" role="status" aria-live="polite">
+          <span className="panel-loading-title">Loading timeline...</span>
+          <div className="timeline-loading-skeleton" aria-hidden="true">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div key={index} className="timeline-loading-skeleton-row" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
-  if (error) {
+  if (blockingError) {
     return (
       <div className="message-timeline error">
         <div className="error-message">
           <h3>Error loading session</h3>
           <p>{error}</p>
+          <button
+            type="button"
+            className="timeline-retry-button"
+            onClick={() => {
+              void refetch();
+            }}
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -961,6 +982,11 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
               · Rendered {visibleMessages.length}
             </span>
           </p>
+          {(refreshingSession || recoverableError) && (
+            <span className="timeline-refresh-indicator" role="status" aria-live="polite">
+              {refreshingSession ? 'Refreshing timeline...' : 'Showing cached timeline (refresh failed)'}
+            </span>
+          )}
           {!autoScrollToBottom && (
             <button type="button" className="timeline-jump-button" onClick={() => scrollToLatest('smooth')}>
               Jump to latest
@@ -970,6 +996,11 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
       </div>
 
       <div className="timeline-layout">
+        {switchingSession && (
+          <div className="timeline-panel-overlay" role="status" aria-live="polite" data-testid="timeline-switching-overlay">
+            <span>Switching session...</span>
+          </div>
+        )}
         <div className="messages-panel">
           <div className="messages-container" ref={messagesContainerRef} data-testid="timeline-message-scroll">
             <div className="timeline-virtual-spacer" style={{ height: `${visibleTopSpacer}px` }} aria-hidden="true" />

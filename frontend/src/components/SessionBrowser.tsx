@@ -87,7 +87,7 @@ export function SessionBrowser({
     'all'
   );
 
-  const { data, isLoading, error: queryError } = useSessionsQuery(
+  const { data, isLoading, isFetching, error: queryError, refetch } = useSessionsQuery(
     page,
     pageSize,
     dateRange.start_date,
@@ -99,7 +99,10 @@ export function SessionBrowser({
 
   const sessions: SessionSummary[] = data?.sessions ?? EMPTY_SESSIONS;
   const loading = isLoading && !data;
+  const refreshing = isFetching && !!data;
   const error = queryError?.message || null;
+  const blockingError = Boolean(error && !data);
+  const nonBlockingError = Boolean(error && data);
 
   const initRef = useRef(false);
 
@@ -265,7 +268,7 @@ export function SessionBrowser({
 
   const browserStateClass = loading
     ? 'loading'
-    : error
+    : blockingError
       ? 'error'
       : sessions.length === 0
         ? 'empty'
@@ -281,28 +284,55 @@ export function SessionBrowser({
           onRunSync={handleRunSync}
         />
         {loading && (
-          <div className="loading-container">
-            <p>{t('session.loading')}</p>
+          <div className="loading-container" role="status" aria-live="polite">
+            <div className="loading-indicator-row">
+              <span className="loading-dot loading-dot--one" aria-hidden="true" />
+              <span className="loading-dot loading-dot--two" aria-hidden="true" />
+              <span className="loading-dot loading-dot--three" aria-hidden="true" />
+              <span className="loading-label">{t('session.loadingInitial')}</span>
+            </div>
+            <p>{t('session.loadingHint')}</p>
+            <div className="session-loading-skeleton" aria-hidden="true">
+              {Array.from({ length: 6 }, (_, index) => (
+                <div key={index} className="session-skeleton-row" />
+              ))}
+            </div>
           </div>
         )}
 
-        {!loading && error && (
+        {!loading && blockingError && (
           <div className="error-container">
             <p className="error-message">
               {t('session.errorPrefix')}
               : {error}
             </p>
+            <button
+              type="button"
+              className="session-retry-button"
+              onClick={() => {
+                void refetch();
+              }}
+            >
+              {t('session.retry')}
+            </button>
           </div>
         )}
 
-        {!loading && !error && sessions.length === 0 && (
+        {!loading && !blockingError && sessions.length === 0 && (
           <div className="empty-container">
             <p>{t('session.empty')}</p>
           </div>
         )}
 
-        {!loading && !error && sessions.length > 0 && (
+        {!loading && !blockingError && sessions.length > 0 && (
           <>
+            {(refreshing || nonBlockingError) && (
+              <div className="session-refresh-indicator" role="status" aria-live="polite">
+                <span className="session-refresh-pill">
+                  {refreshing ? t('session.refreshing') : t('session.errorRecoverable')}
+                </span>
+              </div>
+            )}
             <div className="session-browser-filter">
               <SessionFilter
                 onSearchChange={setSearchQuery}

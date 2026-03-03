@@ -25,6 +25,9 @@ export function SessionMetadataSidebar({ sessionId }: SessionMetadataSidebarProp
   const [metadata, setMetadata] = useState<SessionMetadataDisplay | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const initialLoading = loading && !metadata;
+  const switchingLoading = loading && !!metadata;
+  const blockingError = Boolean(error && !metadata);
 
   const formatDuration = useCallback((ms: number): string => {
     const seconds = Math.floor(ms / 1000);
@@ -137,21 +140,46 @@ export function SessionMetadataSidebar({ sessionId }: SessionMetadataSidebarProp
     );
   }
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <aside className="metadata-sidebar">
         <div className="sidebar-content loading">
-          <div className="loading-spinner">Loading...</div>
+          <div className="loading-spinner" role="status" aria-live="polite">
+            <span>Loading metadata...</span>
+            <div className="sidebar-loading-skeleton" aria-hidden="true">
+              {Array.from({ length: 5 }, (_, index) => (
+                <div key={index} className="sidebar-loading-skeleton-row" />
+              ))}
+            </div>
+          </div>
         </div>
       </aside>
     );
   }
 
-  if (error) {
+  if (blockingError) {
     return (
       <aside className="metadata-sidebar">
         <div className="sidebar-content error">
           <p className="error-text">{error}</p>
+          <button
+            type="button"
+            className="sidebar-retry-button"
+            onClick={() => {
+              if (sessionId) {
+                setLoading(true);
+                setError(null);
+                fetchSessionDetail(sessionId)
+                  .then((data) => setMetadata(computeSessionMetadata(data.session)))
+                  .catch((err) =>
+                    setError(err instanceof Error ? err.message : 'Failed to load metadata')
+                  )
+                  .finally(() => setLoading(false));
+              }
+            }}
+          >
+            Retry
+          </button>
         </div>
       </aside>
     );
@@ -164,6 +192,16 @@ export function SessionMetadataSidebar({ sessionId }: SessionMetadataSidebarProp
   return (
     <aside className="metadata-sidebar">
       <div className="sidebar-content">
+        {(switchingLoading || error) && (
+          <div className="sidebar-refresh-indicator" role="status" aria-live="polite">
+            {switchingLoading ? 'Refreshing metadata...' : 'Showing cached metadata (refresh failed)'}
+          </div>
+        )}
+        {switchingLoading && (
+          <div className="sidebar-loading-overlay" role="status" aria-live="polite">
+            <span>Switching session...</span>
+          </div>
+        )}
         <h2 className="sidebar-title">Session Metadata</h2>
 
         <div className="metadata-section">

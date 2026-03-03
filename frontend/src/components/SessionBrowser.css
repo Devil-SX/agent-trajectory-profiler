@@ -155,13 +155,79 @@
 }
 
 .loading-container {
-  text-align: center;
+  width: min(860px, 100%);
+  text-align: left;
   color: var(--color-text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .loading-container p {
-  font-size: 1rem;
+  font-size: 0.92rem;
   margin: 0;
+}
+
+.loading-indicator-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.loading-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  opacity: 0.35;
+  animation: loadingDotPulse 1s ease-in-out infinite;
+}
+
+.loading-dot--two {
+  animation-delay: 0.16s;
+}
+
+.loading-dot--three {
+  animation-delay: 0.32s;
+}
+
+.loading-label {
+  margin-left: 0.35rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.session-loading-skeleton {
+  display: grid;
+  gap: 0.52rem;
+}
+
+.session-skeleton-row {
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-surface-muted) 80%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 84%, transparent) 45%,
+    color-mix(in srgb, var(--color-surface-muted) 80%, transparent) 100%
+  );
+  background-size: 220% 100%;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+
+.session-refresh-indicator {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.session-refresh-pill {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.2rem 0.58rem;
+  font-size: calc(0.74rem * var(--density-font-scale));
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
 }
 
 /* Error state */
@@ -186,6 +252,20 @@
   margin: 0;
 }
 
+.session-retry-button {
+  margin-top: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: 0.42rem 0.8rem;
+  cursor: pointer;
+}
+
+.session-retry-button:hover {
+  background: var(--color-surface-muted);
+}
+
 /* Empty state */
 .session-browser.empty {
   display: flex;
@@ -202,6 +282,34 @@
 .empty-container p {
   font-size: 1rem;
   margin: 0;
+}
+
+@keyframes loadingDotPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.95;
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-dot,
+  .session-skeleton-row {
+    animation: none;
+  }
 }
 
 /* Responsive layout for tablet */

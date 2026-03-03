@@ -104,7 +104,7 @@ function formatTimestamp(value: string): string {
 }
 
 export function StatisticsDashboard({ sessionId, ecosystem = null }: StatisticsDashboardProps) {
-  const { data, isLoading, error: queryError } = useSessionStatisticsQuery(sessionId);
+  const { data, isLoading, isFetching, error: queryError, refetch } = useSessionStatisticsQuery(sessionId);
   const capabilitiesQuery = useCapabilitiesQuery();
   const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({});
 
@@ -117,8 +117,13 @@ export function StatisticsDashboard({ sessionId, ecosystem = null }: StatisticsD
   const statisticsVm = statistics
     ? buildSessionStatisticsViewModel(statistics, selectedCapability)
     : null;
-  const loading = isLoading;
+  const loading = isLoading && !statistics;
+  const sessionMismatch = Boolean(data && data.session_id !== sessionId);
+  const switchingSession = isFetching && Boolean(statistics) && sessionMismatch;
+  const refreshingSession = isFetching && Boolean(statistics) && !sessionMismatch;
   const error = queryError?.message || null;
+  const blockingError = Boolean(error && !statistics);
+  const recoverableError = Boolean(error && statistics);
 
   useEffect(() => {
     if (error) {
@@ -137,15 +142,31 @@ export function StatisticsDashboard({ sessionId, ecosystem = null }: StatisticsD
   if (loading) {
     return (
       <div className="statistics-dashboard loading">
-        <div className="loading-spinner">Loading statistics...</div>
+        <div className="loading-spinner" role="status" aria-live="polite">
+          <span className="panel-loading-title">Loading statistics...</span>
+          <div className="stats-loading-skeleton" aria-hidden="true">
+            {Array.from({ length: 5 }, (_, index) => (
+              <div key={index} className="stats-loading-skeleton-row" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
-  if (error) {
+  if (blockingError) {
     return (
       <div className="statistics-dashboard error">
         <p className="error-text">{error}</p>
+        <button
+          type="button"
+          className="stats-retry-button"
+          onClick={() => {
+            void refetch();
+          }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -227,6 +248,20 @@ export function StatisticsDashboard({ sessionId, ecosystem = null }: StatisticsD
 
   return (
     <div className="statistics-dashboard">
+      {(switchingSession || refreshingSession || recoverableError) && (
+        <div className="stats-refresh-indicator" role="status" aria-live="polite">
+          {switchingSession
+            ? 'Switching session statistics...'
+            : refreshingSession
+              ? 'Refreshing statistics...'
+              : 'Showing cached statistics (refresh failed)'}
+        </div>
+      )}
+      {switchingSession && (
+        <div className="stats-panel-overlay" role="status" aria-live="polite" data-testid="stats-switching-overlay">
+          <span>Switching session...</span>
+        </div>
+      )}
       <h2 className="dashboard-title">Session Metrics</h2>
 
       {statisticsVm && statisticsVm.capabilityNotices.length > 0 && (

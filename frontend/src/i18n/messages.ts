@@ -44,6 +44,11 @@ export const messages: Record<Locale, TranslationDictionary> = {
     'sync.errors': 'Sync errors ({count})',
 
     'session.loading': 'Loading sessions...',
+    'session.loadingInitial': 'Loading sessions from local database...',
+    'session.loadingHint': 'Preparing list, filters, and latest sync state.',
+    'session.refreshing': 'Refreshing session list...',
+    'session.errorRecoverable': 'Showing cached sessions (refresh failed).',
+    'session.retry': 'Retry',
     'session.errorPrefix': 'Error',
     'session.empty': 'No sessions available',
     'session.search.adjusted': 'Selection adjusted to visible results after filtering.',
@@ -262,6 +267,11 @@ export const messages: Record<Locale, TranslationDictionary> = {
     'sync.errors': '同步错误（{count}）',
 
     'session.loading': '正在加载会话...',
+    'session.loadingInitial': '正在从本地数据库加载会话...',
+    'session.loadingHint': '正在准备列表、筛选和最新同步状态。',
+    'session.refreshing': '正在刷新会话列表...',
+    'session.errorRecoverable': '正在显示缓存会话（刷新失败）。',
+    'session.retry': '重试',
     'session.errorPrefix': '错误',
     'session.empty': '暂无会话',
     'session.search.adjusted': '筛选后已自动切换到可见会话。',

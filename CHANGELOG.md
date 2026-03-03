@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session timeline now classifies `session_meta`/`token_count` as technical events, hides them by default behind an explicit toggle, and reports visible vs raw vs folded counts to reduce Codex timeline noise without dropping data.
 - Date-range picker positioning now uses stricter viewport clamping with post-open reflow measurement, improving dropdown stability under full smoke-suite execution.
 - Minimap anomaly markers now use compact line-glyph timeline markers (`model stall` solid, `tool error` dashed) with matching legend semantics while preserving click-to-jump behavior; added dedicated `@visual` baseline and `@a11y` keyboard/label coverage.
+- Session-loading UX now distinguishes initial load, panel refresh, and failure recovery with skeleton states, scoped refresh indicators, panel overlays, and explicit retry actions (session list + timeline + statistics + metadata sidebar), backed by new smoke/full/a11y loading-flow tests.
 
 ## [1.1.0] - 2026-03-03
 

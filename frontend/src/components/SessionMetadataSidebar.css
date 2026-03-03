@@ -9,6 +9,7 @@
 
 .sidebar-content {
   padding: 1.5rem;
+  position: relative;
 }
 
 .sidebar-content.empty,
@@ -170,9 +171,80 @@
   word-break: break-all;
 }
 
-.loading-spinner {
+.metadata-sidebar .loading-spinner {
   font-size: 0.875rem;
   color: #999;
+  display: grid;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.sidebar-loading-skeleton {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.sidebar-loading-skeleton-row {
+  height: 26px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f2f2f2 0%, #fafafa 45%, #f2f2f2 100%);
+  background-size: 220% 100%;
+  animation: sidebarSkeletonShimmer 1.2s ease-in-out infinite;
+}
+
+.sidebar-refresh-indicator {
+  margin-bottom: 0.7rem;
+  width: fit-content;
+  margin-left: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  color: #666;
+  background: #f8f8f8;
+}
+
+.sidebar-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(1px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.sidebar-retry-button {
+  margin-top: 0.7rem;
+  border: 1px solid #cfcfcf;
+  border-radius: 8px;
+  background: #fff;
+  color: #333;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+
+.sidebar-retry-button:hover {
+  background: #f3f3f3;
+}
+
+@keyframes sidebarSkeletonShimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-loading-skeleton-row {
+    animation: none;
+  }
 }
 
 /* Responsive behavior */
@@ -262,6 +334,32 @@
   .model-item {
     background-color: #2a2a2a;
     color: #e0e0e0;
+  }
+
+  .sidebar-refresh-indicator {
+    border-color: #4a4a4a;
+    background: #242424;
+    color: #bdbdbd;
+  }
+
+  .sidebar-loading-overlay {
+    background: rgba(20, 20, 20, 0.7);
+    color: #d5d5d5;
+  }
+
+  .sidebar-loading-skeleton-row {
+    background: linear-gradient(90deg, #2d2d2d 0%, #373737 45%, #2d2d2d 100%);
+    background-size: 220% 100%;
+  }
+
+  .sidebar-retry-button {
+    border-color: #4a4a4a;
+    background: #262626;
+    color: #e0e0e0;
+  }
+
+  .sidebar-retry-button:hover {
+    background: #313131;
   }
 
   .project-path {

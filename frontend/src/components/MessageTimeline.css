@@ -24,10 +24,36 @@
   min-height: 400px;
 }
 
-.loading-spinner {
+.message-timeline .loading-spinner {
   font-size: 1.1rem;
   color: var(--color-text-muted);
-  animation: pulse 1.5s ease-in-out infinite;
+  display: grid;
+  gap: 0.65rem;
+  width: min(820px, 100%);
+}
+
+.panel-loading-title {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.timeline-loading-skeleton {
+  display: grid;
+  gap: 0.52rem;
+}
+
+.timeline-loading-skeleton-row {
+  height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-surface-muted) 80%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 84%, transparent) 45%,
+    color-mix(in srgb, var(--color-surface-muted) 80%, transparent) 100%
+  );
+  background-size: 220% 100%;
+  animation: pulse 1.3s ease-in-out infinite;
 }
 
 @keyframes pulse {
@@ -96,12 +122,52 @@
   background: var(--color-surface-subtle);
 }
 
+.timeline-refresh-indicator {
+  margin-left: auto;
+  margin-right: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+}
+
 .timeline-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 156px;
   gap: 0;
   flex: 1;
   min-height: 0;
+  position: relative;
+}
+
+.timeline-panel-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: color-mix(in srgb, var(--color-surface) 74%, transparent);
+  backdrop-filter: blur(1px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.timeline-retry-button {
+  margin-top: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: 0.42rem 0.8rem;
+  cursor: pointer;
+}
+
+.timeline-retry-button:hover {
+  background: var(--color-surface-muted);
 }
 
 .messages-panel {
@@ -522,6 +588,14 @@
 
   .timeline-minimap-panel {
     padding: 0.5rem 0.34rem 0.58rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-loading-skeleton-row,
+  .message-row-highlighted,
+  .message-bubble {
+    animation: none;
   }
 }
 
