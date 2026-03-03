@@ -42,6 +42,11 @@ interface TimelineAnomaly {
   label: string;
 }
 
+interface AnomalyGlyphProps {
+  type: TimelineAnomalyType;
+  className?: string;
+}
+
 interface ScrollMetrics {
   scrollTop: number;
   scrollHeight: number;
@@ -233,6 +238,19 @@ function isTechnicalEventMessage(message: MessageRecord): boolean {
     return true;
   }
   return false;
+}
+
+function AnomalyGlyph({ type, className }: AnomalyGlyphProps) {
+  return (
+    <span
+      className={`timeline-minimap-anomaly-glyph timeline-minimap-anomaly-glyph--${type} ${className ?? ''}`.trim()}
+      aria-hidden="true"
+    >
+      <span className="timeline-minimap-anomaly-wing timeline-minimap-anomaly-wing--left" />
+      <span className="timeline-minimap-anomaly-line" />
+      <span className="timeline-minimap-anomaly-wing timeline-minimap-anomaly-wing--right" />
+    </span>
+  );
 }
 
 export function MessageTimeline({ sessionId, autoScrollToBottom = true }: MessageTimelineProps) {
@@ -473,6 +491,14 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
           (anomaly.type === 'tool_error' && showToolErrors)
       ),
     [showModelStalls, showToolErrors, timelineSeries.anomalies]
+  );
+
+  const anomalyCounts = useMemo(
+    () => ({
+      model_stall: filteredAnomalies.filter((anomaly) => anomaly.type === 'model_stall').length,
+      tool_error: filteredAnomalies.filter((anomaly) => anomaly.type === 'tool_error').length,
+    }),
+    [filteredAnomalies]
   );
 
   const heightModel = useMemo(() => {
@@ -1065,7 +1091,9 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
                   title={`${anomaly.label} · ${formatTimestamp(anomaly.timestamp)}`}
                   aria-label={`Anomaly marker at ${formatTimestamp(anomaly.timestamp)}`}
                   data-testid={`timeline-anomaly-${anomaly.type}`}
-                />
+                >
+                  <AnomalyGlyph type={anomaly.type} />
+                </button>
               );
             })}
 
@@ -1085,7 +1113,14 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
             <span className="legend-item legend-item--user">User</span>
             <span className="legend-item legend-item--model">Model</span>
             <span className="legend-item legend-item--tool">Tool</span>
-            <span className="legend-item legend-item--anomaly">Anomaly: {filteredAnomalies.length}</span>
+            <span className="legend-item legend-item--anomaly">
+              <AnomalyGlyph type="model_stall" className="timeline-minimap-anomaly-glyph--legend" />
+              {`Model stall: ${anomalyCounts.model_stall}`}
+            </span>
+            <span className="legend-item legend-item--anomaly">
+              <AnomalyGlyph type="tool_error" className="timeline-minimap-anomaly-glyph--legend" />
+              {`Tool error: ${anomalyCounts.tool_error}`}
+            </span>
           </div>
         </aside>
       </div>

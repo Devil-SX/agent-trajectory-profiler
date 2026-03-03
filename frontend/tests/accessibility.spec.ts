@@ -82,6 +82,89 @@ async function readContrastRatio(page: Page, selector: string): Promise<number> 
   return ratio as number;
 }
 
+function buildAnomalySessionDetail(sessionId: string) {
+  const messages = [
+    {
+      sessionId,
+      uuid: `${sessionId}-msg-1`,
+      timestamp: '2024-02-01T10:00:00Z',
+      type: 'user',
+      message: {
+        role: 'user',
+        content: 'Trigger anomaly markers for accessibility checks.',
+      },
+    },
+    {
+      sessionId,
+      uuid: `${sessionId}-msg-2`,
+      timestamp: '2024-02-01T10:01:00Z',
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: `tool-${sessionId}-1`,
+            name: 'Bash',
+            input: { command: 'false' },
+          },
+          {
+            type: 'tool_result',
+            tool_use_id: `tool-${sessionId}-1`,
+            content: 'Command failed',
+            is_error: true,
+          },
+          {
+            type: 'text',
+            text: 'Tool execution failed. I will retry.',
+          },
+        ],
+      },
+    },
+    {
+      sessionId,
+      uuid: `${sessionId}-msg-3`,
+      timestamp: '2024-02-01T10:02:00Z',
+      type: 'user',
+      message: {
+        role: 'user',
+        content: 'Please continue.',
+      },
+    },
+    {
+      sessionId,
+      uuid: `${sessionId}-msg-4`,
+      timestamp: '2024-02-01T10:14:30Z',
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'Recovered after delay.',
+          },
+        ],
+      },
+    },
+  ];
+
+  return {
+    session: {
+      metadata: {
+        session_id: sessionId,
+        project_path: '/home/user/project',
+        git_branch: 'main',
+        version: '1.0.0',
+        created_at: '2024-02-01T10:00:00Z',
+        updated_at: '2024-02-01T10:14:30Z',
+        total_messages: messages.length,
+        total_tokens: 2400,
+      },
+      messages,
+    },
+  };
+}
+
 test.describe('Accessibility contracts', () => {
   test('@a11y keyboard focus remains visible on interactive controls', async ({ page }) => {
     await setupMockApi(page);
@@ -176,5 +259,46 @@ test.describe('Accessibility contracts', () => {
     await firstRow.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('button', { name: 'Session Detail' })).toHaveClass(/active/);
+  });
+
+  test('@a11y minimap anomaly markers expose keyboard focus and labels', async ({ page }) => {
+    await setupMockApi(page);
+    await page.unroute('**/api/sessions/test-session-001');
+    await page.route('**/api/sessions/test-session-001', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildAnomalySessionDetail('test-session-001')),
+      });
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 5000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('[data-testid="timeline-minimap-panel"]', { timeout: 10000 });
+
+    const marker = page.locator('[data-testid="timeline-anomaly-tool_error"]').first();
+    await expect(marker).toBeVisible();
+    await expect(marker).toHaveAttribute('aria-label', /Anomaly marker at/);
+
+    await marker.focus();
+    await expect(marker).toBeFocused();
+
+    const messageScroll = page.locator('[data-testid="timeline-message-scroll"]');
+    await messageScroll.evaluate((node) => {
+      const element = node as HTMLElement;
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event('scroll'));
+    });
+    const beforeJump = await messageScroll.evaluate((node) => (node as HTMLElement).scrollTop);
+
+    await marker.press('Enter');
+
+    await expect
+      .poll(
+        async () => messageScroll.evaluate((node) => (node as HTMLElement).scrollTop),
+        { timeout: 3000 }
+      )
+      .toBeLessThan(beforeJump - 20);
   });
 });

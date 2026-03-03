@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Codex parser now deduplicates overlapping short-window user prompts emitted by dual channels (`event_msg.user_message` + `response_item.message(role=user)`), while preserving genuine repeated user inputs outside that overlap pattern.
 - Session timeline now classifies `session_meta`/`token_count` as technical events, hides them by default behind an explicit toggle, and reports visible vs raw vs folded counts to reduce Codex timeline noise without dropping data.
 - Date-range picker positioning now uses stricter viewport clamping with post-open reflow measurement, improving dropdown stability under full smoke-suite execution.
+- Minimap anomaly markers now use compact line-glyph timeline markers (`model stall` solid, `tool error` dashed) with matching legend semantics while preserving click-to-jump behavior; added dedicated `@visual` baseline and `@a11y` keyboard/label coverage.
 
 ## [1.1.0] - 2026-03-03
 

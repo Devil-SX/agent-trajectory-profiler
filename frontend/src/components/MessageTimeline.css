@@ -387,23 +387,80 @@
 
 .timeline-minimap-anomaly {
   position: absolute;
-  left: 6px;
-  width: 10px;
-  height: 10px;
+  left: 10px;
+  width: 36px;
+  height: 14px;
   border: none;
-  border-radius: 50%;
+  padding: 0;
+  background: transparent;
   transform: translateY(-50%);
   cursor: pointer;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.72);
   z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.timeline-minimap-anomaly:focus-visible {
+  outline: none;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95), 0 0 0 4px color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+
+.timeline-minimap-anomaly-glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  width: 34px;
+  height: 10px;
+  color: currentColor;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.6));
+}
+
+.timeline-minimap-anomaly-glyph--legend {
+  width: 26px;
+}
+
+.timeline-minimap-anomaly-line {
+  flex: 1;
+  height: 2px;
+  background: currentColor;
+  border-radius: 999px;
+}
+
+.timeline-minimap-anomaly-wing {
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+}
+
+.timeline-minimap-anomaly-wing--left {
+  transform: rotate(225deg);
+}
+
+.timeline-minimap-anomaly-wing--right {
+  transform: rotate(45deg);
 }
 
 .timeline-minimap-anomaly--model_stall {
-  background: #ef4444;
+  color: #dc2626;
 }
 
 .timeline-minimap-anomaly--tool_error {
-  background: #f59e0b;
+  color: #d97706;
+}
+
+.timeline-minimap-anomaly-glyph--model_stall {
+  color: #dc2626;
+}
+
+.timeline-minimap-anomaly-glyph--tool_error {
+  color: #d97706;
+}
+
+.timeline-minimap-anomaly-glyph--tool_error .timeline-minimap-anomaly-line {
+  background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 8px);
 }
 
 .timeline-minimap-viewport {
@@ -447,7 +504,10 @@
 }
 
 .legend-item--anomaly {
-  color: #b91c1c;
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
 }
 
 .message-bubble:focus-within {

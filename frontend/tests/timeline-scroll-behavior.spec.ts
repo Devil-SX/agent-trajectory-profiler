@@ -404,8 +404,20 @@ test.describe('Timeline scroll behavior', () => {
     await page.locator('tr[data-session-id="test-session-001"]').click();
     await page.waitForSelector('[data-testid="timeline-minimap-panel"]', { timeout: 10000 });
 
-    await expect(page.locator('[data-testid="timeline-anomaly-model_stall"]').first()).toBeVisible();
-    await expect(page.locator('[data-testid="timeline-anomaly-tool_error"]').first()).toBeVisible();
+    const modelMarker = page.locator('[data-testid="timeline-anomaly-model_stall"]').first();
+    const toolMarker = page.locator('[data-testid="timeline-anomaly-tool_error"]').first();
+    await expect(modelMarker).toBeVisible();
+    await expect(toolMarker).toBeVisible();
+    await expect(modelMarker.locator('.timeline-minimap-anomaly-glyph')).toBeVisible();
+    await expect(toolMarker.locator('.timeline-minimap-anomaly-glyph')).toBeVisible();
+    await expect(page.locator('.timeline-minimap-legend')).toContainText('Model stall');
+    await expect(page.locator('.timeline-minimap-legend')).toContainText('Tool error');
+
+    const markerShape = await modelMarker.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    expect(markerShape.width).toBeGreaterThan(markerShape.height + 8);
 
     await page.getByLabel('Toggle model stall anomalies').uncheck();
     await expect(page.locator('[data-testid="timeline-anomaly-model_stall"]')).toHaveCount(0);
