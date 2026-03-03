@@ -1,0 +1,236 @@
+import type {
+  SessionDetailResponse,
+  SessionListResponse,
+  SessionStatisticsResponse,
+} from '../../src/types/session';
+
+export const codexParitySessionId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+export const codexParitySessionList: SessionListResponse = {
+  sessions: [
+    {
+      session_id: codexParitySessionId,
+      physical_session_id: codexParitySessionId,
+      logical_session_id: codexParitySessionId,
+      ecosystem: 'codex',
+      project_path: '/tmp/codex-parity',
+      created_at: '2026-03-01T09:00:00.000Z',
+      updated_at: '2026-03-01T09:00:02.800Z',
+      total_messages: 8,
+      total_tokens: 59,
+      git_branch: null,
+      version: '0.107.0',
+      parsed_at: '2026-03-01T09:05:00.000Z',
+      duration_seconds: 3,
+      bottleneck: 'Tool',
+      automation_ratio: 2.0,
+    },
+  ],
+  count: 1,
+  page: 1,
+  page_size: 200,
+  total_pages: 1,
+};
+
+export const codexParitySessionDetail: SessionDetailResponse = {
+  session: {
+    metadata: {
+      session_id: codexParitySessionId,
+      project_path: '/tmp/codex-parity',
+      git_branch: null,
+      version: '0.107.0',
+      created_at: '2026-03-01T09:00:00.000Z',
+      updated_at: '2026-03-01T09:00:02.800Z',
+      total_messages: 8,
+      total_tokens: 59,
+    },
+    messages: [
+      {
+        sessionId: codexParitySessionId,
+        uuid: `${codexParitySessionId}-meta-1`,
+        timestamp: '2026-03-01T09:00:00.000Z',
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'session_meta source=cli',
+        },
+      },
+      {
+        sessionId: codexParitySessionId,
+        uuid: `${codexParitySessionId}-user-2`,
+        timestamp: '2026-03-01T09:00:01.000Z',
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'Run parity check on parser and timeline.',
+        },
+      },
+      {
+        sessionId: codexParitySessionId,
+        uuid: `${codexParitySessionId}-msg-3`,
+        timestamp: '2026-03-01T09:00:01.200Z',
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: 'Starting parity inspection.',
+        },
+      },
+      {
+        sessionId: codexParitySessionId,
+        uuid: 'call-parity-read-1',
+        timestamp: '2026-03-01T09:00:01.500Z',
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'call-parity-read-1',
+              name: 'Read',
+              input: {
+                file_path: '/tmp/codex-parity/main.py',
+              },
+            },
+          ],
+        },
+      },
+      {
+        sessionId: codexParitySessionId,
+        uuid: 'call-parity-read-1-result',
+        timestamp: '2026-03-01T09:00:01.800Z',
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'call-parity-read-1',
+              content: "Process exited with code 0\nOutput:\nprint('ok')\n",
+              is_error: false,
+            },
+          ],
+        },
+      },
+      {
+        sessionId: codexParitySessionId,
+        uuid: `${codexParitySessionId}-msg-6`,
+        timestamp: '2026-03-01T09:00:02.000Z',
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: 'Read completed. Proceeding.',
+        },
+      },
+      {
+        sessionId: codexParitySessionId,
+        uuid: `${codexParitySessionId}-tok-7`,
+        timestamp: '2026-03-01T09:00:02.200Z',
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: 'token_count',
+          usage: {
+            input_tokens: 42,
+            output_tokens: 17,
+            cache_read_input_tokens: 5,
+          },
+        },
+      },
+      {
+        sessionId: codexParitySessionId,
+        uuid: `${codexParitySessionId}-msg-9`,
+        timestamp: '2026-03-01T09:00:02.500Z',
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'Run parity check on parser and timeline.',
+        },
+      },
+    ],
+  },
+};
+
+export const codexParitySessionStatistics: SessionStatisticsResponse = {
+  session_id: codexParitySessionId,
+  statistics: {
+    message_count: 8,
+    user_message_count: 4,
+    assistant_message_count: 4,
+    system_message_count: 0,
+    total_tokens: 59,
+    total_input_tokens: 42,
+    total_output_tokens: 17,
+    cache_read_tokens: 5,
+    cache_creation_tokens: 0,
+    trajectory_file_size_bytes: 2048,
+    character_breakdown: {
+      total_chars: 220,
+      user_chars: 108,
+      model_chars: 78,
+      tool_chars: 34,
+      cjk_chars: 0,
+      latin_chars: 210,
+      digit_chars: 5,
+      whitespace_chars: 3,
+      other_chars: 2,
+    },
+    user_yield_ratio_tokens: 1.4,
+    user_yield_ratio_chars: 1.5,
+    leverage_ratio_tokens: 1.4,
+    leverage_ratio_chars: 1.5,
+    avg_tokens_per_second: 20.0,
+    read_tokens_per_second: 14.0,
+    output_tokens_per_second: 6.0,
+    cache_tokens_per_second: 1.7,
+    cache_read_tokens_per_second: 1.7,
+    cache_creation_tokens_per_second: 0,
+    tool_calls: [
+      {
+        tool_name: 'Read',
+        count: 1,
+        total_tokens: 0,
+        success_count: 1,
+        error_count: 0,
+        total_latency_seconds: 0.3,
+        avg_latency_seconds: 0.3,
+        tool_group: 'Read',
+      },
+    ],
+    tool_groups: [],
+    total_tool_calls: 1,
+    tool_error_records: [],
+    tool_error_category_counts: {},
+    error_taxonomy_version: '1.0.0',
+    subagent_count: 0,
+    subagent_sessions: {},
+    session_duration_seconds: 3,
+    first_message_time: '2026-03-01T09:00:00.000Z',
+    last_message_time: '2026-03-01T09:00:02.500Z',
+    time_breakdown: {
+      total_model_time_seconds: 1.3,
+      total_tool_time_seconds: 1.0,
+      total_user_time_seconds: 0.7,
+      total_inactive_time_seconds: 0,
+      total_active_time_seconds: 3.0,
+      model_time_percent: 43.3,
+      tool_time_percent: 33.3,
+      user_time_percent: 23.4,
+      inactive_time_percent: 0,
+      active_time_ratio: 1.0,
+      inactivity_threshold_seconds: 1800,
+      user_interaction_count: 2,
+      interactions_per_hour: 2400,
+      model_timeout_count: 0,
+      model_timeout_threshold_seconds: 600,
+    },
+    token_breakdown: {
+      input_percent: 71.2,
+      output_percent: 28.8,
+      cache_read_percent: 8.5,
+      cache_creation_percent: 0,
+    },
+    bash_breakdown: null,
+    compact_count: 0,
+    compact_events: [],
+  },
+};

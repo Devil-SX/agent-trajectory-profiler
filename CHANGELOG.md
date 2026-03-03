@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- New Codex end-to-end parity regression baseline with a golden raw rollout fixture and layered tests:
+  - backend parser/API parity contract (`raw -> canonical -> message -> session detail API`) with explicit tool-chain, token-count, and duplicate-user edge assertions
+  - frontend smoke parity test that verifies Codex golden-session timeline visibility (non-empty rendering, cross-message tool chain linkage, and filtered-count consistency).
+
 ### Fixed
 
 - Session detail timeline now correctly links Codex-style cross-message `tool_use`/`tool_result` chains, removes misleading empty rows for result-only messages, and preserves result rendering with explicit filtered-count feedback in the header.
