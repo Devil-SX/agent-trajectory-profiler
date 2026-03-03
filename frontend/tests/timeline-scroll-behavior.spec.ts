@@ -199,7 +199,7 @@ async function getWindowScrollY(page: Page) {
   return page.evaluate(() => window.scrollY);
 }
 
-test.describe('@smoke Timeline scroll behavior', () => {
+test.describe('Timeline scroll behavior', () => {
   test('@smoke codex-style split tool_result is linked and does not render empty rows', async ({
     page,
   }) => {
@@ -272,14 +272,22 @@ test.describe('@smoke Timeline scroll behavior', () => {
       throw new Error('Expected minimap track to have a visible bounding box');
     }
 
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.85);
-    await page.waitForTimeout(160);
+    await track.click({
+      position: {
+        x: box.width / 2,
+        y: box.height * 0.85,
+      },
+    });
 
-    const afterScrollTop = await page
-      .locator('[data-testid="timeline-message-scroll"]')
-      .evaluate((node) => (node as HTMLElement).scrollTop);
-
-    expect(afterScrollTop).toBeGreaterThan(beforeScrollTop + 120);
+    await expect
+      .poll(
+        async () =>
+          page
+            .locator('[data-testid="timeline-message-scroll"]')
+            .evaluate((node) => (node as HTMLElement).scrollTop),
+        { timeout: 2000 }
+      )
+      .toBeGreaterThan(beforeScrollTop + 120);
   });
 
   test('@full minimap viewport drag keeps message scroll synchronized', async ({ page }) => {

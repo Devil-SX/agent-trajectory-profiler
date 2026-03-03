@@ -56,6 +56,9 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
       return undefined;
     }
 
+    const VIEWPORT_MARGIN = 8;
+    const GAP_TO_TOGGLE = 8;
+
     const updatePosition = () => {
       if (!buttonRef.current || !dropdownRef.current) {
         return;
@@ -63,40 +66,55 @@ export function DateRangePicker({ value, onChange, onClear }: DateRangePickerPro
 
       const buttonRect = buttonRef.current.getBoundingClientRect();
       const dropdownRect = dropdownRef.current.getBoundingClientRect();
+      const dropdownContentHeight = dropdownRef.current.scrollHeight;
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-      const desiredWidth = Math.min(Math.max(dropdownRect.width || 320, 280), viewportWidth - 16);
+      const maxPanelWidth = Math.max(220, viewportWidth - VIEWPORT_MARGIN * 2);
+      const desiredWidth = Math.min(Math.max(dropdownRect.width || 320, 280), maxPanelWidth);
+      const maxUsableHeight = Math.max(220, viewportHeight - VIEWPORT_MARGIN * 2);
+      const desiredHeight = Math.min(
+        Math.max(dropdownContentHeight || dropdownRect.height || 420, 220),
+        maxUsableHeight
+      );
 
       let left = buttonRect.left;
-      if (left + desiredWidth > viewportWidth - 8) {
-        left = viewportWidth - desiredWidth - 8;
+      if (left + desiredWidth > viewportWidth - VIEWPORT_MARGIN) {
+        left = viewportWidth - desiredWidth - VIEWPORT_MARGIN;
       }
-      if (left < 8) {
-        left = 8;
+      if (left < VIEWPORT_MARGIN) {
+        left = VIEWPORT_MARGIN;
       }
 
-      let top = buttonRect.bottom + 8;
-      let maxHeight = viewportHeight - top - 8;
+      const spaceBelow = viewportHeight - buttonRect.bottom - VIEWPORT_MARGIN - GAP_TO_TOGGLE;
+      const spaceAbove = buttonRect.top - VIEWPORT_MARGIN - GAP_TO_TOGGLE;
+      const preferBelow = spaceBelow >= desiredHeight || spaceBelow >= spaceAbove;
 
-      if (maxHeight < 220) {
-        const desiredHeight = Math.min(dropdownRect.height || 420, viewportHeight - 16);
-        top = Math.max(8, buttonRect.top - desiredHeight - 8);
-        maxHeight = viewportHeight - top - 8;
+      let top = preferBelow
+        ? buttonRect.bottom + GAP_TO_TOGGLE
+        : buttonRect.top - desiredHeight - GAP_TO_TOGGLE;
+      if (top < VIEWPORT_MARGIN) {
+        top = VIEWPORT_MARGIN;
       }
+      if (top + desiredHeight > viewportHeight - VIEWPORT_MARGIN) {
+        top = Math.max(VIEWPORT_MARGIN, viewportHeight - desiredHeight - VIEWPORT_MARGIN);
+      }
+      const maxHeight = Math.max(220, viewportHeight - top - VIEWPORT_MARGIN);
 
       setDropdownStyle({
         top: `${top}px`,
         left: `${left}px`,
-        maxWidth: `${viewportWidth - 16}px`,
-        maxHeight: `${Math.max(maxHeight, 180)}px`,
+        maxWidth: `${maxPanelWidth}px`,
+        maxHeight: `${Math.min(maxHeight, maxUsableHeight)}px`,
       });
     };
 
     updatePosition();
+    const rafId = window.requestAnimationFrame(updatePosition);
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', updatePosition, true);
 
     return () => {
+      window.cancelAnimationFrame(rafId);
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };

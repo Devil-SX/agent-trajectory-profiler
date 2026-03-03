@@ -195,6 +195,46 @@ function isToolResultOnlyMessage(message: MessageRecord): boolean {
   });
 }
 
+function normalizeTechnicalText(content: unknown): string | null {
+  if (typeof content === 'string') {
+    const normalized = content.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : null;
+  }
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  if (content.length !== 1) {
+    return null;
+  }
+  const first = content[0];
+  if (!first || typeof first !== 'object') {
+    return null;
+  }
+  const typed = first as Record<string, unknown>;
+  if (typed.type !== 'text' || typeof typed.text !== 'string') {
+    return null;
+  }
+  const normalized = typed.text.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function isTechnicalEventMessage(message: MessageRecord): boolean {
+  if (message.isMeta) {
+    return true;
+  }
+  const normalizedText = normalizeTechnicalText(message.message?.content);
+  if (!normalizedText) {
+    return false;
+  }
+  if (normalizedText.startsWith('session_meta')) {
+    return true;
+  }
+  if (normalizedText === 'token_count' && Boolean(message.message?.usage)) {
+    return true;
+  }
+  return false;
+}
+
 export function MessageTimeline({ sessionId, autoScrollToBottom = true }: MessageTimelineProps) {
   const { data, isLoading, error: queryError } = useSessionDetailQuery(sessionId);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -208,6 +248,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     scrollHeight: 1,
     clientHeight: 1,
   });
+  const [showTechnicalEvents, setShowTechnicalEvents] = useState(false);
   const [showModelStalls, setShowModelStalls] = useState(true);
   const [showToolErrors, setShowToolErrors] = useState(true);
   const [highlightedMessageUuid, setHighlightedMessageUuid] = useState<string | null>(null);
@@ -217,8 +258,9 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   const error = queryError?.message ?? null;
 
   const {
-    mainMessages,
+    allMainMessages,
     rawMainMessageCount,
+    technicalEventMessageUuids,
     linkedToolResultsById,
     toolUseById,
     subagentsByParent,
@@ -226,8 +268,9 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   } = useMemo(() => {
     if (!session || session.messages.length === 0) {
       return {
-        mainMessages: [] as MessageRecord[],
+        allMainMessages: [] as MessageRecord[],
         rawMainMessageCount: 0,
+        technicalEventMessageUuids: new Set<string>(),
         linkedToolResultsById: new Map<string, ToolResultContent>(),
         toolUseById: new Map<string, ToolUseContent>(),
         subagentsByParent: new Map<string, Map<string, { agentId: string; messages: MessageRecord[] }>>(),
@@ -279,6 +322,9 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     });
 
     const filteredBaseMessages = baseMessages.filter((msg) => !messagesToHide.has(msg.uuid));
+    const technicalEventMessageUuids = new Set(
+      filteredBaseMessages.filter((msg) => isTechnicalEventMessage(msg)).map((msg) => msg.uuid)
+    );
 
     const groups = new Map<string, { agentId: string; messages: MessageRecord[] }>();
     session.messages
@@ -302,14 +348,25 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     });
 
     return {
-      mainMessages: filteredBaseMessages,
+      allMainMessages: filteredBaseMessages,
       rawMainMessageCount: baseMessages.length,
+      technicalEventMessageUuids,
       linkedToolResultsById,
       toolUseById,
       subagentsByParent: byParent,
       subagentGroups: groups,
     };
   }, [session]);
+
+  const mainMessages = useMemo(() => {
+    if (showTechnicalEvents || technicalEventMessageUuids.size === 0) {
+      return allMainMessages;
+    }
+    return allMainMessages.filter((message) => !technicalEventMessageUuids.has(message.uuid));
+  }, [allMainMessages, showTechnicalEvents, technicalEventMessageUuids]);
+
+  const linkedToolResultHiddenCount = Math.max(0, rawMainMessageCount - allMainMessages.length);
+  const technicalHiddenCount = Math.max(0, allMainMessages.length - mainMessages.length);
 
   const messageIndexByUuid = useMemo(() => {
     const indexByUuid = new Map<string, number>();
@@ -862,9 +919,13 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
         <h2>Conversation Timeline</h2>
         <div className="timeline-header-meta">
           <p className="message-count">
-            {mainMessages.length} message{mainMessages.length !== 1 ? 's' : ''}
-            {rawMainMessageCount > mainMessages.length
-              ? ` (filtered from ${rawMainMessageCount})`
+            {mainMessages.length} visible message{mainMessages.length !== 1 ? 's' : ''}
+            {` · ${rawMainMessageCount} raw message${rawMainMessageCount !== 1 ? 's' : ''}`}
+            {technicalHiddenCount > 0
+              ? ` · ${technicalHiddenCount} technical event${technicalHiddenCount !== 1 ? 's' : ''} hidden`
+              : ''}
+            {linkedToolResultHiddenCount > 0
+              ? ` · ${linkedToolResultHiddenCount} linked tool-result message${linkedToolResultHiddenCount !== 1 ? 's' : ''} folded`
               : ''}
             {subagentGroups.size > 0
               ? ` · ${subagentGroups.size} subagent session${subagentGroups.size !== 1 ? 's' : ''}`
@@ -931,6 +992,16 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
 
         <aside className="timeline-minimap-panel" aria-label="Session minimap" data-testid="timeline-minimap-panel">
           <div className="timeline-minimap-controls">
+            <label className="timeline-toggle">
+              <input
+                type="checkbox"
+                checked={showTechnicalEvents}
+                onChange={(event) => setShowTechnicalEvents(event.target.checked)}
+                aria-label="Toggle technical events"
+                data-testid="timeline-toggle-technical-events"
+              />
+              <span>Technical events</span>
+            </label>
             <label className="timeline-toggle">
               <input
                 type="checkbox"

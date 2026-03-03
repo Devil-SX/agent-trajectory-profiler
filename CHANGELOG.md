@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session detail timeline now correctly links Codex-style cross-message `tool_use`/`tool_result` chains, removes misleading empty rows for result-only messages, and preserves result rendering with explicit filtered-count feedback in the header.
 - Session timeline minimap mapping now stays aligned with virtualized message rendering across top/mid/bottom navigation, eliminating blank-content windows during viewport drag/click jumps and adding stronger smoke/full regression coverage for long sessions.
 - Codex parser now deduplicates overlapping short-window user prompts emitted by dual channels (`event_msg.user_message` + `response_item.message(role=user)`), while preserving genuine repeated user inputs outside that overlap pattern.
+- Session timeline now classifies `session_meta`/`token_count` as technical events, hides them by default behind an explicit toggle, and reports visible vs raw vs folded counts to reduce Codex timeline noise without dropping data.
+- Date-range picker positioning now uses stricter viewport clamping with post-open reflow measurement, improving dropdown stability under full smoke-suite execution.
 
 ## [1.1.0] - 2026-03-03
 
