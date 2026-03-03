@@ -100,11 +100,17 @@ test.describe('Quality Gates', () => {
     await page.goto('/');
     await page.waitForSelector('.session-browser:not(.loading)', { timeout: 5000 });
 
-    await page.click('.date-picker-toggle');
-    const dropdown = page.locator('.date-picker-dropdown');
+    const toggle = page.locator('.session-browser .date-picker-toggle').first();
+    await toggle.scrollIntoViewIfNeeded();
+    await toggle.click();
+    const dropdown = page.locator('.session-browser .date-picker-dropdown').first();
     await expect(dropdown).toBeVisible();
 
     await expect.poll(async () => {
+      if (!(await dropdown.isVisible())) {
+        await toggle.click();
+        await expect(dropdown).toBeVisible();
+      }
       return await dropdown.evaluate((element) => {
         if (!(element instanceof HTMLElement)) {
           return false;

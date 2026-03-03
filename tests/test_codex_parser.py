@@ -1,5 +1,6 @@
 """Tests for Codex rollout parser and parser-registry integration."""
 
+import json
 from pathlib import Path
 
 from agent_vis.parsers import get_parser
@@ -60,3 +61,64 @@ class TestCodexParser:
         assert session.metadata.parent_session_id == root_id
         assert session.metadata.root_session_id == root_id
         assert session.metadata.logical_session_id == root_id
+
+    def test_parse_codex_jsonl_file_deduplicates_cross_channel_user_prompt(self) -> None:
+        parity_fixture = (
+            Path(__file__).parent
+            / "fixtures"
+            / "codex_parity"
+            / "rollout-2026-03-01T09-00-00-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.jsonl"
+        )
+        messages = parse_codex_jsonl_file(parity_fixture)
+
+        prompt = "Run parity check on parser and timeline."
+        user_texts = [
+            msg.message.content
+            for msg in messages
+            if msg.is_user_message
+            and msg.message is not None
+            and isinstance(msg.message.content, str)
+        ]
+        assert user_texts.count(prompt) == 1
+
+    def test_parse_codex_jsonl_file_preserves_genuine_repeated_user_inputs(
+        self, tmp_path: Path
+    ) -> None:
+        session_id = "44444444-4444-4444-4444-444444444444"
+        rollout = tmp_path / f"rollout-2026-03-01T10-00-00-{session_id}.jsonl"
+        prompt = "repeat this prompt twice"
+        events = [
+            {
+                "timestamp": "2026-03-01T10:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T10:00:01.000Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": prompt},
+            },
+            {
+                "timestamp": "2026-03-01T10:00:08.000Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": prompt},
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages = parse_codex_jsonl_file(rollout)
+        user_texts = [
+            msg.message.content
+            for msg in messages
+            if msg.is_user_message
+            and msg.message is not None
+            and isinstance(msg.message.content, str)
+        ]
+        assert user_texts.count(prompt) == 2

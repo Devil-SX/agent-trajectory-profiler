@@ -16,7 +16,7 @@ export const codexParitySessionList: SessionListResponse = {
       project_path: '/tmp/codex-parity',
       created_at: '2026-03-01T09:00:00.000Z',
       updated_at: '2026-03-01T09:00:02.800Z',
-      total_messages: 8,
+      total_messages: 7,
       total_tokens: 59,
       git_branch: null,
       version: '0.107.0',
@@ -41,7 +41,7 @@ export const codexParitySessionDetail: SessionDetailResponse = {
       version: '0.107.0',
       created_at: '2026-03-01T09:00:00.000Z',
       updated_at: '2026-03-01T09:00:02.800Z',
-      total_messages: 8,
+      total_messages: 7,
       total_tokens: 59,
     },
     messages: [
@@ -136,16 +136,6 @@ export const codexParitySessionDetail: SessionDetailResponse = {
           },
         },
       },
-      {
-        sessionId: codexParitySessionId,
-        uuid: `${codexParitySessionId}-msg-9`,
-        timestamp: '2026-03-01T09:00:02.500Z',
-        type: 'user',
-        message: {
-          role: 'user',
-          content: 'Run parity check on parser and timeline.',
-        },
-      },
     ],
   },
 };
@@ -153,8 +143,8 @@ export const codexParitySessionDetail: SessionDetailResponse = {
 export const codexParitySessionStatistics: SessionStatisticsResponse = {
   session_id: codexParitySessionId,
   statistics: {
-    message_count: 8,
-    user_message_count: 4,
+    message_count: 7,
+    user_message_count: 3,
     assistant_message_count: 4,
     system_message_count: 0,
     total_tokens: 59,

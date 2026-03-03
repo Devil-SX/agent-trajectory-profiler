@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +114,106 @@ def _safe_timestamp(raw_timestamp: Any, line_number: int) -> str:
         return raw_timestamp
     # Keep a deterministic ISO timestamp fallback when source data is incomplete.
     return f"1970-01-01T00:00:{line_number % 60:02d}Z"
+
+
+def _normalize_user_text_for_dedupe(text: str) -> str:
+    return " ".join(text.split()).strip().lower()
+
+
+def _extract_user_text_message(message: MessageRecord) -> str | None:
+    if not message.is_user_message or message.message is None:
+        return None
+    if message.message.role != "user":
+        return None
+    content = message.message.content
+    if not isinstance(content, str):
+        return None
+    normalized = _normalize_user_text_for_dedupe(content)
+    return normalized or None
+
+
+def _parse_timestamp_or_none(raw_timestamp: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _infer_user_prompt_channel(message: MessageRecord) -> str:
+    if "-user-" in message.uuid:
+        return "event_user_message"
+    if "-msg-" in message.uuid:
+        return "response_item_message"
+    return "other"
+
+
+def _is_cross_channel_overlap(previous: MessageRecord, current: MessageRecord) -> bool:
+    channels = {_infer_user_prompt_channel(previous), _infer_user_prompt_channel(current)}
+    return channels == {"event_user_message", "response_item_message"}
+
+
+def _dedupe_overlapping_user_prompts(
+    messages: list[MessageRecord],
+    *,
+    max_window_seconds: float = 2.0,
+) -> list[MessageRecord]:
+    """Drop duplicate user prompts emitted by overlapping Codex event channels.
+
+    Codex may emit the same user prompt via:
+    - event_msg.user_message
+    - response_item.message(role=user)
+
+    We dedupe only cross-channel adjacent text duplicates within a short window
+    to avoid swallowing genuine repeated user inputs.
+    """
+    if not messages:
+        return messages
+
+    deduped: list[MessageRecord] = []
+    for message in messages:
+        current_text = _extract_user_text_message(message)
+        if current_text is None:
+            deduped.append(message)
+            continue
+
+        current_ts = _parse_timestamp_or_none(message.timestamp)
+        if current_ts is None:
+            deduped.append(message)
+            continue
+
+        duplicate_index: int | None = None
+        for index in range(len(deduped) - 1, -1, -1):
+            previous = deduped[index]
+            previous_text = _extract_user_text_message(previous)
+            if previous_text is None:
+                continue
+            previous_ts = _parse_timestamp_or_none(previous.timestamp)
+            if previous_ts is None:
+                continue
+
+            delta_seconds = abs((current_ts - previous_ts).total_seconds())
+            if delta_seconds > max_window_seconds:
+                continue
+            if previous_text != current_text:
+                continue
+            if not _is_cross_channel_overlap(previous, message):
+                continue
+
+            duplicate_index = index
+            break
+
+        if duplicate_index is None:
+            deduped.append(message)
+            continue
+
+        previous_channel = _infer_user_prompt_channel(deduped[duplicate_index])
+        current_channel = _infer_user_prompt_channel(message)
+        # Keep event_msg.user_message as canonical when both channels overlap.
+        if current_channel == "event_user_message" and previous_channel == "response_item_message":
+            deduped[duplicate_index] = message
+        # Else keep existing canonical message and drop current duplicate.
+
+    return deduped
 
 
 def _extract_text_blocks(content: Any) -> str | list[dict[str, Any]]:
@@ -362,7 +463,8 @@ def parse_codex_jsonl_file(file_path: Path) -> list[MessageRecord]:
     """Parse one Codex rollout JSONL file into internal message records."""
     adapter = get_adapter("codex")
     canonical_session = parse_jsonl_to_canonical(file_path, adapter)
-    return canonical_to_messages(canonical_session, adapter)
+    messages = canonical_to_messages(canonical_session, adapter)
+    return _dedupe_overlapping_user_prompts(messages)
 
 
 def _resolve_codex_session_id(messages: list[MessageRecord], file_path: Path) -> str:

@@ -53,28 +53,33 @@ def test_codex_gold_fixture_parser_parity_contract() -> None:
 
     adapter = get_adapter("codex")
     canonical_session = parse_jsonl_to_canonical(PARITY_FIXTURE_FILE, adapter)
-    messages = canonical_to_messages(canonical_session, adapter)
+    canonical_messages = canonical_to_messages(canonical_session, adapter)
     direct_messages = parse_codex_jsonl_file(PARITY_FIXTURE_FILE)
-    assert len(messages) == len(
-        direct_messages
-    ), "parser-stage parity failed: canonical pipeline and direct parser disagree"
     assert (
         len(canonical_session.events) == 10
     ), "parser-stage parity failed: canonical conversion unexpectedly dropped raw events"
-    assert len(messages) == 8, "parser-stage parity failed: message materialization count mismatch"
     assert (
-        len(canonical_session.events) - len(messages) == 2
+        len(canonical_messages) == 8
+    ), "parser-stage parity failed: canonical message materialization count mismatch"
+    assert (
+        len(direct_messages) == 7
+    ), "parser-stage parity failed: final parser message count mismatch after dedupe"
+    assert (
+        len(canonical_messages) - len(direct_messages) == 1
+    ), "parser-stage parity failed: user-prompt dedupe delta changed unexpectedly"
+    assert (
+        len(canonical_session.events) - len(direct_messages) == 3
     ), "parser-stage parity failed: dropped-event count changed unexpectedly"
 
-    user_count = sum(1 for msg in messages if msg.is_user_message)
-    assistant_count = sum(1 for msg in messages if msg.is_assistant_message)
-    assert user_count == 4, "parser-stage parity failed: user-message count drift"
+    user_count = sum(1 for msg in direct_messages if msg.is_user_message)
+    assistant_count = sum(1 for msg in direct_messages if msg.is_assistant_message)
+    assert user_count == 3, "parser-stage parity failed: user-message count drift"
     assert assistant_count == 4, "parser-stage parity failed: assistant-message count drift"
 
     tool_use_ids: list[str] = []
     tool_result_ids: list[str] = []
     token_count_messages = 0
-    for msg in messages:
+    for msg in direct_messages:
         if msg.message is None:
             continue
         content = msg.message.content
@@ -112,8 +117,8 @@ def test_codex_gold_fixture_parser_parity_contract() -> None:
         "call-parity-read-1"
     ], "parser-stage parity failed: tool_result linkage key drift"
     assert (
-        _count_adjacent_duplicate_user_messages(messages) == 1
-    ), "parser-stage parity failed: duplicate-user boundary case changed unexpectedly"
+        _count_adjacent_duplicate_user_messages(direct_messages) == 0
+    ), "parser-stage parity failed: overlapping user prompt was not deduplicated"
 
 
 def test_codex_gold_fixture_api_detail_matches_parser_output(tmp_path: Path) -> None:
@@ -161,7 +166,7 @@ def test_codex_gold_fixture_api_detail_matches_parser_output(tmp_path: Path) -> 
                 ), "api-stage parity failed: session detail endpoint did not return parity fixture"
                 detail_payload = detail_response.json()
                 messages = detail_payload["session"]["messages"]
-                assert len(messages) == 8, (
+                assert len(messages) == 7, (
                     "api-stage parity failed: session detail message count "
                     "drifted from parser baseline"
                 )
