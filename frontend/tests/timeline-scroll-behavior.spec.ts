@@ -317,6 +317,77 @@ test.describe('@smoke Timeline scroll behavior', () => {
     expect(endScrollTop).toBeGreaterThan(startScrollTop + 80);
   });
 
+  test('@smoke minimap viewport drag does not produce blank content area', async ({ page }) => {
+    await setupLongTimelineMocks(page);
+    await page.goto('/');
+
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 10000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('[data-testid="timeline-minimap-viewport"]', { timeout: 10000 });
+
+    const viewport = page.locator('[data-testid="timeline-minimap-viewport"]');
+    const viewportBox = await viewport.boundingBox();
+    if (!viewportBox) {
+      throw new Error('Expected minimap viewport bounding box');
+    }
+
+    await page.mouse.move(viewportBox.x + viewportBox.width / 2, viewportBox.y + viewportBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      viewportBox.x + viewportBox.width / 2,
+      viewportBox.y + viewportBox.height / 2 + 220,
+      { steps: 12 }
+    );
+    await page.mouse.up();
+    await page.waitForTimeout(180);
+
+    const endScrollTop = await page
+      .locator('[data-testid="timeline-message-scroll"]')
+      .evaluate((node) => (node as HTMLElement).scrollTop);
+    expect(endScrollTop).toBeGreaterThan(100);
+
+    await expect(page.locator('.message-row')).not.toHaveCount(0);
+    await expect(page.locator('.message-row .message-content').first()).toContainText(/\S+/);
+  });
+
+  test('@full minimap top/mid/bottom mapping keeps visible window aligned', async ({ page }) => {
+    await setupLongTimelineMocks(page);
+    await page.goto('/');
+
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 10000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('[data-testid="timeline-minimap-track"]', { timeout: 10000 });
+
+    const track = page.locator('[data-testid="timeline-minimap-track"]');
+    const box = await track.boundingBox();
+    if (!box) {
+      throw new Error('Expected minimap track to have a visible bounding box');
+    }
+
+    const clickAtRatio = async (ratio: number) => {
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height * ratio);
+      await page.waitForTimeout(180);
+      return page
+        .locator('[data-testid="timeline-message-scroll"]')
+        .evaluate((node) => (node as HTMLElement).scrollTop);
+    };
+
+    // Click twice per segment to let dynamic row measurements settle before asserting.
+    await clickAtRatio(0.08);
+    const topScroll = await clickAtRatio(0.08);
+    await clickAtRatio(0.5);
+    const midScroll = await clickAtRatio(0.5);
+    await clickAtRatio(0.92);
+    const bottomScroll = await clickAtRatio(0.92);
+
+    expect(topScroll).toBeGreaterThanOrEqual(0);
+    expect(midScroll).toBeGreaterThan(topScroll + 80);
+    expect(bottomScroll).toBeGreaterThan(topScroll + 160);
+    expect(bottomScroll).toBeGreaterThanOrEqual(midScroll - 120);
+    await expect(page.locator('.message-row')).not.toHaveCount(0);
+    await expect(page.locator('.message-row .message-content').first()).toContainText(/\S+/);
+  });
+
   test('@full anomaly toggles filter markers and click jumps to highlighted message', async ({ page }) => {
     await setupLongTimelineMocks(page);
     await page.goto('/');

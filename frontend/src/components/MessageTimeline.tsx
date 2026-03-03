@@ -48,7 +48,8 @@ interface ScrollMetrics {
   clientHeight: number;
 }
 
-const ESTIMATED_ROW_HEIGHT = 220;
+const ROW_VERTICAL_GAP_PX = 14;
+const ESTIMATED_ROW_HEIGHT = 220 + ROW_VERTICAL_GAP_PX;
 const OVERSCAN_COUNT = 8;
 const MINIMAP_BUCKETS = 72;
 const MINIMAP_WIDTH = 104;
@@ -451,8 +452,9 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
       return { start: 0, end: 0 };
     }
 
-    const viewportTop = scrollMetrics.scrollTop;
-    const viewportBottom = viewportTop + scrollMetrics.clientHeight;
+    const maxViewportTop = Math.max(0, heightModel.totalHeight - scrollMetrics.clientHeight);
+    const viewportTop = clamp(scrollMetrics.scrollTop, 0, maxViewportTop);
+    const viewportBottom = clamp(viewportTop + scrollMetrics.clientHeight, 0, heightModel.totalHeight);
     const startBase = binarySearchPrefix(heightModel.prefixSums, viewportTop);
     const endBase = binarySearchPrefix(heightModel.prefixSums, viewportBottom) + 1;
 
@@ -460,7 +462,13 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
       start: clamp(startBase - OVERSCAN_COUNT, 0, total),
       end: clamp(endBase + OVERSCAN_COUNT, 0, total),
     };
-  }, [heightModel.prefixSums, mainMessages.length, scrollMetrics.clientHeight, scrollMetrics.scrollTop]);
+  }, [
+    heightModel.prefixSums,
+    heightModel.totalHeight,
+    mainMessages.length,
+    scrollMetrics.clientHeight,
+    scrollMetrics.scrollTop,
+  ]);
 
   const visibleMessages = useMemo(
     () => mainMessages.slice(visibleWindow.start, visibleWindow.end),
@@ -474,14 +482,18 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   );
 
   const minimapViewportRatio = useMemo(() => {
-    const maxScroll = Math.max(1, scrollMetrics.scrollHeight - scrollMetrics.clientHeight);
-    const topRatio = scrollMetrics.scrollTop / maxScroll;
-    const heightRatio = Math.min(1, scrollMetrics.clientHeight / scrollMetrics.scrollHeight);
+    const virtualScrollableHeight = Math.max(1, heightModel.totalHeight - scrollMetrics.clientHeight);
+    const clampedTop = clamp(scrollMetrics.scrollTop, 0, virtualScrollableHeight);
+    const topRatio = clampedTop / virtualScrollableHeight;
+    const heightRatio = Math.min(
+      1,
+      scrollMetrics.clientHeight / Math.max(heightModel.totalHeight, scrollMetrics.clientHeight)
+    );
     return {
       top: clamp(topRatio, 0, 1),
       height: clamp(heightRatio, 0.06, 1),
     };
-  }, [scrollMetrics.clientHeight, scrollMetrics.scrollHeight, scrollMetrics.scrollTop]);
+  }, [heightModel.totalHeight, scrollMetrics.clientHeight, scrollMetrics.scrollTop]);
 
   const minimapPaths = useMemo(
     () => ({
@@ -497,7 +509,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
       return;
     }
 
-    const measured = Math.max(80, Math.round(node.getBoundingClientRect().height));
+    const measured = Math.max(80, Math.round(node.offsetHeight));
     setMeasuredHeights((previous) => {
       const previousValue = previous[uuid] ?? ESTIMATED_ROW_HEIGHT;
       if (Math.abs(previousValue - measured) <= 1) {
@@ -548,12 +560,12 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     }
 
     const container = messagesContainerRef.current;
-    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    const maxScrollTop = Math.max(0, heightModel.totalHeight - container.clientHeight);
     container.scrollTo({
       top: clamp(ratio, 0, 1) * maxScrollTop,
       behavior,
     });
-  }, []);
+  }, [heightModel.totalHeight]);
 
   const highlightMessage = useCallback((messageUuid: string) => {
     setHighlightedMessageUuid(messageUuid);

@@ -113,7 +113,6 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0.9rem 0.95rem 1.2rem;
-  scroll-behavior: smooth;
 }
 
 .messages-container::-webkit-scrollbar {
@@ -138,12 +137,8 @@
 }
 
 .message-row {
-  margin-bottom: 0.9rem;
+  padding-bottom: 14px;
   position: relative;
-}
-
-.message-row:last-child {
-  margin-bottom: 0;
 }
 
 .message-row-highlighted {

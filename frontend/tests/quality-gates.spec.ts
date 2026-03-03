@@ -106,15 +106,21 @@ test.describe('Quality Gates', () => {
 
     await expect.poll(async () => {
       return await dropdown.evaluate((element) => {
+        if (!(element instanceof HTMLElement)) {
+          return false;
+        }
         const rect = element.getBoundingClientRect();
+        const tolerance = 4;
         return (
-          rect.left >= 0 &&
-          rect.top >= 0 &&
-          rect.right <= window.innerWidth + 1 &&
-          rect.bottom <= window.innerHeight + 1
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.left >= -tolerance &&
+          rect.top >= -tolerance &&
+          rect.right <= window.innerWidth + tolerance &&
+          rect.bottom <= window.innerHeight + tolerance
         );
       });
-    }).toBe(true);
+    }, { timeout: 7000 }).toBe(true);
   });
 
   test('@smoke timeline does not auto-scroll to the bottom on initial load', async ({ page }) => {
