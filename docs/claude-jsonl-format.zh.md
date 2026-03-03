@@ -2,6 +2,9 @@
 
 # Claude Code JSONL Session Format
 
+> 规范化生态说明已迁移到 `docs/agents/claude_code.md`。  
+> 本文档保留为原始 JSONL 格式的深度参考。
+
 Claude Code 将每个会话（session）存储为一个 JSONL 文件，位于 `~/.claude/projects/<project-slug>/<session-id>.jsonl`。每行是一个独立的 JSON 对象。
 
 ## Record Types

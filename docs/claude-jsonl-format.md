@@ -2,6 +2,9 @@
 
 # Claude Code JSONL Session Format
 
+> Canonical ecosystem profile moved to `docs/agents/claude_code.md`.  
+> This document remains a deep raw-format reference.
+
 Claude Code stores each session as a JSONL file at `~/.claude/projects/<project-slug>/<session-id>.jsonl`. Each line is an independent JSON object.
 
 ## Record Types
