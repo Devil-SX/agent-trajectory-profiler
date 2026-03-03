@@ -872,11 +872,68 @@ def report() -> None:
     default=False,
     help="Generate report and print result without sending to Telegram",
 )
+@click.option(
+    "--window",
+    type=click.Choice(["auto", "1d", "3d", "7d", "14d", "30d", "90d", "all"], case_sensitive=False),
+    default="auto",
+    show_default=True,
+    help="Report window mode: auto uses incremental checkpoint; others use manual lookback.",
+)
+@click.option(
+    "--days",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Custom manual lookback days. Overrides --window when set.",
+)
+@click.option(
+    "--style",
+    type=click.Choice(["advanced", "compact"], case_sensitive=False),
+    default=None,
+    help="Report style override (defaults to telegram.report.style).",
+)
+@click.option(
+    "--format",
+    "report_format",
+    type=click.Choice(["markdownv2", "html", "plain"], case_sensitive=False),
+    default=None,
+    help="Telegram rich-text format override (defaults to telegram.report.format).",
+)
+@click.option(
+    "--detail-level",
+    type=click.Choice(["low", "medium", "high"], case_sensitive=False),
+    default=None,
+    help="Detail granularity override (defaults to telegram.report.detail_level).",
+)
+@click.option(
+    "--split-mode",
+    type=click.Choice(["auto", "single"], case_sensitive=False),
+    default=None,
+    help="Message split policy override (defaults to telegram.report.split_mode).",
+)
+@click.option(
+    "--max-message-chars",
+    type=click.IntRange(min=512, max=4096),
+    default=None,
+    help="Message length limit override (defaults to telegram.report.max_message_chars).",
+)
+@click.option(
+    "--send-details/--no-send-details",
+    default=None,
+    help="Whether to send detail sections (defaults to telegram.report.send_details).",
+)
 def report_telegram(
     config_path: Path | None,
     state_path: Path | None,
     db_path: Path | None,
     dry_run: bool,
+    window: str,
+    days: int | None,
+    style: str | None,
+    report_format: str | None,
+    detail_level: str | None,
+    split_mode: str | None,
+    max_message_chars: int | None,
+    send_details: bool | None,
 ) -> None:
     """Send incremental summary report to Telegram Bot chat."""
     from agent_vis.reporting.telegram import (
@@ -894,6 +951,14 @@ def report_telegram(
             state_path=resolved_state_path,
             db_path=db_path,
             dry_run=dry_run,
+            window=window,
+            days=days,
+            style=style,
+            report_format=report_format,
+            detail_level=detail_level,
+            split_mode=split_mode,
+            max_message_chars=max_message_chars,
+            send_details=send_details,
         )
     except Exception as exc:
         click.echo(f"Telegram report failed: {exc}", err=True)
@@ -906,8 +971,18 @@ def report_telegram(
     click.echo("=" * 60)
     click.echo(f"Status:         {result.status}")
     click.echo(f"Target chat:    {result.chat_id}")
+    click.echo(f"Render format:  {result.render_format}")
+    click.echo(f"Window mode:    {result.window_mode}")
     click.echo(f"Window start:   {result.window_start or 'initial-sync'}")
     click.echo(f"Window end:     {result.window_end}")
+    click.echo(f"State updated:  {'yes' if result.state_updated else 'no'}")
+    click.echo(f"Messages sent:  {result.message_count}")
+    click.echo(f"Truncated:      {'yes' if result.truncated else 'no'}")
+    click.echo(
+        "Sections:       " + ", ".join(result.sections_sent)
+        if result.sections_sent
+        else "Sections:       (none)"
+    )
     click.echo(f"New sessions:   {result.summary.session_count}")
     click.echo(f"Tool errors:    {result.summary.total_tool_errors}")
     click.echo(
