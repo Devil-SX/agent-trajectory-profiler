@@ -35,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Timeline minimap viewport synchronization now uses stable real-scroll geometry with virtual-height fallback, and the message scroll container emits direct on-scroll updates so minimap position stays aligned during track clicks, viewport drags, filter toggles, and viewport resize changes.
 - Codex lineage resolution now detects nested thread-spawn ancestry from `session_meta.payload.source.subagent.thread_spawn` (`parent_thread_id`/`root_thread_id`) so logical session aggregation no longer collapses to physical-only when nested lineage exists.
 - Added parser and API integration regression coverage for nested lineage extraction to verify `view=logical` and `view=physical` diverge correctly on spawned-subagent datasets.
 - Codex tool error extraction now detects non-regex textual failures and structured status/error indicators, and maps `response_item:web_search_call` status signals into tool-result annotations to reduce missed failures.

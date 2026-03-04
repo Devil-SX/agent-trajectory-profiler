@@ -199,6 +199,44 @@ async function getWindowScrollY(page: Page) {
   return page.evaluate(() => window.scrollY);
 }
 
+async function getMinimapSyncDelta(page: Page) {
+  return page.evaluate(() => {
+    const scrollEl = document.querySelector('[data-testid="timeline-message-scroll"]') as HTMLElement | null;
+    const viewportEl = document.querySelector('[data-testid="timeline-minimap-viewport"]') as HTMLElement | null;
+    if (!scrollEl || !viewportEl) {
+      return {
+        topDelta: Number.POSITIVE_INFINITY,
+        heightDelta: Number.POSITIVE_INFINITY,
+      };
+    }
+
+    const maxScrollTop = Math.max(1, scrollEl.scrollHeight - scrollEl.clientHeight);
+    const expectedTopPercent =
+      (Math.min(maxScrollTop, Math.max(0, scrollEl.scrollTop)) / maxScrollTop) * 100;
+    const expectedHeightPercent = Math.min(
+      100,
+      Math.max(
+        6,
+        (scrollEl.clientHeight / Math.max(scrollEl.scrollHeight, scrollEl.clientHeight)) * 100
+      )
+    );
+    const viewportTopPercent = Number.parseFloat(viewportEl.style.top || '0');
+    const viewportHeightPercent = Number.parseFloat(viewportEl.style.height || '0');
+
+    return {
+      topDelta: Math.abs(viewportTopPercent - expectedTopPercent),
+      heightDelta: Math.abs(viewportHeightPercent - expectedHeightPercent),
+      scrollTop: scrollEl.scrollTop,
+      scrollHeight: scrollEl.scrollHeight,
+      clientHeight: scrollEl.clientHeight,
+      viewportTopPercent,
+      viewportHeightPercent,
+      expectedTopPercent,
+      expectedHeightPercent,
+    };
+  });
+}
+
 test.describe('Timeline scroll behavior', () => {
   test('@smoke codex-style split tool_result is linked and does not render empty rows', async ({
     page,
@@ -288,6 +326,10 @@ test.describe('Timeline scroll behavior', () => {
         { timeout: 2000 }
       )
       .toBeGreaterThan(beforeScrollTop + 120);
+
+    await expect
+      .poll(async () => (await getMinimapSyncDelta(page)).topDelta, { timeout: 2000 })
+      .toBeLessThan(2.5);
   });
 
   test('@full minimap viewport drag keeps message scroll synchronized', async ({ page }) => {
@@ -323,6 +365,10 @@ test.describe('Timeline scroll behavior', () => {
       .evaluate((node) => (node as HTMLElement).scrollTop);
 
     expect(endScrollTop).toBeGreaterThan(startScrollTop + 80);
+
+    await expect
+      .poll(async () => (await getMinimapSyncDelta(page)).topDelta, { timeout: 2000 })
+      .toBeLessThan(2.5);
   });
 
   test('@smoke minimap viewport drag does not produce blank content area', async ({ page }) => {
@@ -410,6 +456,48 @@ test.describe('Timeline scroll behavior', () => {
     expect(bottomScroll).toBeGreaterThanOrEqual(midScroll - 120);
     await expect(page.locator('.message-row')).not.toHaveCount(0);
     await expect(page.locator('.message-row .message-content').first()).toContainText(/\S+/);
+  });
+
+  test('@full minimap viewport stays synchronized after filter toggles and resize', async ({ page }) => {
+    await setupLongTimelineMocks(page);
+    await page.goto('/');
+
+    await page.waitForSelector('tr[data-session-id="test-session-001"]', { timeout: 10000 });
+    await page.locator('tr[data-session-id="test-session-001"]').click();
+    await page.waitForSelector('[data-testid="timeline-minimap-track"]', { timeout: 10000 });
+
+    await page.locator('[data-testid="timeline-message-scroll"]').evaluate((node) => {
+      const element = node as HTMLElement;
+      const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      element.scrollTop = maxScrollTop * 0.62;
+      element.dispatchEvent(new Event('scroll'));
+    });
+    await expect
+      .poll(async () => (await getMinimapSyncDelta(page)).topDelta, { timeout: 2000 })
+      .toBeLessThan(2.5);
+    await expect
+      .poll(async () => (await getMinimapSyncDelta(page)).heightDelta, { timeout: 2000 })
+      .toBeLessThan(2.5);
+
+    await page.getByLabel('Toggle model stall anomalies').uncheck();
+    await page.getByLabel('Toggle model stall anomalies').check();
+    await page.getByLabel('Toggle tool error anomalies').uncheck();
+    await page.getByLabel('Toggle tool error anomalies').check();
+    await page.getByLabel('Toggle technical events').check();
+    await page.getByLabel('Toggle technical events').uncheck();
+
+    await expect
+      .poll(async () => (await getMinimapSyncDelta(page)).topDelta, { timeout: 2000 })
+      .toBeLessThan(2.5);
+
+    await page.setViewportSize({ width: 1360, height: 860 });
+    await page.waitForTimeout(150);
+    await expect
+      .poll(async () => (await getMinimapSyncDelta(page)).topDelta, { timeout: 2000 })
+      .toBeLessThan(3.2);
+    await expect
+      .poll(async () => (await getMinimapSyncDelta(page)).heightDelta, { timeout: 2000 })
+      .toBeLessThan(3.2);
   });
 
   test('@full anomaly toggles filter markers and click jumps to highlighted message', async ({ page }) => {

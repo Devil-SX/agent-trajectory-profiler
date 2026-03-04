@@ -570,18 +570,23 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   );
 
   const minimapViewportRatio = useMemo(() => {
-    const virtualScrollableHeight = Math.max(1, heightModel.totalHeight - scrollMetrics.clientHeight);
-    const clampedTop = clamp(scrollMetrics.scrollTop, 0, virtualScrollableHeight);
-    const topRatio = clampedTop / virtualScrollableHeight;
+    const effectiveScrollHeight = Math.max(
+      scrollMetrics.scrollHeight,
+      heightModel.totalHeight,
+      scrollMetrics.clientHeight
+    );
+    const actualScrollableHeight = Math.max(1, effectiveScrollHeight - scrollMetrics.clientHeight);
+    const clampedTop = clamp(scrollMetrics.scrollTop, 0, actualScrollableHeight);
+    const topRatio = clampedTop / actualScrollableHeight;
     const heightRatio = Math.min(
       1,
-      scrollMetrics.clientHeight / Math.max(heightModel.totalHeight, scrollMetrics.clientHeight)
+      scrollMetrics.clientHeight / effectiveScrollHeight
     );
     return {
       top: clamp(topRatio, 0, 1),
       height: clamp(heightRatio, 0.06, 1),
     };
-  }, [heightModel.totalHeight, scrollMetrics.clientHeight, scrollMetrics.scrollTop]);
+  }, [heightModel.totalHeight, scrollMetrics.clientHeight, scrollMetrics.scrollHeight, scrollMetrics.scrollTop]);
 
   const minimapPaths = useMemo(
     () => ({
@@ -618,7 +623,10 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
       top: messagesContainerRef.current.scrollHeight,
       behavior,
     });
-  }, []);
+    if (behavior === 'auto') {
+      updateScrollMetrics();
+    }
+  }, [updateScrollMetrics]);
 
   const scrollToMessageIndex = useCallback(
     (index: number, behavior: ScrollBehavior = 'smooth') => {
@@ -638,8 +646,11 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
         top: targetTop,
         behavior,
       });
+      if (behavior === 'auto') {
+        updateScrollMetrics();
+      }
     },
-    [heightModel.heights, heightModel.prefixSums, mainMessages.length]
+    [heightModel.heights, heightModel.prefixSums, mainMessages.length, updateScrollMetrics]
   );
 
   const jumpByViewportRatio = useCallback((ratio: number, behavior: ScrollBehavior = 'auto') => {
@@ -648,12 +659,14 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
     }
 
     const container = messagesContainerRef.current;
-    const maxScrollTop = Math.max(0, heightModel.totalHeight - container.clientHeight);
+    const effectiveScrollHeight = Math.max(container.scrollHeight, heightModel.totalHeight);
+    const maxScrollTop = Math.max(0, effectiveScrollHeight - container.clientHeight);
     container.scrollTo({
       top: clamp(ratio, 0, 1) * maxScrollTop,
       behavior,
     });
-  }, [heightModel.totalHeight]);
+    updateScrollMetrics();
+  }, [heightModel.totalHeight, updateScrollMetrics]);
 
   const highlightMessage = useCallback((messageUuid: string) => {
     setHighlightedMessageUuid(messageUuid);
@@ -899,10 +912,12 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
 
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
 
     return () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
     };
   }, [jumpByViewportRatio]);
 
@@ -1002,7 +1017,12 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
           </div>
         )}
         <div className="messages-panel">
-          <div className="messages-container" ref={messagesContainerRef} data-testid="timeline-message-scroll">
+          <div
+            className="messages-container"
+            ref={messagesContainerRef}
+            onScroll={updateScrollMetrics}
+            data-testid="timeline-message-scroll"
+          >
             <div className="timeline-virtual-spacer" style={{ height: `${visibleTopSpacer}px` }} aria-hidden="true" />
 
             {visibleMessages.map((message, visibleIndex) => {

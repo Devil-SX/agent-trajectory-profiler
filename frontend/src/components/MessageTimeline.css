@@ -539,6 +539,7 @@
   cursor: grab;
   min-height: 18px;
   z-index: 2;
+  touch-action: none;
 }
 
 .timeline-minimap-viewport:active {
