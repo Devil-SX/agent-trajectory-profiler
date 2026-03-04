@@ -428,6 +428,72 @@ def codex_logical_hierarchy_root(codex_session_root: Path) -> Path:
 
 
 @pytest.fixture
+def codex_nested_lineage_root(codex_session_root: Path) -> Path:
+    """Create Codex rollouts where lineage is nested in payload.source.subagent.thread_spawn."""
+    session_root = "aaaaaaa1-1111-1111-1111-111111111111"
+    session_child = "bbbbbbb2-2222-2222-2222-222222222222"
+    day_dir = codex_session_root / "2026" / "02" / "28"
+    day_dir.mkdir(parents=True, exist_ok=True)
+
+    def _write_rollout(path: Path, events: list[dict[str, object]]) -> None:
+        with open(path, "w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+    _write_rollout(
+        day_dir / f"rollout-2026-02-28T09-00-00-{session_root}.jsonl",
+        [
+            {
+                "timestamp": "2026-02-28T09:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_root,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.105.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-02-28T09:00:01.000Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "Root task"},
+            },
+        ],
+    )
+
+    _write_rollout(
+        day_dir / f"rollout-2026-02-28T09-10-00-{session_child}.jsonl",
+        [
+            {
+                "timestamp": "2026-02-28T09:10:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_child,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.105.0",
+                    "source": {
+                        "type": "thread_spawn",
+                        "subagent": {
+                            "thread_spawn": {
+                                "parent_thread_id": session_root,
+                                "root_thread_id": session_root,
+                            }
+                        },
+                    },
+                },
+            },
+            {
+                "timestamp": "2026-02-28T09:10:00.500Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "Child task"},
+            },
+        ],
+    )
+
+    return codex_session_root
+
+
+@pytest.fixture
 def test_settings(temp_session_dir: Path, tmp_path: Path) -> Settings:
     """Create test settings with temporary session directory and database."""
     codex_session_dir = tmp_path / "codex_sessions_empty"

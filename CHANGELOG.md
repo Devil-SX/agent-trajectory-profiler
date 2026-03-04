@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Local privacy-preserving Codex regression smoke test that can target a developer-provided real rollout fixture via `AGENT_VIS_PRIVATE_CODEX_CASE`, while skipping safely in CI when no private fixture is present.
+
+### Fixed
+
+- Codex lineage resolution now detects nested thread-spawn ancestry from `session_meta.payload.source.subagent.thread_spawn` (`parent_thread_id`/`root_thread_id`) so logical session aggregation no longer collapses to physical-only when nested lineage exists.
+- Added parser and API integration regression coverage for nested lineage extraction to verify `view=logical` and `view=physical` diverge correctly on spawned-subagent datasets.
+
 ## [1.2.0] - 2026-03-04
 
 > **Code Stats** | Total: 67,942 lines | Delta: +5,584 (-234) = **+5,350 net** | Change: **+8.5%** vs v1.1.0

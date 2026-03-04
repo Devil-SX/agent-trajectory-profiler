@@ -120,6 +120,45 @@ def _extract_non_empty_str(payload: dict[str, Any], keys: tuple[str, ...]) -> st
     return None
 
 
+def _extract_nested_dict(payload: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any] | None:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    if isinstance(current, dict):
+        return current
+    return None
+
+
+def _lineage_payload_candidates(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def _append_if_dict(candidate: Any) -> None:
+        if not isinstance(candidate, dict):
+            return
+        marker = id(candidate)
+        if marker in seen:
+            return
+        seen.add(marker)
+        candidates.append(candidate)
+
+    _append_if_dict(payload)
+    _append_if_dict(payload.get("lineage"))
+
+    for path in (
+        ("source",),
+        ("source", "lineage"),
+        ("source", "thread_spawn"),
+        ("source", "subagent"),
+        ("source", "subagent", "thread_spawn"),
+    ):
+        _append_if_dict(_extract_nested_dict(payload, path))
+
+    return candidates
+
+
 def _resolve_codex_lineage(file_path: Path, session_id: str) -> tuple[str, str | None, str | None]:
     """Resolve logical lineage for one Codex rollout file.
 
@@ -144,17 +183,17 @@ def _resolve_codex_lineage(file_path: Path, session_id: str) -> tuple[str, str |
                 if not isinstance(payload, dict):
                     continue
 
-                nested_lineage = payload.get("lineage")
-                lineage_payload = nested_lineage if isinstance(nested_lineage, dict) else payload
-
-                parent_session_id = parent_session_id or _extract_non_empty_str(
-                    lineage_payload,
-                    _PARENT_ID_KEYS,
-                )
-                root_session_id = root_session_id or _extract_non_empty_str(
-                    lineage_payload,
-                    _ROOT_ID_KEYS,
-                )
+                for candidate in _lineage_payload_candidates(payload):
+                    parent_session_id = parent_session_id or _extract_non_empty_str(
+                        candidate,
+                        _PARENT_ID_KEYS,
+                    )
+                    root_session_id = root_session_id or _extract_non_empty_str(
+                        candidate,
+                        _ROOT_ID_KEYS,
+                    )
+                    if parent_session_id and root_session_id:
+                        break
     except OSError:
         # Fall back to physical-only view if lineage cannot be inspected.
         pass

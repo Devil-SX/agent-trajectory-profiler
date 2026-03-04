@@ -64,6 +64,26 @@ class TestCodexParser:
         assert session.metadata.root_session_id == root_id
         assert session.metadata.logical_session_id == root_id
 
+    def test_parse_codex_session_file_extracts_nested_thread_spawn_lineage(
+        self, codex_nested_lineage_root: Path
+    ) -> None:
+        root_id = "aaaaaaa1-1111-1111-1111-111111111111"
+        child_id = "bbbbbbb2-2222-2222-2222-222222222222"
+        child_file = (
+            codex_nested_lineage_root
+            / "2026"
+            / "02"
+            / "28"
+            / f"rollout-2026-02-28T09-10-00-{child_id}.jsonl"
+        )
+
+        session = parse_codex_session_file(child_file)
+        assert session.metadata.session_id == child_id
+        assert session.metadata.physical_session_id == child_id
+        assert session.metadata.parent_session_id == root_id
+        assert session.metadata.root_session_id == root_id
+        assert session.metadata.logical_session_id == root_id
+
     def test_parse_codex_jsonl_file_deduplicates_cross_channel_user_prompt(self) -> None:
         parity_fixture = (
             Path(__file__).parent
