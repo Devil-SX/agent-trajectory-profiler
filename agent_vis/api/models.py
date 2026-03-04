@@ -380,6 +380,15 @@ class RuntimePlaneOverview(BaseModel):
     night_tool_time_seconds: float
     night_user_time_seconds: float
     night_inactive_time_seconds: float
+    coverage_total_window_seconds: float = 0.0
+    coverage_day_window_seconds: float = 0.0
+    coverage_night_window_seconds: float = 0.0
+    day_model_coverage_seconds: float = 0.0
+    day_tool_coverage_seconds: float = 0.0
+    day_user_coverage_seconds: float = 0.0
+    night_model_coverage_seconds: float = 0.0
+    night_tool_coverage_seconds: float = 0.0
+    night_user_coverage_seconds: float = 0.0
     active_time_ratio: float
     model_timeout_count: int
     source_breakdown: list[EcosystemAggregate]
@@ -459,6 +468,15 @@ class AnalyticsOverviewResponse(BaseModel):
     night_tool_time_seconds: float
     night_user_time_seconds: float
     night_inactive_time_seconds: float
+    coverage_total_window_seconds: float = 0.0
+    coverage_day_window_seconds: float = 0.0
+    coverage_night_window_seconds: float = 0.0
+    day_model_coverage_seconds: float = 0.0
+    day_tool_coverage_seconds: float = 0.0
+    day_user_coverage_seconds: float = 0.0
+    night_model_coverage_seconds: float = 0.0
+    night_tool_coverage_seconds: float = 0.0
+    night_user_coverage_seconds: float = 0.0
     active_time_ratio: float
     model_timeout_count: int
     source_breakdown: list[EcosystemAggregate]

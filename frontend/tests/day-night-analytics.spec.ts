@@ -68,11 +68,20 @@ test.describe('@smoke Day Night Analytics', () => {
           day_model_time_seconds: 3600,
           day_tool_time_seconds: 1800,
           day_user_time_seconds: 900,
-          day_inactive_time_seconds: 900,
+          day_inactive_time_seconds: 1800,
           night_model_time_seconds: 900,
           night_tool_time_seconds: 600,
           night_user_time_seconds: 600,
-          night_inactive_time_seconds: 300,
+          night_inactive_time_seconds: 0,
+          coverage_total_window_seconds: 604800,
+          coverage_day_window_seconds: 403200,
+          coverage_night_window_seconds: 201600,
+          day_model_coverage_seconds: 100800,
+          day_tool_coverage_seconds: 50400,
+          day_user_coverage_seconds: 25200,
+          night_model_coverage_seconds: 25200,
+          night_tool_coverage_seconds: 10080,
+          night_user_coverage_seconds: 5040,
           active_time_ratio: 0.8889,
           model_timeout_count: 2,
           bottleneck_distribution: [
@@ -92,17 +101,27 @@ test.describe('@smoke Day Night Analytics', () => {
 
     await expect(page.locator('.day-night-note')).toContainText('01:00-09:00');
     await expect(page.locator('.day-night-chart')).toBeVisible();
-    await expect(page.locator('.day-night-summary')).toContainText('Day total: 2h 0m');
-    await expect(page.locator('.day-night-summary')).toContainText('Night total: 40m');
+    await expect(page.locator('.day-night-summary')).toContainText('Day total: 2h 15m');
+    await expect(page.locator('.day-night-summary')).toContainText('Night total: 35m');
 
     const dayRow = page.locator('.day-night-table tbody tr').nth(0);
     await expect(dayRow).toContainText('Day');
-    await expect(dayRow).toContainText('2h 0m');
-    await expect(dayRow).toContainText('75.0%');
+    await expect(dayRow).toContainText('2h 15m');
+    await expect(dayRow).toContainText('79.4%');
 
     const nightRow = page.locator('.day-night-table tbody tr').nth(1);
     await expect(nightRow).toContainText('Night');
-    await expect(nightRow).toContainText('40m');
+    await expect(nightRow).toContainText('35m');
+    await expect(nightRow).toContainText('20.6%');
+
+    await expect(page.locator('.day-night-coverage-table')).toBeVisible();
+    const dayCoverageRow = page.locator('.day-night-coverage-table tbody tr').nth(0);
+    await expect(dayCoverageRow).toContainText('25.0%');
+
+    await page.getByRole('button', { name: 'Exclude inactive' }).click();
+    await expect(page.locator('.day-night-summary')).toContainText('Day total: 1h 45m');
+    await expect(page.locator('.day-night-summary')).toContainText('Night total: 35m');
+    await expect(dayRow).toContainText('75.0%');
     await expect(nightRow).toContainText('25.0%');
   });
 });

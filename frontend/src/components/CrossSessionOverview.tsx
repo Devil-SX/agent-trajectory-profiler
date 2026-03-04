@@ -46,13 +46,26 @@ interface DayNightRow {
   tool: number;
   user: number;
   inactive: number;
+  ratioDenominator: number;
   total: number;
   share: number;
+}
+
+interface DayNightCoverageRow {
+  period: 'Day' | 'Night';
+  windowSeconds: number;
+  modelSeconds: number;
+  toolSeconds: number;
+  userSeconds: number;
+  modelCoverage: number;
+  toolCoverage: number;
+  userCoverage: number;
 }
 
 type SourceFilter = 'all' | string;
 type RoleSourceMetric = 'time' | 'tokens' | 'tool_calls' | 'errors';
 type RoleSourceView = 'source' | 'role';
+type DayNightRatioMode = 'include_inactive' | 'exclude_inactive';
 
 const DISTRIBUTION_COLORS = ['#2563eb', '#0891b2', '#ea580c', '#dc2626', '#16a34a', '#7c3aed'];
 const ROLE_COLORS: Record<'user' | 'model' | 'tool', string> = {
@@ -117,6 +130,13 @@ function formatSessionShareLabel(label: string): string {
   return truncateMiddle(label, 5, 4);
 }
 
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
+}
+
 function buildSwimlaneColor(tokens: number, maxTokens: number): string {
   if (tokens <= 0 || maxTokens <= 0) {
     return '#f3f4f6';
@@ -155,6 +175,7 @@ export function CrossSessionOverview() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [roleSourceMetric, setRoleSourceMetric] = useState<RoleSourceMetric>('time');
   const [roleSourceView, setRoleSourceView] = useState<RoleSourceView>('source');
+  const [dayNightRatioMode, setDayNightRatioMode] = useState<DayNightRatioMode>('include_inactive');
   const [projectTimelineInterval, setProjectTimelineInterval] = useState<'day' | 'week'>('day');
   const [codingFraction, setCodingFraction] = useState(0.3);
   const [tokensPerLine, setTokensPerLine] = useState(10);
@@ -261,6 +282,7 @@ export function CrossSessionOverview() {
 
   const dayNightRows = useMemo<DayNightRow[]>(() => {
     if (!overview) return [];
+    const includeInactive = dayNightRatioMode === 'include_inactive';
 
     const rows: DayNightRow[] = [
       {
@@ -269,6 +291,7 @@ export function CrossSessionOverview() {
         tool: overview.day_tool_time_seconds,
         user: overview.day_user_time_seconds,
         inactive: overview.day_inactive_time_seconds,
+        ratioDenominator: 0,
         total: 0,
         share: 0,
       },
@@ -278,20 +301,61 @@ export function CrossSessionOverview() {
         tool: overview.night_tool_time_seconds,
         user: overview.night_user_time_seconds,
         inactive: overview.night_inactive_time_seconds,
+        ratioDenominator: 0,
         total: 0,
         share: 0,
       },
     ];
 
-    const withTotals = rows.map((row) => ({
-      ...row,
-      total: row.model + row.tool + row.user + row.inactive,
-    }));
-    const grandTotal = withTotals.reduce((sum, row) => sum + row.total, 0);
+    const withTotals = rows.map((row) => {
+      const activeSeconds = row.model + row.tool + row.user;
+      const ratioDenominator = includeInactive ? activeSeconds + row.inactive : activeSeconds;
+      return {
+        ...row,
+        ratioDenominator,
+        total: ratioDenominator,
+      };
+    });
+    const grandTotal = withTotals.reduce((sum, row) => sum + row.ratioDenominator, 0);
 
     return withTotals.map((row) => ({
       ...row,
-      share: grandTotal > 0 ? row.total / grandTotal : 0,
+      share: grandTotal > 0 ? row.ratioDenominator / grandTotal : 0,
+    }));
+  }, [dayNightRatioMode, overview]);
+
+  const dayNightCoverageRows = useMemo<DayNightCoverageRow[]>(() => {
+    if (!overview) return [];
+    const dayWindow = Math.max(0, overview.coverage_day_window_seconds || 0);
+    const nightWindow = Math.max(0, overview.coverage_night_window_seconds || 0);
+    const rows: DayNightCoverageRow[] = [
+      {
+        period: 'Day',
+        windowSeconds: dayWindow,
+        modelSeconds: Math.max(0, overview.day_model_coverage_seconds || 0),
+        toolSeconds: Math.max(0, overview.day_tool_coverage_seconds || 0),
+        userSeconds: Math.max(0, overview.day_user_coverage_seconds || 0),
+        modelCoverage: 0,
+        toolCoverage: 0,
+        userCoverage: 0,
+      },
+      {
+        period: 'Night',
+        windowSeconds: nightWindow,
+        modelSeconds: Math.max(0, overview.night_model_coverage_seconds || 0),
+        toolSeconds: Math.max(0, overview.night_tool_coverage_seconds || 0),
+        userSeconds: Math.max(0, overview.night_user_coverage_seconds || 0),
+        modelCoverage: 0,
+        toolCoverage: 0,
+        userCoverage: 0,
+      },
+    ];
+
+    return rows.map((row) => ({
+      ...row,
+      modelCoverage: row.windowSeconds > 0 ? clamp01(row.modelSeconds / row.windowSeconds) : 0,
+      toolCoverage: row.windowSeconds > 0 ? clamp01(row.toolSeconds / row.windowSeconds) : 0,
+      userCoverage: row.windowSeconds > 0 ? clamp01(row.userSeconds / row.windowSeconds) : 0,
     }));
   }, [overview]);
 
@@ -409,6 +473,15 @@ export function CrossSessionOverview() {
     night_tool_time_seconds: overview.night_tool_time_seconds,
     night_user_time_seconds: overview.night_user_time_seconds,
     night_inactive_time_seconds: overview.night_inactive_time_seconds,
+    coverage_total_window_seconds: overview.coverage_total_window_seconds,
+    coverage_day_window_seconds: overview.coverage_day_window_seconds,
+    coverage_night_window_seconds: overview.coverage_night_window_seconds,
+    day_model_coverage_seconds: overview.day_model_coverage_seconds,
+    day_tool_coverage_seconds: overview.day_tool_coverage_seconds,
+    day_user_coverage_seconds: overview.day_user_coverage_seconds,
+    night_model_coverage_seconds: overview.night_model_coverage_seconds,
+    night_tool_coverage_seconds: overview.night_tool_coverage_seconds,
+    night_user_coverage_seconds: overview.night_user_coverage_seconds,
     active_time_ratio: overview.active_time_ratio,
     model_timeout_count: overview.model_timeout_count,
     source_breakdown: overview.source_breakdown,
@@ -1278,6 +1351,24 @@ export function CrossSessionOverview() {
         <section className="overview-card day-night-card">
           <h4>{t('cross.dayNightMix')}</h4>
           <p className="day-night-note">{t('cross.dayNightWindow')}</p>
+          <p className="day-night-explain">{t('cross.dayNightExplain')}</p>
+          <div className="day-night-ratio-toggle" role="group" aria-label={t('cross.ratioDenominator')}>
+            <span className="day-night-ratio-label">{t('cross.ratioDenominator')}</span>
+            <button
+              type="button"
+              className={dayNightRatioMode === 'include_inactive' ? 'active' : ''}
+              onClick={() => setDayNightRatioMode('include_inactive')}
+            >
+              {t('cross.ratio.includeInactive')}
+            </button>
+            <button
+              type="button"
+              className={dayNightRatioMode === 'exclude_inactive' ? 'active' : ''}
+              onClick={() => setDayNightRatioMode('exclude_inactive')}
+            >
+              {t('cross.ratio.excludeInactive')}
+            </button>
+          </div>
           <p className="day-night-summary">
             {t('cross.dayTotal')}
             : {formatDuration(dayNightRows[0]?.total ?? 0)}
@@ -1302,7 +1393,20 @@ export function CrossSessionOverview() {
                     />
                     <YAxis />
                     <Tooltip
-                      formatter={(value) => formatDuration(Number(value))}
+                      formatter={(value, name, item) => {
+                        const numeric = Number(value);
+                        const payload = (item as { payload?: DayNightRow; dataKey?: string })?.payload;
+                        const dataKey = (item as { dataKey?: string })?.dataKey;
+                        if (!payload || !Number.isFinite(numeric)) {
+                          return formatDuration(Number.isFinite(numeric) ? numeric : 0);
+                        }
+                        if (dayNightRatioMode === 'exclude_inactive' && dataKey === 'inactive') {
+                          return [formatDuration(numeric), name];
+                        }
+                        const denominator = payload.ratioDenominator;
+                        const ratio = denominator > 0 ? numeric / denominator : 0;
+                        return [`${formatDuration(numeric)} (${formatPercentPoint(ratio)})`, name];
+                      }}
                       labelFormatter={(label) =>
                         `${label === 'Day' ? t('cross.period.day') : t('cross.period.night')} ${t('cross.period')}`
                       }
@@ -1337,7 +1441,7 @@ export function CrossSessionOverview() {
                         <td>{formatDuration(row.tool)}</td>
                         <td>{formatDuration(row.user)}</td>
                         <td>{formatDuration(row.inactive)}</td>
-                        <td>{formatDuration(row.total)}</td>
+                        <td>{formatDuration(row.ratioDenominator)}</td>
                         <td>{formatPercentPoint(row.share)}</td>
                       </tr>
                     ))}
@@ -1346,6 +1450,33 @@ export function CrossSessionOverview() {
               </div>
             </div>
           )}
+
+          <div className="table-wrapper">
+            <h5 className="day-night-coverage-title">{t('cross.coverageTableTitle')}</h5>
+            <p className="day-night-coverage-note">{t('cross.coverageTableNote')}</p>
+            <table className="compact-table day-night-coverage-table">
+              <thead>
+                <tr>
+                  <th>{t('cross.period')}</th>
+                  <th>{t('cross.coverageWindow')}</th>
+                  <th>{t('cross.model')}</th>
+                  <th>{t('cross.tool')}</th>
+                  <th>{t('cross.user')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dayNightCoverageRows.map((row) => (
+                  <tr key={`coverage-${row.period}`}>
+                    <td>{row.period === 'Day' ? t('cross.period.day') : t('cross.period.night')}</td>
+                    <td>{formatDuration(row.windowSeconds)}</td>
+                    <td>{`${formatPercentPoint(row.modelCoverage)} · ${formatDuration(row.modelSeconds)}`}</td>
+                    <td>{`${formatPercentPoint(row.toolCoverage)} · ${formatDuration(row.toolSeconds)}`}</td>
+                    <td>{`${formatPercentPoint(row.userCoverage)} · ${formatDuration(row.userSeconds)}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
 

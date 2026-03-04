@@ -590,6 +590,15 @@ class TestAnalyticsAPI:
         assert "night_tool_time_seconds" in payload
         assert "night_user_time_seconds" in payload
         assert "night_inactive_time_seconds" in payload
+        assert "coverage_total_window_seconds" in payload
+        assert "coverage_day_window_seconds" in payload
+        assert "coverage_night_window_seconds" in payload
+        assert "day_model_coverage_seconds" in payload
+        assert "day_tool_coverage_seconds" in payload
+        assert "day_user_coverage_seconds" in payload
+        assert "night_model_coverage_seconds" in payload
+        assert "night_tool_coverage_seconds" in payload
+        assert "night_user_coverage_seconds" in payload
         assert "source_breakdown" in payload
         assert isinstance(payload["source_breakdown"], list)
         assert "role_source_breakdown" in payload
@@ -652,6 +661,32 @@ class TestAnalyticsAPI:
             + payload["night_inactive_time_seconds"]
         )
         assert day_total + night_total == pytest.approx(span, abs=1e-3)
+        assert payload["coverage_total_window_seconds"] >= 0.0
+        assert payload["coverage_day_window_seconds"] >= 0.0
+        assert payload["coverage_night_window_seconds"] >= 0.0
+        assert payload["coverage_day_window_seconds"] + payload[
+            "coverage_night_window_seconds"
+        ] == pytest.approx(payload["coverage_total_window_seconds"], abs=1e-3)
+        assert (
+            0.0 <= payload["day_model_coverage_seconds"] <= payload["coverage_day_window_seconds"]
+        )
+        assert 0.0 <= payload["day_tool_coverage_seconds"] <= payload["coverage_day_window_seconds"]
+        assert 0.0 <= payload["day_user_coverage_seconds"] <= payload["coverage_day_window_seconds"]
+        assert (
+            0.0
+            <= payload["night_model_coverage_seconds"]
+            <= payload["coverage_night_window_seconds"]
+        )
+        assert (
+            0.0
+            <= payload["night_tool_coverage_seconds"]
+            <= payload["coverage_night_window_seconds"]
+        )
+        assert (
+            0.0
+            <= payload["night_user_coverage_seconds"]
+            <= payload["coverage_night_window_seconds"]
+        )
 
         control_keys = set(payload["control_plane"].keys())
         runtime_keys = set(payload["runtime_plane"].keys())
@@ -954,6 +989,46 @@ class TestSessionServiceIntegration:
 
         assert day_seconds == pytest.approx(60.0)
         assert night_seconds == pytest.approx(60.0)
+
+    def test_day_night_role_coverage_uses_interval_union(self) -> None:
+        """Overlapping session spans should be unioned instead of naively summed."""
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        rows = [
+            {
+                "created_at": datetime(2026, 2, 1, 10, 0, tzinfo=local_tz).isoformat(),
+                "duration_seconds": 7200.0,  # 10:00-12:00
+                "statistics": {
+                    "time_breakdown": {
+                        "total_model_time_seconds": 1200.0,
+                        "total_tool_time_seconds": 0.0,
+                        "total_user_time_seconds": 0.0,
+                        "total_inactive_time_seconds": 0.0,
+                    }
+                },
+            },
+            {
+                "created_at": datetime(2026, 2, 1, 11, 0, tzinfo=local_tz).isoformat(),
+                "duration_seconds": 7200.0,  # 11:00-13:00 (1h overlap with prior)
+                "statistics": {
+                    "time_breakdown": {
+                        "total_model_time_seconds": 600.0,
+                        "total_tool_time_seconds": 0.0,
+                        "total_user_time_seconds": 0.0,
+                        "total_inactive_time_seconds": 0.0,
+                    }
+                },
+            },
+        ]
+
+        coverage = SessionService._compute_day_night_role_coverage(rows, "2026-02-01", "2026-02-01")
+        assert coverage["coverage_total_window_seconds"] == pytest.approx(86400.0)
+        assert coverage["coverage_day_window_seconds"] + coverage[
+            "coverage_night_window_seconds"
+        ] == pytest.approx(86400.0)
+        # Union of [10:00,12:00] and [11:00,13:00] = 3 hours.
+        assert coverage["day_model_coverage_seconds"] == pytest.approx(10800.0)
+        assert coverage["night_model_coverage_seconds"] == pytest.approx(0.0)
+        assert coverage["day_model_coverage_seconds"] <= coverage["coverage_day_window_seconds"]
 
     @pytest.mark.asyncio
     async def test_analytics_overview_leverage_invalid_payload_fallback(

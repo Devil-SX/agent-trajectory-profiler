@@ -346,6 +346,41 @@
   font-size: 0.84rem;
 }
 
+.day-night-explain {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+}
+
+.day-night-ratio-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.day-night-ratio-label {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.day-night-ratio-toggle button {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.day-night-ratio-toggle button.active {
+  background: rgb(37 99 235 / 12%);
+  color: #1d4ed8;
+  border-color: rgb(37 99 235 / 40%);
+}
+
 .day-night-summary {
   margin: 0;
   color: var(--color-text-primary);
@@ -365,6 +400,21 @@
 }
 
 .day-night-table td:first-child {
+  font-weight: 600;
+}
+
+.day-night-coverage-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.88rem;
+}
+
+.day-night-coverage-note {
+  margin: 0 0 0.5rem;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+}
+
+.day-night-coverage-table td:first-child {
   font-weight: 600;
 }
 

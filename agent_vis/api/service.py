@@ -682,6 +682,7 @@ class SessionService:
     ) -> AnalyticsOverviewResponse:
         """Compute cross-session overview metrics for a date range."""
         rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
+        coverage = self._compute_day_night_role_coverage(rows, start_date, end_date)
         total_sessions = len(rows)
 
         if total_sessions == 0:
@@ -745,6 +746,15 @@ class SessionService:
                 night_tool_time_seconds=0.0,
                 night_user_time_seconds=0.0,
                 night_inactive_time_seconds=0.0,
+                coverage_total_window_seconds=float(coverage["coverage_total_window_seconds"]),
+                coverage_day_window_seconds=float(coverage["coverage_day_window_seconds"]),
+                coverage_night_window_seconds=float(coverage["coverage_night_window_seconds"]),
+                day_model_coverage_seconds=float(coverage["day_model_coverage_seconds"]),
+                day_tool_coverage_seconds=float(coverage["day_tool_coverage_seconds"]),
+                day_user_coverage_seconds=float(coverage["day_user_coverage_seconds"]),
+                night_model_coverage_seconds=float(coverage["night_model_coverage_seconds"]),
+                night_tool_coverage_seconds=float(coverage["night_tool_coverage_seconds"]),
+                night_user_coverage_seconds=float(coverage["night_user_coverage_seconds"]),
                 active_time_ratio=0.0,
                 model_timeout_count=0,
                 source_breakdown=[],
@@ -825,6 +835,15 @@ class SessionService:
                 night_tool_time_seconds=0.0,
                 night_user_time_seconds=0.0,
                 night_inactive_time_seconds=0.0,
+                coverage_total_window_seconds=float(coverage["coverage_total_window_seconds"]),
+                coverage_day_window_seconds=float(coverage["coverage_day_window_seconds"]),
+                coverage_night_window_seconds=float(coverage["coverage_night_window_seconds"]),
+                day_model_coverage_seconds=float(coverage["day_model_coverage_seconds"]),
+                day_tool_coverage_seconds=float(coverage["day_tool_coverage_seconds"]),
+                day_user_coverage_seconds=float(coverage["day_user_coverage_seconds"]),
+                night_model_coverage_seconds=float(coverage["night_model_coverage_seconds"]),
+                night_tool_coverage_seconds=float(coverage["night_tool_coverage_seconds"]),
+                night_user_coverage_seconds=float(coverage["night_user_coverage_seconds"]),
                 active_time_ratio=0.0,
                 model_timeout_count=0,
                 source_breakdown=[],
@@ -1390,6 +1409,15 @@ class SessionService:
             night_tool_time_seconds=night_tool_time_seconds,
             night_user_time_seconds=night_user_time_seconds,
             night_inactive_time_seconds=night_inactive_time_seconds,
+            coverage_total_window_seconds=float(coverage["coverage_total_window_seconds"]),
+            coverage_day_window_seconds=float(coverage["coverage_day_window_seconds"]),
+            coverage_night_window_seconds=float(coverage["coverage_night_window_seconds"]),
+            day_model_coverage_seconds=float(coverage["day_model_coverage_seconds"]),
+            day_tool_coverage_seconds=float(coverage["day_tool_coverage_seconds"]),
+            day_user_coverage_seconds=float(coverage["day_user_coverage_seconds"]),
+            night_model_coverage_seconds=float(coverage["night_model_coverage_seconds"]),
+            night_tool_coverage_seconds=float(coverage["night_tool_coverage_seconds"]),
+            night_user_coverage_seconds=float(coverage["night_user_coverage_seconds"]),
             active_time_ratio=active_time_ratio,
             model_timeout_count=model_timeout_count,
             source_breakdown=source_breakdown,
@@ -1473,6 +1501,15 @@ class SessionService:
             night_tool_time_seconds=night_tool_time_seconds,
             night_user_time_seconds=night_user_time_seconds,
             night_inactive_time_seconds=night_inactive_time_seconds,
+            coverage_total_window_seconds=float(coverage["coverage_total_window_seconds"]),
+            coverage_day_window_seconds=float(coverage["coverage_day_window_seconds"]),
+            coverage_night_window_seconds=float(coverage["coverage_night_window_seconds"]),
+            day_model_coverage_seconds=float(coverage["day_model_coverage_seconds"]),
+            day_tool_coverage_seconds=float(coverage["day_tool_coverage_seconds"]),
+            day_user_coverage_seconds=float(coverage["day_user_coverage_seconds"]),
+            night_model_coverage_seconds=float(coverage["night_model_coverage_seconds"]),
+            night_tool_coverage_seconds=float(coverage["night_tool_coverage_seconds"]),
+            night_user_coverage_seconds=float(coverage["night_user_coverage_seconds"]),
             active_time_ratio=active_time_ratio,
             model_timeout_count=model_timeout_count,
             source_breakdown=source_breakdown,
@@ -2125,6 +2162,134 @@ class SessionService:
             remaining -= segment
 
         return (day_seconds, night_seconds)
+
+    @staticmethod
+    def _analysis_window_bounds(start_date: str, end_date: str) -> tuple[datetime, datetime]:
+        """Build local-time inclusive date window [start, end+1day)."""
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        start = datetime.fromisoformat(start_date).replace(tzinfo=local_tz)
+        end = (datetime.fromisoformat(end_date) + timedelta(days=1)).replace(tzinfo=local_tz)
+        return start, end
+
+    @staticmethod
+    def _clip_interval_to_window(
+        start_at: datetime,
+        end_at: datetime,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> tuple[datetime, datetime] | None:
+        clipped_start = max(start_at, window_start)
+        clipped_end = min(end_at, window_end)
+        if clipped_end <= clipped_start:
+            return None
+        return clipped_start, clipped_end
+
+    @staticmethod
+    def _merge_intervals(
+        intervals: list[tuple[datetime, datetime]],
+    ) -> list[tuple[datetime, datetime]]:
+        if not intervals:
+            return []
+        ordered = sorted(intervals, key=lambda item: item[0])
+        merged: list[tuple[datetime, datetime]] = [ordered[0]]
+        for start_at, end_at in ordered[1:]:
+            last_start, last_end = merged[-1]
+            if start_at <= last_end:
+                merged[-1] = (last_start, max(last_end, end_at))
+            else:
+                merged.append((start_at, end_at))
+        return merged
+
+    @classmethod
+    def _compute_day_night_role_coverage(
+        cls,
+        rows: list[dict[str, Any]],
+        start_date: str,
+        end_date: str,
+    ) -> dict[str, float]:
+        """
+        Compute OR-union wall-clock coverage for model/tool/user by day/night windows.
+
+        Coverage is interval-union based and clipped to selected [start_date, end_date].
+        Since per-event role intervals are not persisted in analytics rows, this uses
+        session-span approximation when a role has non-zero time in a session.
+        """
+        window_start, window_end = cls._analysis_window_bounds(start_date, end_date)
+        coverage_window_seconds = max(0.0, (window_end - window_start).total_seconds())
+        coverage_day_window_seconds, coverage_night_window_seconds = cls._split_day_night_span(
+            window_start, coverage_window_seconds
+        )
+
+        role_intervals: dict[str, list[tuple[datetime, datetime]]] = {
+            "model": [],
+            "tool": [],
+            "user": [],
+        }
+
+        for row in rows:
+            created_at = cls._parse_created_datetime(row.get("created_at"))
+            if created_at is None:
+                continue
+
+            stats = row.get("statistics") or {}
+            time_breakdown = stats.get("time_breakdown") or {}
+            span_seconds = float(row.get("duration_seconds") or 0.0)
+            component_span = (
+                float(time_breakdown.get("total_model_time_seconds") or 0.0)
+                + float(time_breakdown.get("total_tool_time_seconds") or 0.0)
+                + float(time_breakdown.get("total_user_time_seconds") or 0.0)
+                + float(time_breakdown.get("total_inactive_time_seconds") or 0.0)
+            )
+            if span_seconds <= 0 and component_span > 0:
+                span_seconds = component_span
+            if span_seconds <= 0:
+                continue
+
+            interval_start = created_at
+            interval_end = created_at + timedelta(seconds=span_seconds)
+            clipped = cls._clip_interval_to_window(
+                interval_start, interval_end, window_start, window_end
+            )
+            if clipped is None:
+                continue
+
+            if float(time_breakdown.get("total_model_time_seconds") or 0.0) > 0:
+                role_intervals["model"].append(clipped)
+            if float(time_breakdown.get("total_tool_time_seconds") or 0.0) > 0:
+                role_intervals["tool"].append(clipped)
+            if float(time_breakdown.get("total_user_time_seconds") or 0.0) > 0:
+                role_intervals["user"].append(clipped)
+
+        coverage: dict[str, float] = {
+            "coverage_total_window_seconds": coverage_window_seconds,
+            "coverage_day_window_seconds": coverage_day_window_seconds,
+            "coverage_night_window_seconds": coverage_night_window_seconds,
+            "day_model_coverage_seconds": 0.0,
+            "day_tool_coverage_seconds": 0.0,
+            "day_user_coverage_seconds": 0.0,
+            "night_model_coverage_seconds": 0.0,
+            "night_tool_coverage_seconds": 0.0,
+            "night_user_coverage_seconds": 0.0,
+        }
+
+        for role in ("model", "tool", "user"):
+            merged = cls._merge_intervals(role_intervals[role])
+            day_seconds = 0.0
+            night_seconds = 0.0
+            for interval_start, interval_end in merged:
+                duration = max(0.0, (interval_end - interval_start).total_seconds())
+                if duration <= 0:
+                    continue
+                day_slice, night_slice = cls._split_day_night_span(interval_start, duration)
+                day_seconds += day_slice
+                night_seconds += night_slice
+
+            coverage[f"day_{role}_coverage_seconds"] = min(day_seconds, coverage_day_window_seconds)
+            coverage[f"night_{role}_coverage_seconds"] = min(
+                night_seconds, coverage_night_window_seconds
+            )
+
+        return coverage
 
     @staticmethod
     def _parse_created_date(created_at: Any) -> date | None:

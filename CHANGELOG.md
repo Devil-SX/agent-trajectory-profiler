@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Local privacy-preserving Codex regression smoke test that can target a developer-provided real rollout fixture via `AGENT_VIS_PRIVATE_CODEX_CASE`, while skipping safely in CI when no private fixture is present.
 - Codex full-coverage regression guard for observed event families (`session_meta`, top-level `turn_context/compacted`, expanded `event_msg:*`, and `response_item:*` including `web_search_call`) to prevent implicit parser drift.
 - Codex/web-search regression coverage for status-aware tool error annotations, including result-only tool records without prior `tool_use` blocks.
+- Day/Night wall-clock coverage metrics (OR-union semantics) in analytics overview payloads, including day/night window seconds and per-role coverage seconds (`model/tool/user`) bounded to physical window limits.
 
 ### Changed
 
@@ -21,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Codex tool-result normalization now preserves structured output payloads and applies deterministic large-payload guardrails (summary/truncation blocks with `raw_ref`) to prevent DB/UI overload.
 - Codex session-id resolution now prefers `session_meta.payload.id` from raw source scanning over first-mapped-message fallback, improving identity stability when event order varies.
 - Tool error timeline payloads now include optional `tool_call_id`, concise `summary`, and bounded `detail_snippet` fields alongside existing preview/detail text.
+- Cross-session Day/Night UI now keeps existing summed-duration view and adds explicit ratio-denominator toggle (include vs exclude inactive) that updates chart/table percentage semantics consistently, plus a dedicated coverage table with explainability text.
 
 ### Fixed
 

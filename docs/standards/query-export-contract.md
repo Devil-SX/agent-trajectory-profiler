@@ -62,6 +62,14 @@ Aggregated quantitative metrics over one session or across many sessions.
 | `control_plane` | `ControlPlaneOverview` | ingestion/sync state |
 | `runtime_plane` | `RuntimePlaneOverview` | behavior/runtime state |
 
+Day/Night dual semantics (additive contract):
+
+- summed-duration view (existing): `day_*_time_seconds` / `night_*_time_seconds`
+- wall-clock coverage view (OR-union, bounded): `*_coverage_seconds` with
+  `coverage_day_window_seconds` / `coverage_night_window_seconds` denominators
+- coverage values are capped to window bounds (`0..window_seconds`) and intended for
+  percentage rendering in UI coverage tables
+
 ## 3.3 Existing Endpoints
 
 - `GET /api/analytics/overview`
