@@ -26,6 +26,7 @@ import {
 import { useCapabilitiesQuery, useSessionStatisticsQuery } from '../hooks/useSessionsQuery';
 import type { SessionStatistics } from '../types/session';
 import { formatTokenCount } from '../utils/tokenFormat';
+import { formatTokenAxisTick, formatTokenWithRawValue } from '../utils/chartFormatters';
 import {
   buildCapabilityIndex,
   buildSessionStatisticsViewModel,
@@ -59,7 +60,7 @@ function formatNumber(num: number): string {
 }
 
 function formatTokenWithFull(num: number): string {
-  return `${formatTokenCount(num)} (${formatNumber(num)})`;
+  return formatTokenWithRawValue(num, formatNumber);
 }
 
 function formatDuration(seconds: number | null): string {
@@ -487,7 +488,7 @@ export function StatisticsDashboard({ sessionId, ecosystem = null }: StatisticsD
                 <BarChart data={toolTokenData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" angle={-45} textAnchor="end" height={90} />
-                  <YAxis />
+                  <YAxis tickFormatter={formatTokenAxisTick} />
                   <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
                   <Legend />
                   <Bar dataKey="tokens" fill={COLORS[2]} name="Total Tokens" />

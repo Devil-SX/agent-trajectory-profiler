@@ -20,6 +20,11 @@ import {
 } from 'recharts';
 import type { SessionStatistics } from '../types/session';
 import { formatTokenCount } from '../utils/tokenFormat';
+import {
+  createTimeAxisTickFormatter,
+  formatTokenAxisTick,
+  formatTokenWithRawValue,
+} from '../utils/chartFormatters';
 import './MetricComparison.css';
 
 interface MetricComparisonProps {
@@ -114,6 +119,9 @@ export function MetricComparison({
   const durationB = statisticsB.session_duration_seconds;
   const durationDiff =
     durationA && durationB ? calculateDiff(durationA, durationB) : { value: 0, percent: 0, isLarge: false };
+  const durationAxisTickFormatter = createTimeAxisTickFormatter(
+    Math.max(Math.abs(durationA ?? 0), Math.abs(durationB ?? 0))
+  );
 
   const bottleneckA = getBottleneckType(statisticsA);
   const bottleneckB = getBottleneckType(statisticsB);
@@ -147,10 +155,10 @@ export function MetricComparison({
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" />
-            <YAxis />
+            <YAxis tickFormatter={formatTokenAxisTick} />
             <Tooltip
               formatter={(value: number | undefined) =>
-                value !== undefined ? `${formatTokenCount(value)} (${value.toLocaleString()})` : 'N/A'
+                value !== undefined ? formatTokenWithRawValue(value) : 'N/A'
               }
             />
             <Bar dataKey="tokens" fill="#3b82f6" />
@@ -221,10 +229,12 @@ export function MetricComparison({
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" />
-                <YAxis />
+                <YAxis tickFormatter={durationAxisTickFormatter} />
                 <Tooltip
                   formatter={(value: number | undefined) =>
-                    value !== undefined ? `${(value / 60).toFixed(1)} min` : 'N/A'
+                    value !== undefined
+                      ? `${durationAxisTickFormatter(value)} (${formatDuration(value)})`
+                      : 'N/A'
                   }
                 />
                 <Bar dataKey="duration" fill="#f59e0b" />

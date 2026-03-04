@@ -36,6 +36,7 @@ import {
   downloadFiles,
 } from '../utils/exportData';
 import { formatTokenCount } from '../utils/tokenFormat';
+import { formatTokenAxisTick, formatTokenWithRawValue } from '../utils/chartFormatters';
 import type { ExportConfig } from '../types/analytics';
 import { useI18n } from '../i18n';
 
@@ -155,7 +156,7 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
   }
 
   const formatTokenWithFull = (num: number): string =>
-    `${formatTokenCount(num)} (${formatNumber(num)})`;
+    formatTokenWithRawValue(num, formatNumber);
 
   return (
     <div className="advanced-analytics">
@@ -272,7 +273,7 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
               <AreaChart data={heatmapData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
-                <YAxis />
+                <YAxis tickFormatter={formatTokenAxisTick} />
                 <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
                 <Legend />
                 <Area type="monotone" dataKey="input" stackId="1" stroke="#1976d2" fill="#1976d2" name="Input" />
@@ -290,7 +291,7 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
                 <BarChart data={expensiveOpsData} layout="horizontal">
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                  <YAxis />
+                  <YAxis tickFormatter={formatTokenAxisTick} />
                   <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
                   <Legend />
                   <Bar dataKey="tokens" fill="#d32f2f" name="Tokens" />

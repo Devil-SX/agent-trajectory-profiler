@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Frontend chart axis formatting is now unified through shared utilities: token axes use compact `K/M/B` ticks, time axes auto-scale to `min/hour/day`, and related tooltips now follow the same compact-vs-raw semantics across Cross-Session, Advanced Analytics, Statistics, and Metric Comparison charts.
 - Codex canonical coverage policy now classifies non-message-consumed event kinds as `stored_not_used_yet` with explicit diagnostics (`policy_drop_counts`) instead of generic unmapped drops.
 - Codex adapter now ingests top-level `turn_context` and `compacted` into canonical events, preserving these raw payloads for future APIs while keeping current message-level behavior stable.
 - Codex ecosystem and canonical schema docs now explicitly define `supported / stored_not_used_yet / ignored_expected` event-policy semantics.

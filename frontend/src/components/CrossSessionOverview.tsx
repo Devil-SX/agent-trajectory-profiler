@@ -28,6 +28,11 @@ import {
   deriveCapabilityNotices,
   getEcosystemPresentation,
 } from '../utils/contractViewModel';
+import {
+  createTimeAxisTickFormatter,
+  formatTokenAxisTick,
+  formatTokenWithRawValue,
+} from '../utils/chartFormatters';
 import { truncateMiddle } from '../utils/display';
 import { useI18n } from '../i18n';
 import { MetricTerm } from './MetricHelp';
@@ -203,7 +208,7 @@ export function CrossSessionOverview() {
   const formatPercentPoint = (value: number): string => formatPercent(value, 1);
   const formatPercentRatio = (value: number): string => formatPercent(value / 100, 1);
   const formatTokenTooltip = (value: number): string =>
-    `${formatTokenCount(value)} (${formatNumber(value)})`;
+    formatTokenWithRawValue(value, formatNumber);
 
   const { data: overview, isLoading: overviewLoading, error: overviewError } =
     useAnalyticsOverviewQuery(activeRange.startDate, activeRange.endDate, ecosystemFilter);
@@ -759,6 +764,25 @@ export function CrossSessionOverview() {
   const ganttMaxTokens = ganttRows.length > 0
     ? Math.max(...ganttRows.flatMap((row) => row.segments.map((segment) => segment.totalTokens)))
     : 0;
+  const roleSourceAxisMax = roleSourceTableRows.reduce(
+    (maxValue, row) => Math.max(maxValue, Math.abs(row.value)),
+    0
+  );
+  const roleSourceTimeTickFormatter = createTimeAxisTickFormatter(roleSourceAxisMax);
+  const dayNightAxisMax = dayNightRows.reduce(
+    (maxValue, row) =>
+      Math.max(
+        maxValue,
+        Math.abs(row.model),
+        Math.abs(row.tool),
+        Math.abs(row.user),
+        Math.abs(row.inactive),
+        Math.abs(row.total),
+        Math.abs(row.ratioDenominator)
+      ),
+    0
+  );
+  const dayNightTimeTickFormatter = createTimeAxisTickFormatter(dayNightAxisMax);
 
   const toggleProjectSelection = (projectPath: string) => {
     setProjectSelection((prev) => {
@@ -1195,14 +1219,24 @@ export function CrossSessionOverview() {
             <p className="empty-hint" data-testid="role-source-empty">{t('cross.roleSource.empty')}</p>
           ) : (
             <div className="role-source-layout">
-              <div className="role-source-chart">
+              <div className="role-source-chart" data-testid="role-source-chart">
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart
                     data={roleSourceView === 'source' ? roleSourceBySource : roleSourceByRole}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey={roleSourceView === 'source' ? 'label' : 'roleLabel'} />
-                    <YAxis />
+                    <YAxis
+                      tickFormatter={(value) => {
+                        if (roleSourceMetric === 'tokens') {
+                          return formatTokenAxisTick(value);
+                        }
+                        if (roleSourceMetric === 'time') {
+                          return roleSourceTimeTickFormatter(value);
+                        }
+                        return formatNumber(Number(value));
+                      }}
+                    />
                     <Tooltip
                       formatter={(value) => {
                         const numeric = Number(value ?? 0);
@@ -1210,7 +1244,7 @@ export function CrossSessionOverview() {
                           return formatTokenTooltip(numeric);
                         }
                         if (roleSourceMetric === 'time') {
-                          return formatDuration(numeric);
+                          return `${roleSourceTimeTickFormatter(numeric)} (${formatDuration(numeric)})`;
                         }
                         return formatNumber(numeric);
                       }}
@@ -1297,7 +1331,7 @@ export function CrossSessionOverview() {
               <BarChart data={sourceBreakdownDisplay}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" />
-                <YAxis />
+                <YAxis tickFormatter={formatTokenAxisTick} />
                 <Tooltip
                   formatter={(value, name) => {
                     const numeric = Number(value);
@@ -1391,7 +1425,7 @@ export function CrossSessionOverview() {
                         value === 'Day' ? t('cross.period.day') : t('cross.period.night')
                       }
                     />
-                    <YAxis />
+                    <YAxis tickFormatter={dayNightTimeTickFormatter} />
                     <Tooltip
                       formatter={(value, name, item) => {
                         const numeric = Number(value);
@@ -1682,8 +1716,8 @@ export function CrossSessionOverview() {
             <AreaChart data={timeseries.points}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="period" />
-              <YAxis yAxisId="left" />
-              <YAxis yAxisId="right" orientation="right" />
+              <YAxis yAxisId="left" tickFormatter={(value) => formatNumber(Number(value))} />
+              <YAxis yAxisId="right" orientation="right" tickFormatter={formatTokenAxisTick} />
               <Tooltip
                 formatter={(value, name) => {
                   const numeric = Number(value);
