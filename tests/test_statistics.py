@@ -416,8 +416,11 @@ class TestCalculateSessionStatistics:
         assert len(stats.tool_error_records) == 1
         first_error = stats.tool_error_records[0]
         assert first_error.tool_name == "Edit"
+        assert first_error.tool_call_id == "tool-edit-1"
         assert first_error.category == "file_not_found"
         assert first_error.matched_rule == "file_not_found"
+        assert first_error.summary is not None
+        assert first_error.detail_snippet is not None
         assert "string not found" in first_error.detail
         assert stats.tool_error_category_counts == {"file_not_found": 1}
 
@@ -472,6 +475,45 @@ class TestCalculateSessionStatistics:
         assert stats.tool_error_records[0].category == UNCATEGORIZED_ERROR
         assert stats.tool_error_records[0].matched_rule is None
         assert stats.tool_error_category_counts == {UNCATEGORIZED_ERROR: 1}
+
+    def test_tool_result_without_tool_use_still_records_error_metadata(
+        self, temp_session_dir: Path
+    ) -> None:
+        """Result-only tool records should still feed error timeline annotations."""
+        file_path = temp_session_dir / "result-only-error.jsonl"
+        messages = [
+            {
+                "type": "user",
+                "sessionId": "session-result-only",
+                "uuid": "msg-1",
+                "timestamp": "2026-02-03T13:15:17.231Z",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "web-search-1",
+                            "tool_name": "web_search_call",
+                            "content": "web_search failed: timeout",
+                            "is_error": True,
+                        }
+                    ],
+                },
+            }
+        ]
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in messages:
+                f.write(json.dumps(data) + "\n")
+
+        parsed = parse_jsonl_file(file_path)
+        stats = calculate_session_statistics(parsed)
+
+        assert stats.total_tool_calls == 1
+        assert len(stats.tool_calls) == 1
+        assert stats.tool_calls[0].tool_name == "web_search_call"
+        assert stats.tool_calls[0].error_count == 1
+        assert len(stats.tool_error_records) == 1
+        assert stats.tool_error_records[0].tool_call_id == "web-search-1"
 
     def test_user_yield_ratio_zero_denominator(self, temp_session_dir: Path) -> None:
         """Yield ratios should be None when denominator inputs are absent."""

@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Local privacy-preserving Codex regression smoke test that can target a developer-provided real rollout fixture via `AGENT_VIS_PRIVATE_CODEX_CASE`, while skipping safely in CI when no private fixture is present.
 - Codex full-coverage regression guard for observed event families (`session_meta`, top-level `turn_context/compacted`, expanded `event_msg:*`, and `response_item:*` including `web_search_call`) to prevent implicit parser drift.
+- Codex/web-search regression coverage for status-aware tool error annotations, including result-only tool records without prior `tool_use` blocks.
 
 ### Changed
 
@@ -19,11 +20,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Codex `response_item.message.role` mapping now preserves non-enum source roles (for example `developer`) via explicit compatibility metadata (`userType=source_role:*`) instead of silent coercion.
 - Codex tool-result normalization now preserves structured output payloads and applies deterministic large-payload guardrails (summary/truncation blocks with `raw_ref`) to prevent DB/UI overload.
 - Codex session-id resolution now prefers `session_meta.payload.id` from raw source scanning over first-mapped-message fallback, improving identity stability when event order varies.
+- Tool error timeline payloads now include optional `tool_call_id`, concise `summary`, and bounded `detail_snippet` fields alongside existing preview/detail text.
 
 ### Fixed
 
 - Codex lineage resolution now detects nested thread-spawn ancestry from `session_meta.payload.source.subagent.thread_spawn` (`parent_thread_id`/`root_thread_id`) so logical session aggregation no longer collapses to physical-only when nested lineage exists.
 - Added parser and API integration regression coverage for nested lineage extraction to verify `view=logical` and `view=physical` diverge correctly on spawned-subagent datasets.
+- Codex tool error extraction now detects non-regex textual failures and structured status/error indicators, and maps `response_item:web_search_call` status signals into tool-result annotations to reduce missed failures.
 
 ## [1.2.0] - 2026-03-04
 

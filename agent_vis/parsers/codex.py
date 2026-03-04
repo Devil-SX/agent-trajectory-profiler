@@ -35,6 +35,19 @@ _UUID_TAIL_RE = re.compile(
     re.IGNORECASE,
 )
 _EXIT_CODE_RE = re.compile(r"Process exited with code\s+(-?\d+)")
+_STATUS_FIELD_RE = re.compile(r"\b(?:status|state|outcome)\s*[:=]\s*([a-zA-Z0-9_\- ]+)")
+_TEXTUAL_ERROR_SIGNATURE_RE = re.compile(
+    r"\b("
+    r"traceback|exception|error|fatal|command failed|failed to|failure|"
+    r"non[- ]zero exit|permission denied|not found|timed out|timeout|"
+    r"unauthorized|forbidden|connection refused"
+    r")\b",
+    re.IGNORECASE,
+)
+_TEXTUAL_SUCCESS_HINT_RE = re.compile(
+    r"\b(" r"no errors?|without errors?|0 errors?|success|succeeded|completed successfully" r")\b",
+    re.IGNORECASE,
+)
 _PARENT_ID_KEYS = (
     "parent_session_id",
     "parent_thread_id",
@@ -57,6 +70,53 @@ _TOOL_RESULT_PREVIEW_CHARS = 1_000
 _STATUS_SUPPORTED = "supported"
 _STATUS_STORED_NOT_USED_YET = "stored_not_used_yet"
 _STATUS_IGNORED_EXPECTED = "ignored_expected"
+_ERROR_STATUS_VALUES = {
+    "error",
+    "errored",
+    "failed",
+    "failure",
+    "timeout",
+    "timed_out",
+    "cancelled",
+    "canceled",
+    "aborted",
+    "denied",
+}
+_SUCCESS_STATUS_VALUES = {
+    "ok",
+    "done",
+    "success",
+    "succeeded",
+    "completed",
+    "complete",
+    "finished",
+}
+_NON_TERMINAL_STATUS_VALUES = {
+    "queued",
+    "pending",
+    "running",
+    "in_progress",
+    "started",
+    "searching",
+}
+_STRUCTURED_EXIT_CODE_KEYS = ("exit_code", "exitCode", "return_code", "returnCode")
+_STRUCTURED_STATUS_CODE_KEYS = ("status_code", "statusCode", "http_status", "httpStatus")
+_STRUCTURED_STATUS_KEYS = ("status", "state", "outcome", "result_status")
+_STRUCTURED_BOOL_ERROR_KEYS = ("is_error", "error", "failed")
+_STRUCTURED_BOOL_SUCCESS_KEYS = ("ok", "success")
+_STRUCTURED_TEXT_ERROR_KEYS = (
+    "error",
+    "error_message",
+    "message",
+    "stderr",
+    "exception",
+    "traceback",
+    "detail",
+    "failure_reason",
+)
+_WEB_SEARCH_CALL_ID_KEYS = ("call_id", "id", "tool_call_id", "request_id")
+_WEB_SEARCH_STATUS_KEYS = ("status", "state", "outcome", "result_status")
+_WEB_SEARCH_TOOL_NAME = "web_search_call"
 
 logger = logging.getLogger(__name__)
 
@@ -134,8 +194,8 @@ CODEX_EVENT_COVERAGE_MATRIX: dict[str, dict[str, str]] = {
         "behavior": "maps to user tool_result block",
     },
     "response_item:web_search_call": {
-        "status": _STATUS_STORED_NOT_USED_YET,
-        "behavior": "retained as canonical event; currently excluded from message mapping",
+        "status": _STATUS_SUPPORTED,
+        "behavior": "maps status-aware web_search tool_result block for analytics annotations",
     },
     "response_item:reasoning": {
         "status": _STATUS_STORED_NOT_USED_YET,
@@ -501,26 +561,197 @@ def _normalize_tool_output_content(raw_output: Any) -> str | list[dict[str, Any]
     ]
 
 
+def _normalize_status_token(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    return normalized.replace("-", "_").replace(" ", "_")
+
+
+def _status_indicates_error(status: Any) -> bool | None:
+    normalized = _normalize_status_token(status)
+    if normalized is None:
+        return None
+    if normalized in _ERROR_STATUS_VALUES:
+        return True
+    if normalized in _SUCCESS_STATUS_VALUES or normalized in _NON_TERMINAL_STATUS_VALUES:
+        return False
+    if any(token in normalized for token in ("fail", "error", "timeout", "cancel", "deny")):
+        return True
+    return None
+
+
+def _is_non_terminal_status(status: Any) -> bool:
+    normalized = _normalize_status_token(status)
+    return normalized in _NON_TERMINAL_STATUS_VALUES if normalized else False
+
+
+def _detect_error_from_text_output(text: str) -> bool | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    exit_match = _EXIT_CODE_RE.search(stripped)
+    if exit_match is not None:
+        return int(exit_match.group(1)) != 0
+
+    status_match = _STATUS_FIELD_RE.search(stripped)
+    if status_match is not None:
+        status_detected = _status_indicates_error(status_match.group(1))
+        if status_detected is not None:
+            return status_detected
+
+    has_error_signature = _TEXTUAL_ERROR_SIGNATURE_RE.search(stripped) is not None
+    has_success_hint = _TEXTUAL_SUCCESS_HINT_RE.search(stripped) is not None
+    if has_error_signature and not has_success_hint:
+        return True
+    if has_success_hint and not has_error_signature:
+        return False
+    return None
+
+
 def _detect_error_from_structured_output(raw_output: Any) -> bool | None:
     if isinstance(raw_output, dict):
-        exit_code = raw_output.get("exit_code")
-        if isinstance(exit_code, int):
-            return exit_code != 0
-        is_error = raw_output.get("is_error")
-        if isinstance(is_error, bool):
-            return is_error
-        status = raw_output.get("status")
-        if isinstance(status, str) and status.lower() in {"error", "failed", "failure"}:
-            return True
-        error_field = raw_output.get("error")
-        if isinstance(error_field, str) and error_field.strip():
-            return True
+        saw_explicit_success = False
+
+        for key in _STRUCTURED_EXIT_CODE_KEYS:
+            exit_code = raw_output.get(key)
+            if isinstance(exit_code, int):
+                return exit_code != 0
+
+        for key in _STRUCTURED_STATUS_CODE_KEYS:
+            status_code = raw_output.get(key)
+            if isinstance(status_code, int):
+                return status_code >= 400
+            if isinstance(status_code, str) and status_code.strip().isdigit():
+                return int(status_code.strip()) >= 400
+
+        for key in _STRUCTURED_BOOL_ERROR_KEYS:
+            value = raw_output.get(key)
+            if isinstance(value, bool):
+                if value:
+                    return True
+                saw_explicit_success = True
+            elif key == "error" and isinstance(value, str) and value.strip():
+                detected = _detect_error_from_text_output(value)
+                if detected is not None:
+                    return detected
+                return True
+
+        for key in _STRUCTURED_BOOL_SUCCESS_KEYS:
+            value = raw_output.get(key)
+            if isinstance(value, bool):
+                return not value
+
+        for key in _STRUCTURED_STATUS_KEYS:
+            status_detected = _status_indicates_error(raw_output.get(key))
+            if status_detected is not None:
+                return status_detected
+
+        for key in _STRUCTURED_TEXT_ERROR_KEYS:
+            value = raw_output.get(key)
+            if isinstance(value, str):
+                detected = _detect_error_from_text_output(value)
+                if detected is not None:
+                    return detected
+                if key in {"error", "exception", "traceback", "failure_reason"} and value.strip():
+                    return True
+            elif isinstance(value, (dict, list)):
+                detected = _detect_error_from_structured_output(value)
+                if detected is not None:
+                    return detected
+                if key in {"error", "exception", "traceback"} and value:
+                    return True
+
+        for value in raw_output.values():
+            detected = _detect_error_from_structured_output(value)
+            if detected is True:
+                return True
+            if detected is False:
+                saw_explicit_success = True
+
+        if saw_explicit_success:
+            return False
+        return None
+
     if isinstance(raw_output, list):
+        saw_explicit_success = False
         for item in raw_output:
             detected = _detect_error_from_structured_output(item)
-            if detected is not None:
-                return detected
+            if detected is True:
+                return True
+            if detected is False:
+                saw_explicit_success = True
+        if saw_explicit_success:
+            return False
+        return None
+
+    if isinstance(raw_output, str):
+        return _detect_error_from_text_output(raw_output)
+
     return None
+
+
+def _parse_json_if_possible(raw_output: Any) -> Any | None:
+    if not isinstance(raw_output, str):
+        return None
+    stripped = raw_output.strip()
+    if not stripped or stripped[0] not in {"{", "["}:
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+
+
+def _resolve_response_item_call_id(payload_dict: dict[str, Any], session_id: str, line: int) -> str:
+    call_id = _extract_non_empty_str(payload_dict, ("call_id", "id", "tool_call_id"))
+    if call_id:
+        return call_id
+    return f"{session_id}-result-{line}"
+
+
+def _resolve_web_search_call_id(payload_dict: dict[str, Any], session_id: str, line: int) -> str:
+    call_id = _extract_non_empty_str(payload_dict, _WEB_SEARCH_CALL_ID_KEYS)
+    if call_id:
+        return call_id
+    return f"{session_id}-web-search-{line}"
+
+
+def _build_web_search_output_payload(payload_dict: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {"type": "web_search_call"}
+    for key in ("query", "status", "state", "outcome", "result_status", "message", "summary"):
+        value = payload_dict.get(key)
+        if isinstance(value, str) and value.strip():
+            payload[key] = value.strip()
+
+    error_value = payload_dict.get("error")
+    if isinstance(error_value, (str, dict, list)) and error_value:
+        payload["error"] = error_value
+
+    results = payload_dict.get("results")
+    if isinstance(results, list):
+        payload["result_count"] = len(results)
+
+    return payload
+
+
+def _detect_web_search_error(payload_dict: dict[str, Any]) -> bool | None:
+    status = _extract_non_empty_str(payload_dict, _WEB_SEARCH_STATUS_KEYS)
+    if status is not None and _is_non_terminal_status(status):
+        return None
+
+    detected = _detect_error_from_structured_output(payload_dict)
+    if detected is not None:
+        return detected
+
+    status_detected = _status_indicates_error(status)
+    if status_detected is not None:
+        return status_detected
+
+    return False
 
 
 def _extract_session_id_from_file(file_path: Path) -> str | None:
@@ -748,70 +979,74 @@ class CodexEventAdapter(TrajectoryEventAdapter):
             )
 
         if item_type in {"function_call_output", "custom_tool_call_output"}:
-            call_id = (
-                payload_dict.get("call_id")
-                if isinstance(payload_dict.get("call_id"), str)
-                else f"{session_id}-result-{event.line_number}"
-            )
+            call_id = _resolve_response_item_call_id(payload_dict, session_id, event.line_number)
             raw_output = payload_dict.get("output")
-            is_error = False
+            parsed_output = _parse_json_if_possible(raw_output)
 
-            if item_type == "custom_tool_call_output" and isinstance(raw_output, str):
-                try:
-                    parsed_output = json.loads(raw_output)
-                except json.JSONDecodeError:
-                    parsed_output = None
-                if isinstance(parsed_output, dict):
-                    metadata = parsed_output.get("metadata")
-                    if isinstance(metadata, dict):
-                        exit_code = metadata.get("exit_code")
-                        if isinstance(exit_code, int):
-                            is_error = exit_code != 0
-                    inner_output = parsed_output.get("output")
-                    if inner_output is not None:
-                        raw_output = inner_output
-            else:
-                detected = _detect_error_from_structured_output(raw_output)
-                if detected is not None:
-                    is_error = detected
+            detection_source: Any = parsed_output if parsed_output is not None else raw_output
+            rendered_output: Any = raw_output
+            if item_type == "custom_tool_call_output" and isinstance(parsed_output, dict):
+                inner_output = parsed_output.get("output")
+                if inner_output is not None:
+                    rendered_output = inner_output
+                else:
+                    rendered_output = parsed_output
+            elif parsed_output is not None:
+                rendered_output = parsed_output
+
+            detected = _detect_error_from_structured_output(detection_source)
+            if detected is None and isinstance(raw_output, str):
+                detected = _detect_error_from_text_output(raw_output)
+            is_error = bool(detected) if detected is not None else False
 
             detection_text = (
-                raw_output if isinstance(raw_output, str) else _safe_json_dumps(raw_output)
+                rendered_output
+                if isinstance(rendered_output, str)
+                else _safe_json_dumps(rendered_output)
             )
-            if not is_error:
-                exit_match = _EXIT_CODE_RE.search(detection_text)
-                if exit_match is not None:
-                    is_error = int(exit_match.group(1)) != 0
-
-            output_content = _normalize_tool_output_content(raw_output)
-            if item_type == "custom_tool_call_output" and isinstance(raw_output, str):
-                try:
-                    parsed_output = json.loads(raw_output)
-                except json.JSONDecodeError:
-                    parsed_output = None
-                if isinstance(parsed_output, dict):
-                    inner_output = parsed_output.get("output")
-                    if inner_output is not None:
-                        output_content = _normalize_tool_output_content(inner_output)
+            output_content = _normalize_tool_output_content(rendered_output)
             if output_content == "" and detection_text:
                 output_content = detection_text
+
+            block: dict[str, Any] = {
+                "type": "tool_result",
+                "tool_use_id": call_id,
+                "content": output_content,
+                "is_error": is_error,
+            }
+            if isinstance(payload_dict.get("name"), str) and payload_dict["name"].strip():
+                block["tool_name"] = payload_dict["name"].strip()
 
             return _build_message_record(
                 session_id=session_id,
                 uuid=f"{call_id}-result",
                 timestamp=timestamp,
                 role="user",
+                content=[block],
+            )
+
+        if item_type == "web_search_call":
+            call_id = _resolve_web_search_call_id(payload_dict, session_id, event.line_number)
+            is_error = _detect_web_search_error(payload_dict)
+            output_payload = _build_web_search_output_payload(payload_dict)
+            output_content = _normalize_tool_output_content(output_payload)
+            return _build_message_record(
+                session_id=session_id,
+                uuid=f"{call_id}-web-search",
+                timestamp=timestamp,
+                role="user",
                 content=[
                     {
                         "type": "tool_result",
                         "tool_use_id": call_id,
+                        "tool_name": _WEB_SEARCH_TOOL_NAME,
                         "content": output_content,
                         "is_error": is_error,
                     }
                 ],
             )
 
-        if item_type in {"reasoning", "web_search_call"}:
+        if item_type == "reasoning":
             return None
 
         return None

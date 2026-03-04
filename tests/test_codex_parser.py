@@ -351,7 +351,7 @@ class TestCodexParser:
 
         messages, diagnostics = parse_codex_jsonl_file_with_diagnostics(rollout)
 
-        assert len(messages) == 9
+        assert len(messages) == 10
         assert diagnostics["raw_event_count"] == len(events)
         assert diagnostics["dropped_top_level_counts"] == {}
         assert diagnostics["unmapped_event_counts"] == {}
@@ -380,7 +380,6 @@ class TestCodexParser:
         assert observed_keys.issubset(set(diagnostics["coverage_matrix"].keys()))
         assert diagnostics["policy_drop_counts"]["turn_context"] == 1
         assert diagnostics["policy_drop_counts"]["compacted"] == 1
-        assert diagnostics["policy_drop_counts"]["response_item:web_search_call"] == 1
 
     def test_parse_codex_jsonl_file_preserves_developer_role_origin(self, tmp_path: Path) -> None:
         session_id = "77777777-7777-7777-7777-777777777777"
@@ -499,6 +498,132 @@ class TestCodexParser:
             isinstance(block, dict) and block.get("type") == "truncation_meta"
             for block in result_payload
         )
+
+    def test_parse_codex_jsonl_file_detects_textual_failure_signatures(
+        self, tmp_path: Path
+    ) -> None:
+        session_id = "99999999-9999-9999-9999-999999999997"
+        rollout = tmp_path / f"rollout-2026-03-01T15-30-00-{session_id}.jsonl"
+        textual_failure = "Traceback (most recent call last): RuntimeError: command failed"
+        events = [
+            {
+                "timestamp": "2026-03-01T15:30:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T15:30:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call-textual-failure",
+                    "output": textual_failure,
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages = parse_codex_jsonl_file(rollout)
+        tool_result_msg = messages[1]
+        assert tool_result_msg.message is not None
+        content = tool_result_msg.message.content
+        assert isinstance(content, list)
+        tool_block = content[0]
+        assert tool_block.get("type") == "tool_result"
+        assert tool_block.get("is_error") is True
+
+    def test_parse_codex_jsonl_file_detects_structured_failure_payloads(
+        self, tmp_path: Path
+    ) -> None:
+        session_id = "99999999-9999-9999-9999-999999999996"
+        rollout = tmp_path / f"rollout-2026-03-01T15-40-00-{session_id}.jsonl"
+        structured_failure = {
+            "status": "failed",
+            "metadata": {"exit_code": 2},
+            "error": {"message": "permission denied"},
+        }
+        events = [
+            {
+                "timestamp": "2026-03-01T15:40:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T15:40:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-structured-failure",
+                    "output": json.dumps(structured_failure),
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages = parse_codex_jsonl_file(rollout)
+        tool_result_msg = messages[1]
+        assert tool_result_msg.message is not None
+        content = tool_result_msg.message.content
+        assert isinstance(content, list)
+        tool_block = content[0]
+        assert tool_block.get("is_error") is True
+
+    def test_parse_codex_session_file_surfaces_web_search_status_error_annotations(
+        self, tmp_path: Path
+    ) -> None:
+        session_id = "99999999-9999-9999-9999-999999999995"
+        rollout = tmp_path / f"rollout-2026-03-01T15-50-00-{session_id}.jsonl"
+        events = [
+            {
+                "timestamp": "2026-03-01T15:50:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T15:50:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "web_search_call",
+                    "id": "web-search-1",
+                    "query": "codex parser bug",
+                    "status": "failed",
+                    "error": "search backend timeout",
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        session = parse_codex_session_file(rollout)
+        assert session.statistics.total_tool_calls == 1
+        assert len(session.statistics.tool_error_records) == 1
+
+        first_error = session.statistics.tool_error_records[0]
+        assert first_error.tool_name == "web_search_call"
+        assert first_error.tool_call_id == "web-search-1"
+        assert first_error.timestamp.startswith("2026-03-01T15:50:01")
+        assert first_error.summary is not None
+        assert "search backend timeout" in first_error.detail
 
     def test_parse_codex_session_file_prefers_session_meta_id_over_first_message(
         self, tmp_path: Path

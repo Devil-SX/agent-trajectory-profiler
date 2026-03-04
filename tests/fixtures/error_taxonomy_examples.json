@@ -54,6 +54,24 @@
     "expected_rule_id": "parse_error"
   },
   {
+    "id": "exec-001",
+    "detail": "Process exited with code 2 while running build command",
+    "expected_category": "execution",
+    "expected_rule_id": "execution_failure"
+  },
+  {
+    "id": "runtime-001",
+    "detail": "Traceback (most recent call last): ValueError: bad input",
+    "expected_category": "runtime_exception",
+    "expected_rule_id": "runtime_exception"
+  },
+  {
+    "id": "web-001",
+    "detail": "web_search request failed with result_status=failed",
+    "expected_category": "web_search",
+    "expected_rule_id": "web_search_failure"
+  },
+  {
     "id": "test-001",
     "detail": "AssertionError: expected 2 but got 1",
     "expected_category": "test_failure",

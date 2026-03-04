@@ -229,6 +229,51 @@ def _extract_tool_result_text(content: str | list[dict[str, Any]] | Any) -> str:
     return str(content)
 
 
+def _normalize_tool_result_error_flag(value: Any) -> bool | None:
+    """Best-effort conversion of tool_result error flag into tri-state bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "error", "failed", "failure"}:
+            return True
+        if normalized in {"false", "0", "no", "ok", "success", "succeeded"}:
+            return False
+    return None
+
+
+def _tool_error_summary(detail: str, *, max_chars: int = 160) -> str:
+    """Generate a concise one-line summary for UI table display."""
+    normalized = detail.strip()
+    if not normalized:
+        return "(empty error output)"
+    return normalized.replace("\n", " ")[:max_chars]
+
+
+def _tool_error_detail_snippet(detail: str, *, max_chars: int = 1200) -> str:
+    """Bounded snippet for annotation payloads to avoid oversized API rows."""
+    if not detail:
+        return ""
+    return detail[:max_chars]
+
+
+def _ensure_tool_stats_bucket(
+    tool_stats: dict[str, dict[str, float]], tool_name: str
+) -> dict[str, float]:
+    if tool_name not in tool_stats:
+        tool_stats[tool_name] = {
+            "count": 0,
+            "tokens": 0,
+            "success": 0,
+            "error": 0,
+            "total_latency": 0.0,
+            "latency_count": 0,
+        }
+    return tool_stats[tool_name]
+
+
 def _classify_characters(text: str) -> dict[str, int]:
     """Count text characters by script family."""
     counts = {
@@ -443,6 +488,9 @@ def calculate_session_statistics(
     tool_stats: dict[str, dict[str, float]] = {}
     # Map tool_use_id to (tool_name, timestamp) for result tracking and latency
     tool_use_map: dict[str, tuple[str, datetime]] = {}
+    # Track results that have no preceding tool_use block in the stream.
+    implicit_tool_result_keys: set[str] = set()
+    implicit_tool_result_counter = 0
     # Track subagent sessions by agent_id to deduplicate
     subagent_sessions_map: dict[str, str] = {}
     tool_error_records: list[ToolErrorRecord] = []
@@ -539,21 +587,12 @@ def calculate_session_statistics(
 
                         # Track tool_use blocks
                         if block_type == "tool_use":
-                            tool_name = content_block.get("name", "unknown")
-                            tool_id = content_block.get("id", "")
+                            tool_name = str(content_block.get("name", "unknown"))
+                            raw_tool_id = content_block.get("id", "")
+                            tool_id = str(raw_tool_id) if raw_tool_id is not None else ""
 
-                            # Initialize tool stats if not present
-                            if tool_name not in tool_stats:
-                                tool_stats[tool_name] = {
-                                    "count": 0,
-                                    "tokens": 0,
-                                    "success": 0,
-                                    "error": 0,
-                                    "total_latency": 0.0,
-                                    "latency_count": 0,
-                                }
-
-                            tool_stats[tool_name]["count"] += 1
+                            bucket = _ensure_tool_stats_bucket(tool_stats, tool_name)
+                            bucket["count"] += 1
                             tool_use_map[tool_id] = (tool_name, timestamp)
 
                             # Bash breakdown: extract sub-commands
@@ -568,88 +607,107 @@ def calculate_session_statistics(
 
                             # Add token cost for this tool call (if available)
                             if msg.message.usage:
-                                tool_stats[tool_name]["tokens"] += msg.message.usage.total_tokens
+                                bucket["tokens"] += msg.message.usage.total_tokens
 
                         # Track tool_result blocks for success/error counting and latency
                         elif block_type == "tool_result":
-                            tool_use_id = content_block.get("tool_use_id", "")
-                            is_error = content_block.get("is_error", False)
+                            raw_tool_use_id = content_block.get("tool_use_id", "")
+                            tool_use_id = (
+                                str(raw_tool_use_id) if raw_tool_use_id is not None else ""
+                            )
+                            is_error = _normalize_tool_result_error_flag(
+                                content_block.get("is_error", False)
+                            )
+                            result_text = _extract_tool_result_text(
+                                content_block.get("content", "")
+                            )
 
+                            use_timestamp: datetime | None = None
                             if tool_use_id in tool_use_map:
                                 tool_name, use_timestamp = tool_use_map[tool_use_id]
-                                if tool_name in tool_stats:
-                                    if is_error:
-                                        tool_stats[tool_name]["error"] += 1
-                                        error_text = _extract_tool_result_text(
-                                            content_block.get("content", "")
-                                        )
-                                        classification = classify_tool_error(error_text)
-                                        tool_error_category_counts[classification.category] += 1
-                                        preview = (
-                                            error_text.strip().replace("\n", " ")[:160]
-                                            if error_text.strip()
-                                            else "(empty error output)"
-                                        )
-                                        tool_error_records.append(
-                                            ToolErrorRecord(
-                                                timestamp=timestamp.isoformat(),
-                                                tool_name=tool_name,
-                                                category=classification.category,
-                                                matched_rule=classification.rule_id,
-                                                preview=preview,
-                                                detail=error_text,
-                                            )
-                                        )
-                                    else:
-                                        tool_stats[tool_name]["success"] += 1
+                            else:
+                                raw_tool_name = content_block.get("tool_name")
+                                if isinstance(raw_tool_name, str) and raw_tool_name.strip():
+                                    tool_name = raw_tool_name.strip()
+                                else:
+                                    tool_name = "unknown"
+                                implicit_key = tool_use_id or (
+                                    f"anon:{msg.uuid}:{implicit_tool_result_counter}"
+                                )
+                                implicit_tool_result_counter += 1
+                                dedupe_key = f"{tool_name}:{implicit_key}"
+                                if dedupe_key not in implicit_tool_result_keys:
+                                    implicit_tool_result_keys.add(dedupe_key)
+                                    _ensure_tool_stats_bucket(tool_stats, tool_name)["count"] += 1
 
-                                    result_text = _extract_tool_result_text(
-                                        content_block.get("content", "")
+                            bucket = _ensure_tool_stats_bucket(tool_stats, tool_name)
+                            if is_error is True:
+                                bucket["error"] += 1
+                                classification = classify_tool_error(result_text)
+                                tool_error_category_counts[classification.category] += 1
+                                summary = _tool_error_summary(result_text)
+                                detail_snippet = _tool_error_detail_snippet(result_text)
+                                tool_error_records.append(
+                                    ToolErrorRecord(
+                                        timestamp=timestamp.isoformat(),
+                                        tool_name=tool_name,
+                                        tool_call_id=tool_use_id or None,
+                                        category=classification.category,
+                                        matched_rule=classification.rule_id,
+                                        summary=summary,
+                                        preview=summary,
+                                        detail_snippet=detail_snippet,
+                                        detail=result_text,
                                     )
-                                    if result_text:
-                                        counts = _classify_characters(result_text)
-                                        tool_chars += len(result_text)
-                                        cjk_chars += counts["cjk"]
-                                        latin_chars += counts["latin"]
-                                        digit_chars += counts["digit"]
-                                        whitespace_chars += counts["whitespace"]
-                                        other_chars += counts["other"]
+                                )
+                            elif is_error is False:
+                                bucket["success"] += 1
 
-                                    # Compute per-tool latency
-                                    latency = (timestamp - use_timestamp).total_seconds()
-                                    if latency >= 0:
-                                        tool_stats[tool_name]["total_latency"] += latency
-                                        tool_stats[tool_name]["latency_count"] += 1
+                            if result_text:
+                                counts = _classify_characters(result_text)
+                                tool_chars += len(result_text)
+                                cjk_chars += counts["cjk"]
+                                latin_chars += counts["latin"]
+                                digit_chars += counts["digit"]
+                                whitespace_chars += counts["whitespace"]
+                                other_chars += counts["other"]
 
-                                        # Distribute Bash latency equally among sub-commands
-                                        if tool_name == "Bash" and tool_use_id in bash_sub_cmds_map:
-                                            sub_cmds = bash_sub_cmds_map[tool_use_id]
-                                            if sub_cmds:
-                                                per_cmd = latency / len(sub_cmds)
-                                                for cmd in sub_cmds:
-                                                    bash_command_latency[cmd] += per_cmd
+                            if use_timestamp is not None:
+                                # Compute per-tool latency when matching tool_use exists.
+                                latency = (timestamp - use_timestamp).total_seconds()
+                                if latency >= 0:
+                                    bucket["total_latency"] += latency
+                                    bucket["latency_count"] += 1
 
-                                    # Distribute Bash result output chars among sub-commands
+                                    # Distribute Bash latency equally among sub-commands.
                                     if tool_name == "Bash" and tool_use_id in bash_sub_cmds_map:
                                         sub_cmds = bash_sub_cmds_map[tool_use_id]
                                         if sub_cmds:
-                                            result_content = content_block.get("content", "")
-                                            if isinstance(result_content, str):
-                                                result_chars = len(result_content)
-                                            elif isinstance(result_content, list):
-                                                result_chars = sum(
-                                                    (
-                                                        len(b.get("text", ""))
-                                                        if isinstance(b, dict)
-                                                        else len(str(b))
-                                                    )
-                                                    for b in result_content
-                                                )
-                                            else:
-                                                result_chars = 0
-                                            per_cmd_chars = result_chars // len(sub_cmds)
+                                            per_cmd = latency / len(sub_cmds)
                                             for cmd in sub_cmds:
-                                                bash_command_output_chars[cmd] += per_cmd_chars
+                                                bash_command_latency[cmd] += per_cmd
+
+                            # Distribute Bash result output chars among sub-commands.
+                            if tool_name == "Bash" and tool_use_id in bash_sub_cmds_map:
+                                sub_cmds = bash_sub_cmds_map[tool_use_id]
+                                if sub_cmds:
+                                    result_content = content_block.get("content", "")
+                                    if isinstance(result_content, str):
+                                        result_chars = len(result_content)
+                                    elif isinstance(result_content, list):
+                                        result_chars = sum(
+                                            (
+                                                len(b.get("text", ""))
+                                                if isinstance(b, dict)
+                                                else len(str(b))
+                                            )
+                                            for b in result_content
+                                        )
+                                    else:
+                                        result_chars = 0
+                                    per_cmd_chars = result_chars // len(sub_cmds)
+                                    for cmd in sub_cmds:
+                                        bash_command_output_chars[cmd] += per_cmd_chars
 
                         elif block_type in ("text", "thinking"):
                             text_value = content_block.get("text")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-ERROR_TAXONOMY_VERSION = "1.0.0"
+ERROR_TAXONOMY_VERSION = "1.1.0"
 UNCATEGORIZED_ERROR = "uncategorized"
 
 
@@ -85,6 +85,32 @@ ERROR_TAXONOMY_RULES: tuple[ErrorTaxonomyRule, ...] = (
         category="parsing",
         label="Parsing Error",
         pattern=r"jsondecodeerror|parse error|invalid json|yaml",
+    ),
+    ErrorTaxonomyRule(
+        rule_id="execution_failure",
+        category="execution",
+        label="Execution Failure",
+        pattern=(
+            r"process exited with code\s*-?[1-9]\d*|"
+            r"exited with status\s*[1-9]\d*|"
+            r"non[- ]zero exit|command failed|failed to execute"
+        ),
+    ),
+    ErrorTaxonomyRule(
+        rule_id="runtime_exception",
+        category="runtime_exception",
+        label="Runtime Exception",
+        pattern=r"\btraceback\b|\bexception\b|runtimeerror|typeerror|valueerror",
+    ),
+    ErrorTaxonomyRule(
+        rule_id="web_search_failure",
+        category="web_search",
+        label="Web Search Failure",
+        pattern=(
+            r"web[_ ]search.*(failed|error)|"
+            r"search (failed|error)|"
+            r"result_status[\"'=:\s]+failed"
+        ),
     ),
     ErrorTaxonomyRule(
         rule_id="test_failure",

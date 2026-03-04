@@ -277,9 +277,12 @@ class ToolErrorRecord(BaseModel):
 
     timestamp: str
     tool_name: str
+    tool_call_id: str | None = None
     category: str
     matched_rule: str | None = None
+    summary: str | None = None
     preview: str
+    detail_snippet: str | None = None
     detail: str
 
 

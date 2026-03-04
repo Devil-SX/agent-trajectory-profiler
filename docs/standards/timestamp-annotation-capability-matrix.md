@@ -28,7 +28,7 @@ Each annotation record should follow:
 
 | Annotation type | claude_code | codex | Current source(s) | Notes / caveats | UI guidance |
 | --- | --- | --- | --- | --- | --- |
-| `tool_error` | supported (high) | supported (high) | `SessionStatistics.tool_error_records` | taxonomy + preview/detail available | show directly in timeline/events table |
+| `tool_error` | supported (high) | supported (high) | `SessionStatistics.tool_error_records` | taxonomy + tool call id + summary/detail snippet available | show directly in timeline/events table |
 | `tool_call` start/end | partial (medium) | partial (medium) | tool_use/tool_result pairing in message stream | shared timestamps can skew latency start | show as derived markers with caveat |
 | `model_timeout` | partial (medium) | partial (medium) | `time_breakdown.model_timeout_count` + gap analysis | count exists; explicit per-event list not yet normalized | show count + optional inferred marker toggle |
 | `compact` | supported (high) | unsupported (high) | claude: `compact_events`; codex: none | codex currently has no compact boundary extraction | codex show N/A reason |

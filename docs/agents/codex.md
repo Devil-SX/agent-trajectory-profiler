@@ -55,7 +55,7 @@ All other top-level types are ignored with explicit diagnostics.
 | `response_item:custom_tool_call` | supported | mapped to assistant `tool_use` |
 | `response_item:function_call_output` | supported | mapped to user `tool_result` |
 | `response_item:custom_tool_call_output` | supported | mapped to user `tool_result` |
-| `response_item:web_search_call` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `response_item:web_search_call` | supported | mapped to status-aware `tool_result` for search execution/error timeline coverage |
 | `response_item:reasoning` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
 | `turn_context` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
 | `compacted` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
@@ -76,7 +76,7 @@ This avoids silent coercion while keeping current model constraints stable.
 
 ### Raw -> CanonicalEvent
 
-- accepted only for `session_meta|response_item|event_msg`
+- accepted only for `session_meta|response_item|event_msg|turn_context|compacted`
 - `event_kind = top-level type`
 - `timestamp = raw timestamp or deterministic fallback`
 - `payload = raw_event` (preserved)
@@ -92,7 +92,8 @@ Mapping logic by source subtype:
 | `event_msg` + `token_count` | assistant message containing normalized usage counters |
 | `response_item` + `message` | assistant/user message (role-preserving) |
 | `response_item` + `function_call` / `custom_tool_call` | assistant `tool_use` content block |
-| `response_item` + `function_call_output` / `custom_tool_call_output` | user `tool_result` content block with error inference |
+| `response_item` + `function_call_output` / `custom_tool_call_output` | user `tool_result` content block with structured+textual error inference |
+| `response_item` + `web_search_call` | user `tool_result` content block (tool=`web_search_call`) with status-aware error flag |
 
 ### User Prompt De-duplication Rule
 
@@ -114,9 +115,16 @@ Current parser behavior:
 - Missing timestamp is replaced with deterministic ISO fallback to keep ordering.
 - Non-dict payload sections are normalized to empty dicts where needed.
 - Tool-call output strings are parsed best-effort; invalid JSON remains as raw text.
-- Error detection for tool output uses:
-  - explicit `metadata.exit_code` when available
-  - fallback regex on output text (`Process exited with code ...`)
+- Error detection for tool output uses layered signals:
+  - explicit structured fields (`exit_code`, `is_error`, `status`, HTTP status-like keys)
+  - textual signatures (`error`, `exception`, `traceback`, command-failed patterns)
+  - status-aware mapping for `response_item:web_search_call` (`status|state|outcome`)
+- Tool error annotation payload (`SessionStatistics.tool_error_records`) includes:
+  - `timestamp`
+  - `tool_name`
+  - `tool_call_id` (when available)
+  - concise `summary`/`preview`
+  - expandable `detail` + bounded `detail_snippet`
 - Structured `tool_result` output fidelity:
   - `list`/`dict` payloads are preserved as structured content blocks instead of blind `str(...)`
   - very large output applies deterministic guardrails (summary/truncation blocks with

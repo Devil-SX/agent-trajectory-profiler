@@ -175,6 +175,8 @@ Provide normalized key timeline markers for downstream visualizations and incide
 Current data sources exist but are not exposed as a dedicated endpoint:
 
 - `tool_error_records` in `GET /api/sessions/{id}/statistics`
+  - includes `timestamp`, `tool_name`, optional `tool_call_id`, concise `summary/preview`,
+    and expandable `detail` (`detail_snippet` available for bounded UI rendering)
 - `compact_events` in `GET /api/sessions/{id}/statistics`
 - model timeout counters in `time_breakdown`
 
