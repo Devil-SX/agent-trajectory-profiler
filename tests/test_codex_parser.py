@@ -381,3 +381,156 @@ class TestCodexParser:
         assert diagnostics["policy_drop_counts"]["turn_context"] == 1
         assert diagnostics["policy_drop_counts"]["compacted"] == 1
         assert diagnostics["policy_drop_counts"]["response_item:web_search_call"] == 1
+
+    def test_parse_codex_jsonl_file_preserves_developer_role_origin(self, tmp_path: Path) -> None:
+        session_id = "77777777-7777-7777-7777-777777777777"
+        rollout = tmp_path / f"rollout-2026-03-01T13-00-00-{session_id}.jsonl"
+        events = [
+            {
+                "timestamp": "2026-03-01T13:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T13:00:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "developer",
+                    "content": [{"type": "output_text", "text": "Use strict mode."}],
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages = parse_codex_jsonl_file(rollout)
+        developer_msg = messages[1]
+        assert developer_msg.message is not None
+        assert developer_msg.message.role == "assistant"
+        assert developer_msg.userType == "source_role:developer"
+
+    def test_parse_codex_jsonl_file_keeps_structured_tool_output(self, tmp_path: Path) -> None:
+        session_id = "88888888-8888-8888-8888-888888888888"
+        rollout = tmp_path / f"rollout-2026-03-01T14-00-00-{session_id}.jsonl"
+        structured_output = [
+            {"type": "image", "mime_type": "image/png", "name": "x.png"},
+            {"type": "text", "text": "rendered"},
+        ]
+        events = [
+            {
+                "timestamp": "2026-03-01T14:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T14:00:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call-structured",
+                    "output": structured_output,
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages = parse_codex_jsonl_file(rollout)
+        assert len(messages) == 2
+        tool_result_msg = messages[1]
+        assert tool_result_msg.message is not None
+        content = tool_result_msg.message.content
+        assert isinstance(content, list)
+        tool_block = content[0]
+        assert tool_block.get("type") == "tool_result"
+        assert isinstance(tool_block.get("content"), list)
+
+    def test_parse_codex_jsonl_file_applies_large_payload_guardrail(self, tmp_path: Path) -> None:
+        session_id = "99999999-9999-9999-9999-999999999998"
+        rollout = tmp_path / f"rollout-2026-03-01T15-00-00-{session_id}.jsonl"
+        huge_text = "x" * 20000
+        events = [
+            {
+                "timestamp": "2026-03-01T15:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T15:00:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call-large",
+                    "output": huge_text,
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages = parse_codex_jsonl_file(rollout)
+        tool_result_msg = messages[1]
+        assert tool_result_msg.message is not None
+        content = tool_result_msg.message.content
+        assert isinstance(content, list)
+        tool_block = content[0]
+        result_payload = tool_block.get("content")
+        assert isinstance(result_payload, list)
+        assert any(
+            isinstance(block, dict) and block.get("type") == "truncation_meta"
+            for block in result_payload
+        )
+
+    def test_parse_codex_session_file_prefers_session_meta_id_over_first_message(
+        self, tmp_path: Path
+    ) -> None:
+        file_session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab"
+        session_meta_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        rollout = tmp_path / f"rollout-2026-03-01T16-00-00-{file_session_id}.jsonl"
+        events = [
+            {
+                "timestamp": "2026-03-01T16:00:00.100Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "before meta"}],
+                },
+            },
+            {
+                "timestamp": "2026-03-01T16:00:00.200Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_meta_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        session = parse_codex_session_file(rollout)
+        assert session.metadata.session_id == session_meta_id
+        assert session.metadata.physical_session_id == session_meta_id

@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Codex canonical coverage policy now classifies non-message-consumed event kinds as `stored_not_used_yet` with explicit diagnostics (`policy_drop_counts`) instead of generic unmapped drops.
 - Codex adapter now ingests top-level `turn_context` and `compacted` into canonical events, preserving these raw payloads for future APIs while keeping current message-level behavior stable.
 - Codex ecosystem and canonical schema docs now explicitly define `supported / stored_not_used_yet / ignored_expected` event-policy semantics.
+- Codex `response_item.message.role` mapping now preserves non-enum source roles (for example `developer`) via explicit compatibility metadata (`userType=source_role:*`) instead of silent coercion.
+- Codex tool-result normalization now preserves structured output payloads and applies deterministic large-payload guardrails (summary/truncation blocks with `raw_ref`) to prevent DB/UI overload.
+- Codex session-id resolution now prefers `session_meta.payload.id` from raw source scanning over first-mapped-message fallback, improving identity stability when event order varies.
 
 ### Fixed
 

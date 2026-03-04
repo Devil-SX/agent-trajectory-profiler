@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,10 @@ _ROOT_ID_KEYS = (
     "rootThreadId",
 )
 _MAX_DIAGNOSTIC_SAMPLES = 12
+_MAX_TOOL_RESULT_TEXT_CHARS = 12_000
+_MAX_TOOL_RESULT_JSON_BYTES = 24_000
+_MAX_TOOL_RESULT_ITEMS = 200
+_TOOL_RESULT_PREVIEW_CHARS = 1_000
 _STATUS_SUPPORTED = "supported"
 _STATUS_STORED_NOT_USED_YET = "stored_not_used_yet"
 _STATUS_IGNORED_EXPECTED = "ignored_expected"
@@ -433,6 +438,115 @@ def _summarize_text_like_payload(payload: dict[str, Any]) -> str:
     return f"{payload.get('type', 'event')}"
 
 
+def _safe_json_dumps(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except TypeError:
+        return str(value)
+
+
+def _hash_reference(value: Any) -> str:
+    digest = sha256(_safe_json_dumps(value).encode("utf-8")).hexdigest()[:16]
+    return f"sha256:{digest}"
+
+
+def _normalize_tool_output_blocks(raw_output: Any) -> list[dict[str, Any]]:
+    if isinstance(raw_output, dict):
+        return [raw_output]
+    if isinstance(raw_output, list):
+        blocks: list[dict[str, Any]] = []
+        for item in raw_output:
+            if isinstance(item, dict):
+                blocks.append(item)
+            else:
+                blocks.append({"type": "value", "value": item})
+        return blocks
+    return [{"type": "value", "value": raw_output}]
+
+
+def _normalize_tool_output_content(raw_output: Any) -> str | list[dict[str, Any]]:
+    if isinstance(raw_output, str):
+        if len(raw_output) <= _MAX_TOOL_RESULT_TEXT_CHARS:
+            return raw_output
+        raw_ref = _hash_reference(raw_output)
+        preview = raw_output[:_MAX_TOOL_RESULT_TEXT_CHARS]
+        return [
+            {"type": "text", "text": preview},
+            {
+                "type": "truncation_meta",
+                "raw_ref": raw_ref,
+                "original_chars": len(raw_output),
+                "truncated": True,
+            },
+        ]
+
+    blocks = _normalize_tool_output_blocks(raw_output)
+    serialized = _safe_json_dumps(blocks)
+    if (
+        len(serialized.encode("utf-8")) <= _MAX_TOOL_RESULT_JSON_BYTES
+        and len(blocks) <= _MAX_TOOL_RESULT_ITEMS
+    ):
+        return blocks
+
+    raw_ref = _hash_reference(raw_output)
+    return [
+        {
+            "type": "structured_summary",
+            "raw_ref": raw_ref,
+            "original_bytes": len(serialized.encode("utf-8")),
+            "item_count": len(blocks),
+            "truncated": True,
+            "preview": serialized[:_TOOL_RESULT_PREVIEW_CHARS],
+        }
+    ]
+
+
+def _detect_error_from_structured_output(raw_output: Any) -> bool | None:
+    if isinstance(raw_output, dict):
+        exit_code = raw_output.get("exit_code")
+        if isinstance(exit_code, int):
+            return exit_code != 0
+        is_error = raw_output.get("is_error")
+        if isinstance(is_error, bool):
+            return is_error
+        status = raw_output.get("status")
+        if isinstance(status, str) and status.lower() in {"error", "failed", "failure"}:
+            return True
+        error_field = raw_output.get("error")
+        if isinstance(error_field, str) and error_field.strip():
+            return True
+    if isinstance(raw_output, list):
+        for item in raw_output:
+            detected = _detect_error_from_structured_output(item)
+            if detected is not None:
+                return detected
+    return None
+
+
+def _extract_session_id_from_file(file_path: Path) -> str | None:
+    try:
+        with open(file_path, encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    raw = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if raw.get("type") != "session_meta":
+                    continue
+                payload = raw.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                session_id = payload.get("id")
+                if isinstance(session_id, str) and session_id.strip():
+                    return session_id.strip()
+    except OSError:
+        return None
+    return None
+
+
 def _build_message_record(
     *,
     session_id: str,
@@ -444,15 +558,17 @@ def _build_message_record(
     version: str | None = None,
     usage: dict[str, Any] | None = None,
     git_branch: str | None = None,
+    user_type: str | None = None,
 ) -> MessageRecord:
     payload: dict[str, Any] = {
-        "type": "assistant" if role == "assistant" else "user",
+        "type": "user" if role == "user" else "assistant",
         "sessionId": session_id,
         "uuid": uuid,
         "timestamp": timestamp,
         "cwd": cwd,
         "version": version,
         "gitBranch": git_branch,
+        "userType": user_type,
         "isSidechain": False,
         "message": {
             "role": role,
@@ -576,7 +692,12 @@ class CodexEventAdapter(TrajectoryEventAdapter):
         if item_type == "message":
             role = payload_dict.get("role")
             role_str = role if isinstance(role, str) else "assistant"
-            normalized_role = "user" if role_str == "user" else "assistant"
+            if role_str in {"user", "assistant", "system"}:
+                normalized_role = role_str
+                user_type = None
+            else:
+                normalized_role = "assistant"
+                user_type = f"source_role:{role_str}"
             content = _extract_text_blocks(payload_dict.get("content"))
             return _build_message_record(
                 session_id=session_id,
@@ -584,6 +705,7 @@ class CodexEventAdapter(TrajectoryEventAdapter):
                 timestamp=timestamp,
                 role=normalized_role,
                 content=content,
+                user_type=user_type,
             )
 
         if item_type in {"function_call", "custom_tool_call"}:
@@ -632,7 +754,6 @@ class CodexEventAdapter(TrajectoryEventAdapter):
                 else f"{session_id}-result-{event.line_number}"
             )
             raw_output = payload_dict.get("output")
-            output_text = raw_output if isinstance(raw_output, str) else str(raw_output or "")
             is_error = False
 
             if item_type == "custom_tool_call_output" and isinstance(raw_output, str):
@@ -647,12 +768,33 @@ class CodexEventAdapter(TrajectoryEventAdapter):
                         if isinstance(exit_code, int):
                             is_error = exit_code != 0
                     inner_output = parsed_output.get("output")
-                    if isinstance(inner_output, str):
-                        output_text = inner_output
+                    if inner_output is not None:
+                        raw_output = inner_output
             else:
-                exit_match = _EXIT_CODE_RE.search(output_text)
+                detected = _detect_error_from_structured_output(raw_output)
+                if detected is not None:
+                    is_error = detected
+
+            detection_text = (
+                raw_output if isinstance(raw_output, str) else _safe_json_dumps(raw_output)
+            )
+            if not is_error:
+                exit_match = _EXIT_CODE_RE.search(detection_text)
                 if exit_match is not None:
                     is_error = int(exit_match.group(1)) != 0
+
+            output_content = _normalize_tool_output_content(raw_output)
+            if item_type == "custom_tool_call_output" and isinstance(raw_output, str):
+                try:
+                    parsed_output = json.loads(raw_output)
+                except json.JSONDecodeError:
+                    parsed_output = None
+                if isinstance(parsed_output, dict):
+                    inner_output = parsed_output.get("output")
+                    if inner_output is not None:
+                        output_content = _normalize_tool_output_content(inner_output)
+            if output_content == "" and detection_text:
+                output_content = detection_text
 
             return _build_message_record(
                 session_id=session_id,
@@ -663,7 +805,7 @@ class CodexEventAdapter(TrajectoryEventAdapter):
                     {
                         "type": "tool_result",
                         "tool_use_id": call_id,
-                        "content": output_text,
+                        "content": output_content,
                         "is_error": is_error,
                     }
                 ],
@@ -783,8 +925,13 @@ def parse_codex_jsonl_file(file_path: Path) -> list[MessageRecord]:
 
 
 def _resolve_codex_session_id(messages: list[MessageRecord], file_path: Path) -> str:
+    file_session_id = _extract_session_id_from_file(file_path)
+    if file_session_id:
+        return file_session_id
     if messages:
-        return messages[0].sessionId
+        for message in messages:
+            if message.sessionId.strip():
+                return message.sessionId
     return _session_id_from_source_path(str(file_path))
 
 

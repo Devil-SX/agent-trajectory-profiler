@@ -61,6 +61,17 @@ All other top-level types are ignored with explicit diagnostics.
 | `compacted` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
 | `<unknown_top_level>` | ignored_expected | dropped before canonical conversion; counted in diagnostics |
 
+### Role Fidelity Contract
+
+`response_item.message.role` is preserved with an explicit internal mapping rule:
+
+- roles in unified enum (`user`, `assistant`, `system`) are mapped directly
+- non-enum roles (for example `developer`) are mapped to `message.role=assistant`
+  for compatibility, and the original role is preserved in `MessageRecord.userType`
+  as `source_role:<raw_role>`
+
+This avoids silent coercion while keeping current model constraints stable.
+
 ## 4. Mapping to Canonical and Unified Model
 
 ### Raw -> CanonicalEvent
@@ -106,6 +117,10 @@ Current parser behavior:
 - Error detection for tool output uses:
   - explicit `metadata.exit_code` when available
   - fallback regex on output text (`Process exited with code ...`)
+- Structured `tool_result` output fidelity:
+  - `list`/`dict` payloads are preserved as structured content blocks instead of blind `str(...)`
+  - very large output applies deterministic guardrails (summary/truncation blocks with
+    `raw_ref` hash pointer and size metadata) to prevent DB/UI overload
 - Missing fields follow manifest fallback policy (`infer_best_effort` for timestamps).
 
 ### Drop Diagnostics (Observable Output)

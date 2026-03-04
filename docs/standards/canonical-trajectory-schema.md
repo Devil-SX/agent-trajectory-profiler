@@ -102,6 +102,13 @@ The canonical stream is converted into `MessageRecord` with the following requir
 | `message.role` | `user \\| assistant \\| system` | conditional | logical speaker role | `message.role` | mapped from `response_item.role`/synthetic role |
 | `message.content` | `string \\| content[]` | conditional | text/tool blocks | `message.content` | normalized from `payload.content` or tool events |
 
+Role mapping compatibility rule when source roles exceed enum:
+
+- if source role is outside `user|assistant|system` (for example `developer`),
+  adapters must preserve original role semantics in extension metadata
+  (for example `MessageRecord.userType=source_role:developer`) while mapping
+  `message.role` to a compatible enum value.
+
 ## 4.5 Tool Content Blocks
 
 Tool operations must normalize to these content block contracts:
@@ -123,6 +130,13 @@ Tool operations must normalize to these content block contracts:
 | `tool_use_id` | `string` | yes |
 | `content` | `string \\| object[]` | yes |
 | `is_error` | `bool \\| null` | yes |
+
+Large output guardrail policy:
+
+- structured output (`list`/`dict`) should remain structured where feasible
+- when payload exceeds configured size thresholds, adapters should emit a deterministic
+  summarized block containing truncation flag, preview, size, and a stable `raw_ref`
+  pointer/hash to avoid DB/UI amplification
 
 ## 4.6 Token Usage Contract
 
