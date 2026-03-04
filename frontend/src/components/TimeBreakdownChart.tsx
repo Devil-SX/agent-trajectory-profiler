@@ -24,6 +24,13 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { TimeBreakdown } from '../types/session';
+import {
+  CHART_AXIS_PROPS,
+  CHART_COLORS,
+  CHART_GRID_PROPS,
+  CHART_LEGEND_PROPS,
+  CHART_TOOLTIP_STYLE,
+} from '../utils/chartTheme';
 import './TimeBreakdownChart.css';
 
 interface TimeBreakdownChartProps {
@@ -44,10 +51,10 @@ interface PieTooltipProps {
 }
 
 const COLORS = {
-  model: '#ef4444',    // Red - high priority
-  tool: '#f97316',     // Orange - medium priority
-  user: '#22c55e',     // Green - low latency
-  inactive: '#6b7280', // Gray - neutral
+  model: CHART_COLORS.model,
+  tool: CHART_COLORS.tool,
+  user: CHART_COLORS.user,
+  inactive: CHART_COLORS.inactive,
 };
 
 const formatTime = (seconds: number): string => {
@@ -190,7 +197,7 @@ export function TimeBreakdownChart({
       <text
         x={x}
         y={y}
-        fill="white"
+        fill="var(--chart-tooltip-bg)"
         textAnchor={x > cx ? 'start' : 'end'}
         dominantBaseline="central"
         className="pie-label"
@@ -235,19 +242,14 @@ export function TimeBreakdownChart({
                 layout="vertical"
                 margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" domain={[0, 100]} unit="%" />
-                <YAxis type="category" dataKey="name" width={120} />
+                <CartesianGrid {...CHART_GRID_PROPS} />
+                <XAxis type="number" domain={[0, 100]} unit="%" {...CHART_AXIS_PROPS} />
+                <YAxis type="category" dataKey="name" width={120} {...CHART_AXIS_PROPS} />
                 <Tooltip
                   formatter={(value: number | undefined) => value !== undefined ? `${value.toFixed(1)}%` : 'N/A'}
-                  contentStyle={{
-                    backgroundColor: '#333',
-                    border: '1px solid #555',
-                    borderRadius: '4px',
-                    color: '#fff',
-                  }}
+                  contentStyle={CHART_TOOLTIP_STYLE}
                 />
-                <Legend />
+                <Legend {...CHART_LEGEND_PROPS} />
                 <Bar dataKey="Model" stackId="a" fill={COLORS.model} />
                 <Bar dataKey="Tool" stackId="a" fill={COLORS.tool} />
                 <Bar dataKey="User" stackId="a" fill={COLORS.user} />
@@ -290,7 +292,7 @@ export function TimeBreakdownChart({
                   labelLine={false}
                   label={renderCustomLabel}
                   outerRadius={100}
-                  fill="#8884d8"
+                  fill={CHART_COLORS.compareA}
                   dataKey="value"
                 >
                   {pieData.map((entry, index) => (

@@ -37,6 +37,13 @@ import {
 } from '../utils/exportData';
 import { formatTokenCount } from '../utils/tokenFormat';
 import { formatTokenAxisTick, formatTokenWithRawValue } from '../utils/chartFormatters';
+import {
+  CHART_AXIS_PROPS,
+  CHART_COLORS,
+  CHART_GRID_PROPS,
+  CHART_LEGEND_PROPS,
+  CHART_TOOLTIP_STYLE,
+} from '../utils/chartTheme';
 import type { ExportConfig } from '../types/analytics';
 import { useI18n } from '../i18n';
 
@@ -271,14 +278,17 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
             </div>
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={heatmapData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
-                <YAxis tickFormatter={formatTokenAxisTick} />
-                <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
-                <Legend />
-                <Area type="monotone" dataKey="input" stackId="1" stroke="#1976d2" fill="#1976d2" name="Input" />
-                <Area type="monotone" dataKey="output" stackId="1" stroke="#388e3c" fill="#388e3c" name="Output" />
-                <Area type="monotone" dataKey="cache" stackId="1" stroke="#f57c00" fill="#f57c00" name="Cache" />
+                <CartesianGrid {...CHART_GRID_PROPS} />
+                <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} {...CHART_AXIS_PROPS} />
+                <YAxis tickFormatter={formatTokenAxisTick} {...CHART_AXIS_PROPS} />
+                <Tooltip
+                  formatter={(value) => formatTokenWithFull(Number(value))}
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                />
+                <Legend {...CHART_LEGEND_PROPS} />
+                <Area type="monotone" dataKey="input" stackId="1" stroke={CHART_COLORS.input} fill={CHART_COLORS.input} name="Input" />
+                <Area type="monotone" dataKey="output" stackId="1" stroke={CHART_COLORS.output} fill={CHART_COLORS.output} name="Output" />
+                <Area type="monotone" dataKey="cache" stackId="1" stroke={CHART_COLORS.cache} fill={CHART_COLORS.cache} name="Cache" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -289,12 +299,15 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
               <h3 className="section-title">Top 10 Most Expensive Operations</h3>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={expensiveOpsData} layout="horizontal">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                  <YAxis tickFormatter={formatTokenAxisTick} />
-                  <Tooltip formatter={(value) => formatTokenWithFull(Number(value))} />
-                  <Legend />
-                  <Bar dataKey="tokens" fill="#d32f2f" name="Tokens" />
+                  <CartesianGrid {...CHART_GRID_PROPS} />
+                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} {...CHART_AXIS_PROPS} />
+                  <YAxis tickFormatter={formatTokenAxisTick} {...CHART_AXIS_PROPS} />
+                  <Tooltip
+                    formatter={(value) => formatTokenWithFull(Number(value))}
+                    contentStyle={CHART_TOOLTIP_STYLE}
+                  />
+                  <Legend {...CHART_LEGEND_PROPS} />
+                  <Bar dataKey="tokens" fill={CHART_COLORS.danger} name="Tokens" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -352,14 +365,14 @@ export function AdvancedAnalytics({ sessionId, comparisonSessionId }: AdvancedAn
               <h3 className="section-title">Subagent Efficiency Metrics</h3>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={subagentEffData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="agent" />
-                  <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" />
-                  <Tooltip />
-                  <Legend />
-                  <Bar yAxisId="left" dataKey="score" fill="#7b1fa2" name="Efficiency Score" />
-                  <Bar yAxisId="right" dataKey="invocations" fill="#0097a7" name="Invocations" />
+                  <CartesianGrid {...CHART_GRID_PROPS} />
+                  <XAxis dataKey="agent" {...CHART_AXIS_PROPS} />
+                  <YAxis yAxisId="left" {...CHART_AXIS_PROPS} />
+                  <YAxis yAxisId="right" orientation="right" {...CHART_AXIS_PROPS} />
+                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                  <Legend {...CHART_LEGEND_PROPS} />
+                  <Bar yAxisId="left" dataKey="score" fill={CHART_COLORS.compareA} name="Efficiency Score" />
+                  <Bar yAxisId="right" dataKey="invocations" fill={CHART_COLORS.compareB} name="Invocations" />
                 </BarChart>
               </ResponsiveContainer>
               <div className="efficiency-details">

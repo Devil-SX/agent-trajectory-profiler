@@ -16,6 +16,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from 'recharts';
 import type { SessionStatistics } from '../types/session';
@@ -25,6 +26,13 @@ import {
   formatTokenAxisTick,
   formatTokenWithRawValue,
 } from '../utils/chartFormatters';
+import {
+  CHART_AXIS_PROPS,
+  CHART_COLORS,
+  CHART_GRID_PROPS,
+  CHART_LEGEND_PROPS,
+  CHART_TOOLTIP_STYLE,
+} from '../utils/chartTheme';
 import './MetricComparison.css';
 
 interface MetricComparisonProps {
@@ -43,9 +51,9 @@ interface DiffResult {
 }
 
 const BOTTLENECK_COLORS: Record<string, string> = {
-  Model: '#ef4444',
-  Tool: '#f97316',
-  User: '#22c55e',
+  Model: CHART_COLORS.model,
+  Tool: CHART_COLORS.tool,
+  User: CHART_COLORS.user,
 };
 
 const calculateDiff = (a: number, b: number): DiffResult => {
@@ -153,15 +161,17 @@ export function MetricComparison({
               { name: 'Session B', tokens: tokensB },
             ]}
           >
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="name" />
-            <YAxis tickFormatter={formatTokenAxisTick} />
+            <CartesianGrid {...CHART_GRID_PROPS} vertical={false} />
+            <XAxis dataKey="name" {...CHART_AXIS_PROPS} />
+            <YAxis tickFormatter={formatTokenAxisTick} {...CHART_AXIS_PROPS} />
             <Tooltip
               formatter={(value: number | undefined) =>
                 value !== undefined ? formatTokenWithRawValue(value) : 'N/A'
               }
+              contentStyle={CHART_TOOLTIP_STYLE}
             />
-            <Bar dataKey="tokens" fill="#3b82f6" />
+            <Legend {...CHART_LEGEND_PROPS} />
+            <Bar dataKey="tokens" fill={CHART_COLORS.compareA} />
           </BarChart>
         </ResponsiveContainer>
         {tokensDiff.isLarge && (
@@ -191,11 +201,15 @@ export function MetricComparison({
               { name: 'Session B', ratio: automationB },
             ]}
           >
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip formatter={(value: number | undefined) => (value !== undefined ? value.toFixed(2) : 'N/A')} />
-            <Bar dataKey="ratio" fill="#10b981" />
+            <CartesianGrid {...CHART_GRID_PROPS} vertical={false} />
+            <XAxis dataKey="name" {...CHART_AXIS_PROPS} />
+            <YAxis {...CHART_AXIS_PROPS} />
+            <Tooltip
+              formatter={(value: number | undefined) => (value !== undefined ? `${value.toFixed(2)}x` : 'N/A')}
+              contentStyle={CHART_TOOLTIP_STYLE}
+            />
+            <Legend {...CHART_LEGEND_PROPS} />
+            <Bar dataKey="ratio" fill={CHART_COLORS.compareB} />
           </BarChart>
         </ResponsiveContainer>
         {automationDiff.isLarge && (
@@ -227,17 +241,19 @@ export function MetricComparison({
                   { name: 'Session B', duration: durationB },
                 ]}
               >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" />
-                <YAxis tickFormatter={durationAxisTickFormatter} />
+                <CartesianGrid {...CHART_GRID_PROPS} vertical={false} />
+                <XAxis dataKey="name" {...CHART_AXIS_PROPS} />
+                <YAxis tickFormatter={durationAxisTickFormatter} {...CHART_AXIS_PROPS} />
                 <Tooltip
                   formatter={(value: number | undefined) =>
                     value !== undefined
                       ? `${durationAxisTickFormatter(value)} (${formatDuration(value)})`
                       : 'N/A'
                   }
+                  contentStyle={CHART_TOOLTIP_STYLE}
                 />
-                <Bar dataKey="duration" fill="#f59e0b" />
+                <Legend {...CHART_LEGEND_PROPS} />
+                <Bar dataKey="duration" fill={CHART_COLORS.tool} />
               </BarChart>
             </ResponsiveContainer>
             {durationDiff.isLarge && (

@@ -33,6 +33,7 @@ import {
   formatTokenAxisTick,
   formatTokenWithRawValue,
 } from '../utils/chartFormatters';
+import { CHART_COLORS, CHART_DISTRIBUTION_COLORS } from '../utils/chartTheme';
 import { truncateMiddle } from '../utils/display';
 import { useI18n } from '../i18n';
 import { MetricTerm } from './MetricHelp';
@@ -72,11 +73,11 @@ type RoleSourceMetric = 'time' | 'tokens' | 'tool_calls' | 'errors';
 type RoleSourceView = 'source' | 'role';
 type DayNightRatioMode = 'include_inactive' | 'exclude_inactive';
 
-const DISTRIBUTION_COLORS = ['#2563eb', '#0891b2', '#ea580c', '#dc2626', '#16a34a', '#7c3aed'];
+const DISTRIBUTION_COLORS = [...CHART_DISTRIBUTION_COLORS];
 const ROLE_COLORS: Record<'user' | 'model' | 'tool', string> = {
-  model: '#2563eb',
-  tool: '#0891b2',
-  user: '#ea580c',
+  model: CHART_COLORS.model,
+  tool: CHART_COLORS.tool,
+  user: CHART_COLORS.user,
 };
 
 function sourceFilterTestId(ecosystem: string): string {

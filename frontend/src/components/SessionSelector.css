@@ -3,9 +3,10 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 1rem;
-  background-color: #f5f5f5;
+  background-color: var(--color-surface-muted);
   border-radius: 8px;
   margin-bottom: 1rem;
+  border: 1px solid var(--color-border);
 }
 
 .selector-row {
@@ -18,16 +19,17 @@
 .session-selector label {
   font-weight: 600;
   font-size: 0.875rem;
-  color: #333;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .session-selector select {
   padding: 0.5rem;
   font-size: 1rem;
-  border: 1px solid #ccc;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background-color: white;
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
   cursor: pointer;
   transition: border-color 0.2s;
   min-height: 44px;
@@ -36,17 +38,17 @@
 }
 
 .session-selector select:hover:not(:disabled) {
-  border-color: #646cff;
+  border-color: var(--color-accent);
 }
 
 .session-selector select:focus {
   outline: none;
-  border-color: #646cff;
-  box-shadow: 0 0 0 3px rgba(100, 108, 255, 0.1);
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
 }
 
 .session-selector select:disabled {
-  background-color: #f5f5f5;
+  background-color: var(--color-surface-subtle);
   cursor: not-allowed;
   opacity: 0.6;
 }
@@ -62,7 +64,7 @@
   justify-content: space-between;
   align-items: center;
   font-size: 0.75rem;
-  color: #666;
+  color: var(--color-text-secondary);
 }
 
 .session-selector .session-count {
@@ -70,13 +72,13 @@
 }
 
 .session-selector .error-message {
-  color: #d32f2f;
+  color: var(--color-danger);
   font-size: 0.875rem;
   margin: 0.5rem 0 0 0;
   padding: 0.5rem;
-  background-color: #ffebee;
+  background-color: var(--color-danger-soft);
   border-radius: 4px;
-  border-left: 3px solid #d32f2f;
+  border-left: 3px solid var(--color-danger);
 }
 
 /* Responsive layout for mobile */
@@ -122,32 +124,6 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .session-selector {
-    background-color: #2a2a2a;
-  }
-
-  .session-selector label {
-    color: #e0e0e0;
-  }
-
-  .session-selector select {
-    background-color: #1a1a1a;
-    border-color: #444;
-    color: #e0e0e0;
-  }
-
-  .session-selector select:disabled {
-    background-color: #2a2a2a;
-  }
-
-  .session-selector .session-info {
-    color: #999;
-  }
-
-  .session-selector .error-message {
-    background-color: #3a1a1a;
-    color: #ff6b6b;
-    border-left-color: #ff6b6b;
-  }
+:root[data-theme='dark'] .session-selector {
+  border-color: var(--color-border);
 }

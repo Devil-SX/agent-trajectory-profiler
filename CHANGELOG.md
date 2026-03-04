@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Timeline long-message compaction flow: oversized user/assistant text messages now render in a truncated preview state with per-message `Expand` actions, and expose a full-content modal with keyboard support (Enter/ESC), overlay/button close paths, and focus-return behavior.
+- Frontend visual/readability regression coverage for Cross-Session analytics rendering and detail-roundtrip continuity (`frontend/tests/advanced-analytics-ux.spec.ts`).
 - Local privacy-preserving Codex regression smoke test that can target a developer-provided real rollout fixture via `AGENT_VIS_PRIVATE_CODEX_CASE`, while skipping safely in CI when no private fixture is present.
 - Codex full-coverage regression guard for observed event families (`session_meta`, top-level `turn_context/compacted`, expanded `event_msg:*`, and `response_item:*` including `web_search_call`) to prevent implicit parser drift.
 - Codex/web-search regression coverage for status-aware tool error annotations, including result-only tool records without prior `tool_use` blocks.
@@ -20,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Introduced shared chart-theme tokens (`--chart-*`) and a reusable chart style utility (`frontend/src/utils/chartTheme.ts`) to standardize axis/grid/tooltip semantics and color mapping in analytics visualizations.
+- Updated `AdvancedAnalytics`, `MetricComparison`, and `TimeBreakdownChart` visuals to use app design tokens, improving light/dark consistency, contrast, and chart readability.
 - Frontend chart axis formatting is now unified through shared utilities: token axes use compact `K/M/B` ticks, time axes auto-scale to `min/hour/day`, and related tooltips now follow the same compact-vs-raw semantics across Cross-Session, Advanced Analytics, Statistics, and Metric Comparison charts.
 - Codex canonical coverage policy now classifies non-message-consumed event kinds as `stored_not_used_yet` with explicit diagnostics (`policy_drop_counts`) instead of generic unmapped drops.
 - Codex adapter now ingests top-level `turn_context` and `compacted` into canonical events, preserving these raw payloads for future APIs while keeping current message-level behavior stable.
