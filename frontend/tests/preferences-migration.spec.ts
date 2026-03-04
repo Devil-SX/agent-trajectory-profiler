@@ -28,11 +28,10 @@ test.describe('@smoke frontend preferences migration', () => {
     await expect(page.locator('#density-mode-select')).toHaveValue('compact');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('html')).toHaveAttribute('data-density', 'compact');
+    await expect(page.locator('.session-table')).toBeVisible();
+    await expect(page.getByRole('button', { name: '卡片视图' })).toHaveCount(0);
 
-    const viewToggle = page.locator('.session-view-toggle').first();
-    await expect(viewToggle.locator('button[aria-pressed="true"]').first()).toContainText('卡片视图');
-
-    const aggregationToggle = page.locator('.session-view-toggle').nth(1);
+    const aggregationToggle = page.locator('.session-view-toggle').first();
     await expect(aggregationToggle.locator('button[aria-pressed="true"]').first()).toContainText('物理会话');
 
     const legacyAfterMigration = await page.evaluate((keys) => ({
@@ -55,8 +54,8 @@ test.describe('@smoke frontend preferences migration', () => {
     await expect(page.locator('#language-mode-select')).toHaveValue('zh-CN');
     await expect(page.locator('#theme-mode-select')).toHaveValue('dark');
     await expect(page.locator('#density-mode-select')).toHaveValue('compact');
-
-    await expect(viewToggle.locator('button[aria-pressed="true"]').first()).toContainText('卡片视图');
+    await expect(page.locator('.session-table')).toBeVisible();
+    await expect(page.getByRole('button', { name: '卡片视图' })).toHaveCount(0);
     await expect(aggregationToggle.locator('button[aria-pressed="true"]').first()).toContainText('物理会话');
   });
 });

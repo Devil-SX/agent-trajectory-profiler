@@ -188,8 +188,9 @@ test.describe('@full Session Table Mode', () => {
     await setupTableModeMockApi(page);
     await page.goto('/');
 
-    await expect(page.getByRole('button', { name: 'Table View' })).toHaveClass(/active/);
     await expect(page.locator('.session-table')).toBeVisible();
+    await expect(page.locator('.session-card')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Card View' })).toHaveCount(0);
     await expect(page.locator('.session-tag--ecosystem-codex').first()).toBeVisible();
     await expect(page.locator('.session-tag--bottleneck-tool').first()).toBeVisible();
     await expect(page.locator('.session-tag--automation-high').first()).toBeVisible();
@@ -213,7 +214,6 @@ test.describe('@full Session Table Mode', () => {
     await setupTableModeMockApi(page);
     await page.goto('/');
 
-    await page.getByRole('button', { name: 'Table View' }).click();
     await page.waitForSelector('.session-table', { timeout: 10000 });
     await page.waitForSelector('tr[data-session-id="session-alpha"]', { timeout: 10000 });
 
@@ -244,7 +244,6 @@ test.describe('@full Session Table Mode', () => {
   test('should apply existing sort options in table mode', async ({ page }) => {
     await setupTableModeMockApi(page);
     await page.goto('/');
-    await page.getByRole('button', { name: 'Table View' }).click();
     await page.waitForSelector('.session-table', { timeout: 10000 });
 
     await page.locator('.sort-select').selectOption('tokens');

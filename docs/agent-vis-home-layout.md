@@ -47,7 +47,7 @@ Notes:
 
 - `config/settings.toml`: user-level persistent settings (paths, UI defaults, feature toggles).
 - `config/telegram.toml`: Telegram integration credentials and delivery settings.
-- `state/frontend-preferences.json`: frontend preference snapshot (for example locale/theme/density/view mode).
+- `state/frontend-preferences.json`: frontend preference snapshot (for example locale/theme/density/aggregation mode and session-browser filter state). `session_view_mode` is retained for backward compatibility, but Session Browser is table-only and safely ignores legacy `cards` values.
 - `state/sync-state.json`: sync runtime checkpoints and last sync metadata.
 - `state/report-state.json`: reporting checkpoint (for example last report time/window).
 - `data/profiler.db`: canonical parsed-session database.

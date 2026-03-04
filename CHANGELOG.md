@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-session Day/Night UI now keeps existing summed-duration view and adds explicit ratio-denominator toggle (include vs exclude inactive) that updates chart/table percentage semantics consistently, plus a dedicated coverage table with explainability text.
 - Session list backend query pipeline now applies AND semantics across active server-side filters in both physical and logical views, keeping logical dedup behavior consistent after sorting and filtering.
 - Frontend session filtering utilities now use a single typed filter-state contract shared by UI, local filtering, and API query construction, including automation-band to numeric-range normalization.
+- Session Browser presentation is now table-only: card/table toggle UI and card rendering branch were removed, and session selection flows now always operate on table rows.
+- Frontend preference migration keeps legacy `session_view_mode` keys backward-compatible while safely falling back to table-only behavior at runtime.
 
 ### Fixed
 

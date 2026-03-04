@@ -13,7 +13,6 @@ import type {
   FrontendPreferencesUpdate,
   SessionSummary,
   SessionAggregationMode,
-  SessionViewMode,
   ThemeMode,
 } from './types/session';
 
@@ -50,7 +49,7 @@ interface LegacyPreferences {
   locale?: Locale;
   theme_mode?: ThemeMode;
   density_mode?: DensityMode;
-  session_view_mode?: SessionViewMode;
+  legacy_session_view_mode?: 'cards' | 'table';
   session_aggregation_mode?: SessionAggregationMode;
 }
 
@@ -77,7 +76,7 @@ function readLegacyPreferences(): LegacyPreferences {
       densityMode === 'comfortable' || densityMode === 'compact'
         ? densityMode
         : undefined,
-    session_view_mode:
+    legacy_session_view_mode:
       sessionViewMode === 'cards' || sessionViewMode === 'table'
         ? sessionViewMode
         : undefined,
@@ -170,7 +169,6 @@ function App() {
   const [isMobile, setIsMobile] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('system');
   const [densityMode, setDensityMode] = useState<DensityMode>('comfortable');
-  const [sessionViewMode, setSessionViewMode] = useState<SessionViewMode>('table');
   const [sessionAggregationMode, setSessionAggregationMode] =
     useState<SessionAggregationMode>('logical');
   const [systemPrefersDark, setSystemPrefersDark] = useState(readSystemThemePreference);
@@ -184,7 +182,6 @@ function App() {
         setLocale(saved.locale);
         setThemeMode(saved.theme_mode);
         setDensityMode(saved.density_mode);
-        setSessionViewMode(saved.session_view_mode);
         setSessionAggregationMode(saved.session_aggregation_mode);
       },
     });
@@ -248,13 +245,11 @@ function App() {
       locale: Locale;
       theme_mode: ThemeMode;
       density_mode: DensityMode;
-      session_view_mode: SessionViewMode;
       session_aggregation_mode: SessionAggregationMode;
     }) => {
       setLocale(next.locale);
       setThemeMode(next.theme_mode);
       setDensityMode(next.density_mode);
-      setSessionViewMode(next.session_view_mode);
       setSessionAggregationMode(next.session_aggregation_mode);
     };
 
@@ -267,7 +262,6 @@ function App() {
       if (legacy.locale) patch.locale = legacy.locale;
       if (legacy.theme_mode) patch.theme_mode = legacy.theme_mode;
       if (legacy.density_mode) patch.density_mode = legacy.density_mode;
-      if (legacy.session_view_mode) patch.session_view_mode = legacy.session_view_mode;
       if (legacy.session_aggregation_mode) {
         patch.session_aggregation_mode = legacy.session_aggregation_mode;
       }
@@ -283,7 +277,6 @@ function App() {
             locale: patch.locale ?? server.locale,
             theme_mode: patch.theme_mode ?? server.theme_mode,
             density_mode: patch.density_mode ?? server.density_mode,
-            session_view_mode: patch.session_view_mode ?? server.session_view_mode,
             session_aggregation_mode:
               patch.session_aggregation_mode ?? server.session_aggregation_mode,
           });
@@ -511,11 +504,6 @@ function App() {
                 onSessionChange={handleSessionOpenFromOverview}
                 selectedSessionId={selectedSessionId}
                 autoSelectFirst={false}
-                viewMode={sessionViewMode}
-                onViewModeChange={(next) => {
-                  setSessionViewMode(next);
-                  persistPreferencesPatch({ session_view_mode: next });
-                }}
                 aggregationMode={sessionAggregationMode}
                 onAggregationModeChange={(next) => {
                   setSessionAggregationMode(next);
