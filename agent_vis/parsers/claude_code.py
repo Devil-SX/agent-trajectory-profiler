@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agent_vis.exceptions import SessionParseError
 from agent_vis.models import (
@@ -44,6 +44,13 @@ from agent_vis.parsers.canonical import (
 from agent_vis.parsers.error_taxonomy import (
     ERROR_TAXONOMY_VERSION,
     classify_tool_error,
+)
+from agent_vis.parsers.normalization import (
+    NormalizedMessageIR,
+    NormalizedRecordIR,
+    build_usage_ir,
+    coerce_timestamp,
+    normalize_message_content,
 )
 
 # ---------------------------------------------------------------------------
@@ -303,6 +310,62 @@ def _classify_characters(text: str) -> dict[str, int]:
     return counts
 
 
+_CLAUDE_RECORD_TYPES = {"user", "assistant", "file-history-snapshot", "summary"}
+_CLAUDE_MESSAGE_ROLES = {"user", "assistant", "system"}
+
+
+def _coerce_claude_role(raw_role: Any, raw_type: Any) -> Literal["user", "assistant", "system"]:
+    if isinstance(raw_role, str):
+        normalized_role = raw_role.strip().lower()
+        if normalized_role == "user":
+            return "user"
+        if normalized_role == "assistant":
+            return "assistant"
+        if normalized_role == "system":
+            return "system"
+    if raw_type == "user":
+        return "user"
+    return "assistant"
+
+
+def _coerce_claude_record_type(
+    raw_type: Any, role: Literal["user", "assistant", "system"]
+) -> Literal["user", "assistant", "file-history-snapshot", "summary"]:
+    if isinstance(raw_type, str) and raw_type in _CLAUDE_RECORD_TYPES:
+        if raw_type == "user":
+            return "user"
+        if raw_type == "assistant":
+            return "assistant"
+        if raw_type == "file-history-snapshot":
+            return "file-history-snapshot"
+        return "summary"
+    return "user" if role == "user" else "assistant"
+
+
+def _normalize_claude_message(
+    raw_message: Any, role: Literal["user", "assistant", "system"]
+) -> NormalizedMessageIR | None:
+    if not isinstance(raw_message, dict):
+        return None
+
+    model = raw_message.get("model")
+    msg_id = raw_message.get("id")
+    msg_type = raw_message.get("type")
+    stop_reason = raw_message.get("stop_reason")
+    stop_sequence = raw_message.get("stop_sequence")
+
+    return NormalizedMessageIR(
+        role=role,
+        content=normalize_message_content(raw_message.get("content"), text_only=False),
+        model=model if isinstance(model, str) else None,
+        id=msg_id if isinstance(msg_id, str) else None,
+        type=msg_type if isinstance(msg_type, str) else None,
+        stop_reason=stop_reason if isinstance(stop_reason, str) else None,
+        stop_sequence=stop_sequence if isinstance(stop_sequence, str) else None,
+        usage=build_usage_ir(raw_message.get("usage")),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public module-level functions (backward compatibility)
 # ---------------------------------------------------------------------------
@@ -317,7 +380,6 @@ class ClaudeCodeEventAdapter(TrajectoryEventAdapter):
     def to_canonical_event(
         self, raw_event: dict[str, Any], *, source_path: Path, line_number: int
     ) -> CanonicalEvent | None:
-        timestamp = raw_event.get("timestamp")
         event_type = raw_event.get("type")
 
         return CanonicalEvent(
@@ -325,13 +387,63 @@ class ClaudeCodeEventAdapter(TrajectoryEventAdapter):
             source_path=str(source_path),
             line_number=line_number,
             event_kind=str(event_type or "message"),
-            timestamp=timestamp if isinstance(timestamp, str) else None,
+            timestamp=coerce_timestamp(raw_event.get("timestamp"), line_number),
             actor=event_type if isinstance(event_type, str) else None,
             payload=raw_event,
         )
 
     def canonical_to_message(self, event: CanonicalEvent) -> MessageRecord | None:
-        return MessageRecord(**event.payload)
+        raw = event.payload
+        message_payload = raw.get("message")
+        raw_type = raw.get("type")
+        raw_role = message_payload.get("role") if isinstance(message_payload, dict) else None
+        role = _coerce_claude_role(raw_role, raw_type)
+        record_type = _coerce_claude_record_type(raw_type, role)
+
+        parent_uuid = raw.get("parentUuid")
+        user_type = raw.get("userType")
+        cwd = raw.get("cwd")
+        version = raw.get("version")
+        git_branch = raw.get("gitBranch")
+        agent_id = raw.get("agentId")
+        permission_mode = raw.get("permissionMode")
+        message_id = raw.get("messageId")
+        summary = raw.get("summary")
+        leaf_uuid = raw.get("leafUuid")
+        thinking_metadata = raw.get("thinkingMetadata")
+        todos = raw.get("todos")
+        snapshot = raw.get("snapshot")
+
+        normalized_record = NormalizedRecordIR(
+            session_id=raw.get("sessionId"),
+            uuid=raw.get("uuid"),
+            timestamp=event.timestamp or coerce_timestamp(raw.get("timestamp"), event.line_number),
+            record_type=record_type,
+            parent_uuid=parent_uuid if isinstance(parent_uuid, str) else None,
+            user_type=user_type if isinstance(user_type, str) else None,
+            cwd=cwd if isinstance(cwd, str) else None,
+            version=version if isinstance(version, str) else None,
+            git_branch=git_branch if isinstance(git_branch, str) else None,
+            is_sidechain=(
+                raw.get("isSidechain") if isinstance(raw.get("isSidechain"), bool) else None
+            ),
+            agent_id=agent_id if isinstance(agent_id, str) else None,
+            message=_normalize_claude_message(message_payload, role),
+            is_meta=raw.get("isMeta") if isinstance(raw.get("isMeta"), bool) else None,
+            is_snapshot_update=(
+                raw.get("isSnapshotUpdate")
+                if isinstance(raw.get("isSnapshotUpdate"), bool)
+                else None
+            ),
+            thinking_metadata=thinking_metadata if isinstance(thinking_metadata, dict) else None,
+            todos=todos if isinstance(todos, list) else None,
+            permission_mode=permission_mode if isinstance(permission_mode, str) else None,
+            snapshot=snapshot if isinstance(snapshot, dict) else None,
+            message_id=message_id if isinstance(message_id, str) else None,
+            summary=summary if isinstance(summary, str) else None,
+            leaf_uuid=leaf_uuid if isinstance(leaf_uuid, str) else None,
+        )
+        return normalized_record.to_message_record()
 
 
 def parse_jsonl_file(file_path: Path) -> list[MessageRecord]:

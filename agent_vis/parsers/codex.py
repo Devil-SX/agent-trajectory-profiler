@@ -6,9 +6,8 @@ import json
 import logging
 import re
 from datetime import datetime
-from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -29,6 +28,18 @@ from agent_vis.parsers.canonical import (
     register_adapter,
 )
 from agent_vis.parsers.claude_code import calculate_session_statistics, extract_session_metadata
+from agent_vis.parsers.normalization import (
+    NormalizedMessageIR,
+    NormalizedRecordIR,
+    build_usage_ir,
+    coerce_timestamp,
+    extract_lineage_ids,
+    extract_non_empty_str,
+    normalize_message_content,
+    normalize_tool_result_content,
+    parse_json_if_possible,
+    safe_json_dumps,
+)
 
 _UUID_TAIL_RE = re.compile(
     r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
@@ -218,55 +229,6 @@ def _session_id_from_source_path(source_path: str) -> str:
     return stem
 
 
-def _extract_non_empty_str(payload: dict[str, Any], keys: tuple[str, ...]) -> str | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized:
-                return normalized
-    return None
-
-
-def _extract_nested_dict(payload: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any] | None:
-    current: Any = payload
-    for key in path:
-        if not isinstance(current, dict):
-            return None
-        current = current.get(key)
-    if isinstance(current, dict):
-        return current
-    return None
-
-
-def _lineage_payload_candidates(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    candidates: list[dict[str, Any]] = []
-    seen: set[int] = set()
-
-    def _append_if_dict(candidate: Any) -> None:
-        if not isinstance(candidate, dict):
-            return
-        marker = id(candidate)
-        if marker in seen:
-            return
-        seen.add(marker)
-        candidates.append(candidate)
-
-    _append_if_dict(payload)
-    _append_if_dict(payload.get("lineage"))
-
-    for path in (
-        ("source",),
-        ("source", "lineage"),
-        ("source", "thread_spawn"),
-        ("source", "subagent"),
-        ("source", "subagent", "thread_spawn"),
-    ):
-        _append_if_dict(_extract_nested_dict(payload, path))
-
-    return candidates
-
-
 def _resolve_codex_lineage(file_path: Path, session_id: str) -> tuple[str, str | None, str | None]:
     """Resolve logical lineage for one Codex rollout file.
 
@@ -291,17 +253,15 @@ def _resolve_codex_lineage(file_path: Path, session_id: str) -> tuple[str, str |
                 if not isinstance(payload, dict):
                     continue
 
-                for candidate in _lineage_payload_candidates(payload):
-                    parent_session_id = parent_session_id or _extract_non_empty_str(
-                        candidate,
-                        _PARENT_ID_KEYS,
-                    )
-                    root_session_id = root_session_id or _extract_non_empty_str(
-                        candidate,
-                        _ROOT_ID_KEYS,
-                    )
-                    if parent_session_id and root_session_id:
-                        break
+                parent_candidate, root_candidate = extract_lineage_ids(
+                    payload,
+                    parent_keys=_PARENT_ID_KEYS,
+                    root_keys=_ROOT_ID_KEYS,
+                )
+                parent_session_id = parent_session_id or parent_candidate
+                root_session_id = root_session_id or root_candidate
+                if parent_session_id and root_session_id:
+                    break
     except OSError:
         # Fall back to physical-only view if lineage cannot be inspected.
         pass
@@ -311,10 +271,7 @@ def _resolve_codex_lineage(file_path: Path, session_id: str) -> tuple[str, str |
 
 
 def _safe_timestamp(raw_timestamp: Any, line_number: int) -> str:
-    if isinstance(raw_timestamp, str) and raw_timestamp:
-        return raw_timestamp
-    # Keep a deterministic ISO timestamp fallback when source data is incomplete.
-    return f"1970-01-01T00:00:{line_number % 60:02d}Z"
+    return coerce_timestamp(raw_timestamp, line_number)
 
 
 def _normalize_user_text_for_dedupe(text: str) -> str:
@@ -458,24 +415,7 @@ def _append_drop_sample(
 
 
 def _extract_text_blocks(content: Any) -> str | list[dict[str, Any]]:
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-
-    text_blocks: list[dict[str, Any]] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        text = block.get("text")
-        if isinstance(text, str):
-            text_blocks.append({"type": "text", "text": text})
-
-    if not text_blocks:
-        return ""
-    if len(text_blocks) == 1:
-        return text_blocks[0]["text"]
-    return text_blocks
+    return normalize_message_content(content, text_only=True)
 
 
 def _summarize_text_like_payload(payload: dict[str, Any]) -> str:
@@ -498,67 +438,8 @@ def _summarize_text_like_payload(payload: dict[str, Any]) -> str:
     return f"{payload.get('type', 'event')}"
 
 
-def _safe_json_dumps(value: Any) -> str:
-    try:
-        return json.dumps(value, ensure_ascii=False)
-    except TypeError:
-        return str(value)
-
-
-def _hash_reference(value: Any) -> str:
-    digest = sha256(_safe_json_dumps(value).encode("utf-8")).hexdigest()[:16]
-    return f"sha256:{digest}"
-
-
-def _normalize_tool_output_blocks(raw_output: Any) -> list[dict[str, Any]]:
-    if isinstance(raw_output, dict):
-        return [raw_output]
-    if isinstance(raw_output, list):
-        blocks: list[dict[str, Any]] = []
-        for item in raw_output:
-            if isinstance(item, dict):
-                blocks.append(item)
-            else:
-                blocks.append({"type": "value", "value": item})
-        return blocks
-    return [{"type": "value", "value": raw_output}]
-
-
 def _normalize_tool_output_content(raw_output: Any) -> str | list[dict[str, Any]]:
-    if isinstance(raw_output, str):
-        if len(raw_output) <= _MAX_TOOL_RESULT_TEXT_CHARS:
-            return raw_output
-        raw_ref = _hash_reference(raw_output)
-        preview = raw_output[:_MAX_TOOL_RESULT_TEXT_CHARS]
-        return [
-            {"type": "text", "text": preview},
-            {
-                "type": "truncation_meta",
-                "raw_ref": raw_ref,
-                "original_chars": len(raw_output),
-                "truncated": True,
-            },
-        ]
-
-    blocks = _normalize_tool_output_blocks(raw_output)
-    serialized = _safe_json_dumps(blocks)
-    if (
-        len(serialized.encode("utf-8")) <= _MAX_TOOL_RESULT_JSON_BYTES
-        and len(blocks) <= _MAX_TOOL_RESULT_ITEMS
-    ):
-        return blocks
-
-    raw_ref = _hash_reference(raw_output)
-    return [
-        {
-            "type": "structured_summary",
-            "raw_ref": raw_ref,
-            "original_bytes": len(serialized.encode("utf-8")),
-            "item_count": len(blocks),
-            "truncated": True,
-            "preview": serialized[:_TOOL_RESULT_PREVIEW_CHARS],
-        }
-    ]
+    return normalize_tool_result_content(raw_output)
 
 
 def _normalize_status_token(value: Any) -> str | None:
@@ -695,26 +576,18 @@ def _detect_error_from_structured_output(raw_output: Any) -> bool | None:
 
 
 def _parse_json_if_possible(raw_output: Any) -> Any | None:
-    if not isinstance(raw_output, str):
-        return None
-    stripped = raw_output.strip()
-    if not stripped or stripped[0] not in {"{", "["}:
-        return None
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError:
-        return None
+    return parse_json_if_possible(raw_output)
 
 
 def _resolve_response_item_call_id(payload_dict: dict[str, Any], session_id: str, line: int) -> str:
-    call_id = _extract_non_empty_str(payload_dict, ("call_id", "id", "tool_call_id"))
+    call_id = extract_non_empty_str(payload_dict, ("call_id", "id", "tool_call_id"))
     if call_id:
         return call_id
     return f"{session_id}-result-{line}"
 
 
 def _resolve_web_search_call_id(payload_dict: dict[str, Any], session_id: str, line: int) -> str:
-    call_id = _extract_non_empty_str(payload_dict, _WEB_SEARCH_CALL_ID_KEYS)
+    call_id = extract_non_empty_str(payload_dict, _WEB_SEARCH_CALL_ID_KEYS)
     if call_id:
         return call_id
     return f"{session_id}-web-search-{line}"
@@ -739,7 +612,7 @@ def _build_web_search_output_payload(payload_dict: dict[str, Any]) -> dict[str, 
 
 
 def _detect_web_search_error(payload_dict: dict[str, Any]) -> bool | None:
-    status = _extract_non_empty_str(payload_dict, _WEB_SEARCH_STATUS_KEYS)
+    status = extract_non_empty_str(payload_dict, _WEB_SEARCH_STATUS_KEYS)
     if status is not None and _is_non_terminal_status(status):
         return None
 
@@ -783,7 +656,7 @@ def _build_message_record(
     session_id: str,
     uuid: str,
     timestamp: str,
-    role: str,
+    role: Literal["user", "assistant", "system"],
     content: str | list[dict[str, Any]],
     cwd: str | None = None,
     version: str | None = None,
@@ -791,24 +664,24 @@ def _build_message_record(
     git_branch: str | None = None,
     user_type: str | None = None,
 ) -> MessageRecord:
-    payload: dict[str, Any] = {
-        "type": "user" if role == "user" else "assistant",
-        "sessionId": session_id,
-        "uuid": uuid,
-        "timestamp": timestamp,
-        "cwd": cwd,
-        "version": version,
-        "gitBranch": git_branch,
-        "userType": user_type,
-        "isSidechain": False,
-        "message": {
-            "role": role,
-            "content": content,
-        },
-    }
-    if usage is not None:
-        payload["message"]["usage"] = usage
-    return MessageRecord(**payload)
+    normalized_usage = build_usage_ir(usage)
+    normalized_record = NormalizedRecordIR(
+        session_id=session_id,
+        uuid=uuid,
+        timestamp=timestamp,
+        record_type="user" if role == "user" else "assistant",
+        cwd=cwd,
+        version=version,
+        git_branch=git_branch,
+        user_type=user_type,
+        is_sidechain=False,
+        message=NormalizedMessageIR(
+            role=role,
+            content=content,
+            usage=normalized_usage,
+        ),
+    )
+    return normalized_record.to_message_record()
 
 
 @register_adapter
@@ -924,7 +797,12 @@ class CodexEventAdapter(TrajectoryEventAdapter):
             role = payload_dict.get("role")
             role_str = role if isinstance(role, str) else "assistant"
             if role_str in {"user", "assistant", "system"}:
-                normalized_role = role_str
+                if role_str == "user":
+                    normalized_role: Literal["user", "assistant", "system"] = "user"
+                elif role_str == "system":
+                    normalized_role = "system"
+                else:
+                    normalized_role = "assistant"
                 user_type = None
             else:
                 normalized_role = "assistant"
@@ -1002,7 +880,7 @@ class CodexEventAdapter(TrajectoryEventAdapter):
             detection_text = (
                 rendered_output
                 if isinstance(rendered_output, str)
-                else _safe_json_dumps(rendered_output)
+                else safe_json_dumps(rendered_output)
             )
             output_content = _normalize_tool_output_content(rendered_output)
             if output_content == "" and detection_text:
