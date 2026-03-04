@@ -1,89 +1,141 @@
 .sync-control {
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.sync-control--compact {
+  padding: 0.55rem 0.75rem;
+  gap: 0.45rem;
 }
 
 .sync-control__header {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.6rem;
+  align-items: center;
 }
 
 .sync-control__header h3 {
   margin: 0;
-  font-size: 0.95rem;
-  color: #111827;
+  font-size: calc(0.84rem * var(--density-font-scale));
+  line-height: 1.1;
+  color: var(--color-text-primary);
 }
 
 .sync-control__header p {
-  margin: 0.15rem 0 0;
-  font-size: 0.8rem;
-  color: #4b5563;
+  margin: 0.08rem 0 0;
+  font-size: calc(0.72rem * var(--density-font-scale));
+  color: var(--color-text-secondary);
+}
+
+.sync-control__status-pill {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.14rem 0.45rem;
+  font-size: calc(0.66rem * var(--density-font-scale));
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  justify-self: end;
 }
 
 .sync-control__button {
-  border: 1px solid #2563eb;
-  background: #2563eb;
-  color: #ffffff;
-  border-radius: 6px;
-  padding: 0.45rem 0.75rem;
-  font-size: 0.82rem;
-  font-weight: 600;
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  border-radius: 7px;
+  padding: 0.33rem 0.58rem;
+  font-size: calc(0.74rem * var(--density-font-scale));
+  font-weight: 700;
   cursor: pointer;
+  min-height: var(--density-control-min-height);
+  white-space: nowrap;
+}
+
+.sync-control__button:hover:not(:disabled) {
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
 }
 
 .sync-control__button:disabled {
-  background: #94a3b8;
-  border-color: #94a3b8;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
 .sync-control__summary {
-  margin-top: 0.65rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
-  gap: 0.35rem;
-  font-size: 0.8rem;
-  color: #374151;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.3rem;
+  font-size: calc(0.72rem * var(--density-font-scale));
+  color: var(--color-text-secondary);
+}
+
+.sync-control__summary span {
+  display: inline-flex;
+  gap: 0.2rem;
+  align-items: baseline;
+  white-space: nowrap;
 }
 
 .sync-control__ecosystems {
-  margin-top: 0.65rem;
-  border-top: 1px solid #e5e7eb;
-  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.45rem;
 }
 
 .sync-control__eco-row {
   display: grid;
-  grid-template-columns: 1.3fr 0.9fr 1fr 0.9fr;
+  grid-template-columns: 1.1fr 1fr 1fr 0.9fr;
   gap: 0.5rem;
   align-items: center;
-  font-size: 0.8rem;
-  color: #374151;
-  padding: 0.2rem 0;
+  font-size: calc(0.72rem * var(--density-font-scale));
+  color: var(--color-text-secondary);
+  padding: 0.12rem 0;
 }
 
 .sync-control__eco-name {
-  font-weight: 600;
-  color: #1f2937;
+  font-weight: 700;
+  color: var(--color-text-primary);
 }
 
 .sync-control__errors {
-  margin-top: 0.5rem;
-  font-size: 0.78rem;
-  color: #7f1d1d;
+  margin-top: 0.2rem;
+  font-size: calc(0.7rem * var(--density-font-scale));
+  color: var(--color-danger);
 }
 
 .sync-control__errors ul {
   margin: 0.35rem 0 0;
-  padding-left: 1.1rem;
+  padding-left: 1rem;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
+  .sync-control__summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .sync-control__eco-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .sync-control__header {
+    grid-template-columns: 1fr auto;
+  }
+
+  .sync-control__button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .sync-control__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

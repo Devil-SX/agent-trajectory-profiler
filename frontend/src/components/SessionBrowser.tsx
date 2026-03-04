@@ -2,10 +2,8 @@
  * SessionBrowser component for browsing Claude Code sessions.
  *
  * Features:
- * - SessionFilter component for search, sorting, and bottleneck filtering
- * - SessionListView component with virtual scrolling for efficient rendering
- * - Filtering logic (search query + bottleneck filter)
- * - Sorting logic (updated, created, tokens, duration, automation)
+ * - SessionFilter component for composable multi-dimensional filtering
+ * - SessionListView component for table-only session browsing
  * - Optional comparison picker mode for analytics view
  * - Handles URL parameter ?session= for initial selection
  * - Error and loading states
@@ -15,15 +13,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   useFrontendPreferencesQuery,
-  useRunSyncMutation,
   useSessionsQuery,
-  useSyncStatusQuery,
   useUpdateFrontendPreferencesMutation,
 } from '../hooks/useSessionsQuery';
 import type { SessionSummary } from '../types/session';
 import { SessionFilter } from './SessionFilter';
 import { SessionListView } from './SessionListView';
-import { SyncControl } from './SyncControl';
 import { useI18n } from '../i18n';
 import {
   DEFAULT_SESSION_FILTERS,
@@ -91,8 +86,6 @@ export function SessionBrowser({
     aggregationMode,
     serverQueryFilters,
   );
-  const syncStatusQuery = useSyncStatusQuery();
-  const runSyncMutation = useRunSyncMutation();
 
   const sessions: SessionSummary[] = data?.sessions ?? EMPTY_SESSIONS;
   const loading = isLoading && !data;
@@ -262,30 +255,6 @@ export function SessionBrowser({
     onAggregationModeChange?.(next);
   };
 
-  const handleRunSync = () => {
-    runSyncMutation.mutate(
-      { force: false },
-      {
-        onSuccess: (result) => {
-          if (result.status === 'already_running') {
-            toast(t('session.sync.alreadyRunning'));
-            return;
-          }
-          toast.success(t('session.sync.success', {
-            values: {
-              parsed: result.parsed,
-              skipped: result.skipped,
-              errors: result.errors,
-            },
-          }));
-        },
-        onError: (err) => {
-          toast.error(t('session.sync.failed', { values: { message: err.message } }));
-        },
-      }
-    );
-  };
-
   const browserStateClass = loading
     ? 'loading'
     : blockingError
@@ -297,12 +266,6 @@ export function SessionBrowser({
   return (
     <div className={`session-browser ${browserStateClass}`.trim()}>
       <div className="session-browser-container">
-        <SyncControl
-          status={syncStatusQuery.data}
-          isLoading={syncStatusQuery.isLoading}
-          isSyncing={runSyncMutation.isPending}
-          onRunSync={handleRunSync}
-        />
         {loading && (
           <div className="loading-container" role="status" aria-live="polite">
             <div className="loading-indicator-row">

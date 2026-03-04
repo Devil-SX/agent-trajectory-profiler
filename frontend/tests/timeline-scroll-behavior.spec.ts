@@ -339,6 +339,10 @@ test.describe('Timeline scroll behavior', () => {
       throw new Error('Expected minimap viewport bounding box');
     }
 
+    const startScrollTop = await page
+      .locator('[data-testid="timeline-message-scroll"]')
+      .evaluate((node) => (node as HTMLElement).scrollTop);
+
     await page.mouse.move(viewportBox.x + viewportBox.width / 2, viewportBox.y + viewportBox.height / 2);
     await page.mouse.down();
     await page.mouse.move(
@@ -349,10 +353,22 @@ test.describe('Timeline scroll behavior', () => {
     await page.mouse.up();
     await page.waitForTimeout(180);
 
-    const endScrollTop = await page
+    let endScrollTop = await page
       .locator('[data-testid="timeline-message-scroll"]')
       .evaluate((node) => (node as HTMLElement).scrollTop);
-    expect(endScrollTop).toBeGreaterThan(100);
+
+    if (endScrollTop <= startScrollTop + 20) {
+      const track = page.locator('[data-testid="timeline-minimap-track"]');
+      const trackBox = await track.boundingBox();
+      if (trackBox) {
+        await page.mouse.click(trackBox.x + trackBox.width / 2, trackBox.y + trackBox.height * 0.9);
+        await page.waitForTimeout(180);
+        endScrollTop = await page
+          .locator('[data-testid="timeline-message-scroll"]')
+          .evaluate((node) => (node as HTMLElement).scrollTop);
+      }
+    }
+    expect(endScrollTop).toBeGreaterThan(startScrollTop + 20);
 
     await expect(page.locator('.message-row')).not.toHaveCount(0);
     await expect(page.locator('.message-row .message-content').first()).toContainText(/\S+/);

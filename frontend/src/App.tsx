@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import './App.css';
 import { SessionBrowser } from './components/SessionBrowser';
+import { SyncControl } from './components/SyncControl';
 import { useI18n } from './i18n';
 import type { Locale } from './i18n';
 import {
   useFrontendPreferencesQuery,
+  useRunSyncMutation,
+  useSyncStatusQuery,
   useUpdateFrontendPreferencesMutation,
 } from './hooks/useSessionsQuery';
 import type {
@@ -158,6 +162,8 @@ function buildRouteUrl(route: RouteState): string {
 function App() {
   const { locale, setLocale, t } = useI18n();
   const preferencesQuery = useFrontendPreferencesQuery();
+  const syncStatusQuery = useSyncStatusQuery();
+  const runSyncMutation = useRunSyncMutation();
   const updatePreferencesMutation = useUpdateFrontendPreferencesMutation();
   const hasHydratedPreferencesRef = useRef(false);
   const initialRoute = readRouteState();
@@ -185,6 +191,32 @@ function App() {
         setSessionAggregationMode(saved.session_aggregation_mode);
       },
     });
+  };
+
+  const handleRunSync = () => {
+    runSyncMutation.mutate(
+      { force: false },
+      {
+        onSuccess: (result) => {
+          if (result.status === 'already_running') {
+            toast(t('session.sync.alreadyRunning'));
+            return;
+          }
+          toast.success(
+            t('session.sync.success', {
+              values: {
+                parsed: result.parsed,
+                skipped: result.skipped,
+                errors: result.errors,
+              },
+            })
+          );
+        },
+        onError: (err) => {
+          toast.error(t('session.sync.failed', { values: { message: err.message } }));
+        },
+      }
+    );
   };
 
   const applyRouteState = (next: RouteState, mode: 'push' | 'replace' = 'push') => {
@@ -475,6 +507,15 @@ function App() {
         </div>
       </header>
       <main>
+        <div className="global-sync-strip">
+          <SyncControl
+            status={syncStatusQuery.data}
+            isLoading={syncStatusQuery.isLoading}
+            isSyncing={runSyncMutation.isPending}
+            onRunSync={handleRunSync}
+            compact
+          />
+        </div>
         <div className="view-tabs view-tabs--primary">
           <button
             className={`tab-button ${showCrossSession ? 'active' : ''}`}

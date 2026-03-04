@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session Browser multi-dimensional filter model with persisted frontend state (`session_browser_filters`) covering date range, bottleneck, ecosystem, sort key/direction, token/message ranges, automation band, and automation numeric range.
 - New Session Browser active-filter chips and one-click clear-all behavior, plus smoke coverage for representative multi-filter combinations and reset flow in table mode.
 - Backend session list API now supports server-side composable range/source filters and sort direction (`/api/sessions` query params for bottleneck, ecosystem, tokens/messages/automation min-max, sort key, and asc/desc direction).
+- SyncControl top-layout redesign: DB Sync status/control is promoted to global top-level placement with compact density and updated smoke/mobile responsiveness assertions.
 
 ### Changed
 

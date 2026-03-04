@@ -55,7 +55,30 @@ test.describe('Sync Control', () => {
     await expect(syncControl).toContainText('Claude Code');
     await expect(syncControl).toContainText('Codex');
 
+    const syncBox = await syncControl.boundingBox();
+    const sessionBrowser = page.locator('.session-browser');
+    const browserBox = await sessionBrowser.boundingBox();
+    expect(syncBox).not.toBeNull();
+    expect(browserBox).not.toBeNull();
+    expect((syncBox?.y ?? 0) + (syncBox?.height ?? 0)).toBeLessThan(browserBox?.y ?? 99999);
+
     await page.getByRole('button', { name: 'Sync Now' }).click();
     await expect.poll(() => syncCallCount).toBe(1);
+  });
+
+  test('@full keeps top sync control compact and usable on mobile viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setupMockApi(page);
+    await page.goto('/');
+
+    const syncControl = page.locator('.sync-control');
+    await expect(syncControl).toBeVisible();
+    await expect(page.locator('.global-sync-strip .sync-control')).toBeVisible();
+    await expect(syncControl).toContainText('DB Sync');
+    await expect(syncControl.getByRole('button', { name: 'Sync Now' })).toBeVisible();
+
+    const bounds = await syncControl.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect((bounds?.width ?? 0)).toBeLessThanOrEqual(390);
   });
 });

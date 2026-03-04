@@ -35,6 +35,10 @@
   min-height: 0;
 }
 
+.global-sync-strip {
+  width: 100%;
+}
+
 .main-content {
   display: flex;
   gap: var(--density-section-gap);

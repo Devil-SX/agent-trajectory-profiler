@@ -7,6 +7,7 @@ interface SyncControlProps {
   isLoading: boolean;
   isSyncing: boolean;
   onRunSync: () => void;
+  compact?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -42,6 +43,7 @@ export function SyncControl({
   isLoading,
   isSyncing,
   onRunSync,
+  compact = false,
 }: SyncControlProps) {
   const { t, formatDateTime, formatNumber } = useI18n();
   const detail = status?.last_sync;
@@ -55,7 +57,10 @@ export function SyncControl({
   };
 
   return (
-    <section className="sync-control" aria-label={t('sync.aria')}>
+    <section
+      className={`sync-control ${compact ? 'sync-control--compact' : ''}`.trim()}
+      aria-label={t('sync.aria')}
+    >
       <div className="sync-control__header">
         <div>
           <h3>{t('sync.title')}</h3>
@@ -64,6 +69,9 @@ export function SyncControl({
             : <strong>{formatTime(detail?.finished_at)}</strong>
           </p>
         </div>
+        <span className="sync-control__status-pill">
+          {status?.sync_running ? 'running' : detail?.status ?? 'idle'}
+        </span>
         <button
           type="button"
           className="sync-control__button"
