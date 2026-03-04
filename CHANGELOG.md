@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Timeline long-message compaction flow: oversized user/assistant text messages now render in a truncated preview state with per-message `Expand` actions, and expose a full-content modal with keyboard support (Enter/ESC), overlay/button close paths, and focus-return behavior.
 - Local privacy-preserving Codex regression smoke test that can target a developer-provided real rollout fixture via `AGENT_VIS_PRIVATE_CODEX_CASE`, while skipping safely in CI when no private fixture is present.
 - Codex full-coverage regression guard for observed event families (`session_meta`, top-level `turn_context/compacted`, expanded `event_msg:*`, and `response_item:*` including `web_search_call`) to prevent implicit parser drift.
 - Codex/web-search regression coverage for status-aware tool error annotations, including result-only tool records without prior `tool_use` blocks.

@@ -53,6 +53,13 @@ interface ScrollMetrics {
   clientHeight: number;
 }
 
+interface ExpandedMessageModalState {
+  messageUuid: string;
+  source: 'user' | 'assistant' | 'subagent';
+  timestamp: string;
+  fullText: string;
+}
+
 const ROW_VERTICAL_GAP_PX = 14;
 const ESTIMATED_ROW_HEIGHT = 220 + ROW_VERTICAL_GAP_PX;
 const OVERSCAN_COUNT = 8;
@@ -61,6 +68,8 @@ const MINIMAP_WIDTH = 104;
 const MINIMAP_HEIGHT = 420;
 const MODEL_STALL_SECONDS = 600;
 const MESSAGE_HIGHLIGHT_MS = 2200;
+const MESSAGE_TRUNCATE_MAX_CHARS = 420;
+const MESSAGE_TRUNCATE_MAX_LINES = 8;
 
 const FALLBACK_TOOL_USE_NAME = 'Tool Result';
 
@@ -240,6 +249,71 @@ function isTechnicalEventMessage(message: MessageRecord): boolean {
   return false;
 }
 
+function extractMessageTextContent(message: MessageRecord): string | null {
+  const content = message.message?.content;
+  if (typeof content === 'string') {
+    const normalized = content.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (!Array.isArray(content) || content.length === 0) {
+    return null;
+  }
+
+  const textSegments: string[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== 'object') {
+      return null;
+    }
+
+    const typed = block as Record<string, unknown>;
+    if (typed.type === 'text' && typeof typed.text === 'string') {
+      const normalized = typed.text.trim();
+      if (normalized.length > 0) {
+        textSegments.push(normalized);
+      }
+      continue;
+    }
+
+    if (typed.type === 'thinking') {
+      continue;
+    }
+
+    return null;
+  }
+
+  if (textSegments.length === 0) {
+    return null;
+  }
+
+  return textSegments.join('\n\n');
+}
+
+function shouldTruncateMessageText(text: string): boolean {
+  if (text.length > MESSAGE_TRUNCATE_MAX_CHARS) {
+    return true;
+  }
+  return text.split(/\r?\n/).length > MESSAGE_TRUNCATE_MAX_LINES;
+}
+
+function truncateMessageText(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const hasLineOverflow = lines.length > MESSAGE_TRUNCATE_MAX_LINES;
+  const lineBounded = hasLineOverflow
+    ? lines.slice(0, MESSAGE_TRUNCATE_MAX_LINES).join('\n')
+    : text;
+
+  if (lineBounded.length > MESSAGE_TRUNCATE_MAX_CHARS) {
+    return `${lineBounded.slice(0, MESSAGE_TRUNCATE_MAX_CHARS).trimEnd()}...`;
+  }
+
+  if (hasLineOverflow) {
+    return `${lineBounded}\n...`;
+  }
+
+  return lineBounded;
+}
+
 function AnomalyGlyph({ type, className }: AnomalyGlyphProps) {
   return (
     <span
@@ -257,6 +331,8 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   const { data, isLoading, isFetching, error: queryError, refetch } = useSessionDetailQuery(sessionId);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const minimapTrackRef = useRef<HTMLDivElement>(null);
+  const modalCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const modalTriggerRef = useRef<HTMLElement | null>(null);
   const clearHighlightTimeoutRef = useRef<number | null>(null);
   const isDraggingViewportRef = useRef(false);
   const dragOffsetRef = useRef(0);
@@ -270,6 +346,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
   const [showModelStalls, setShowModelStalls] = useState(true);
   const [showToolErrors, setShowToolErrors] = useState(true);
   const [highlightedMessageUuid, setHighlightedMessageUuid] = useState<string | null>(null);
+  const [expandedMessageModal, setExpandedMessageModal] = useState<ExpandedMessageModalState | null>(null);
 
   const session: Session | null = data?.session ?? null;
   const loading = isLoading && !session;
@@ -410,6 +487,27 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
         });
       },
     []
+  );
+
+  const closeExpandedMessageModal = useCallback(() => {
+    setExpandedMessageModal(null);
+    const trigger = modalTriggerRef.current;
+    if (trigger && trigger.isConnected) {
+      trigger.focus();
+    }
+  }, []);
+
+  const openExpandedMessageModal = useCallback(
+    (message: MessageRecord, fullText: string, trigger: HTMLElement) => {
+      modalTriggerRef.current = trigger;
+      setExpandedMessageModal({
+        messageUuid: message.uuid,
+        source: getMessageSource(message),
+        timestamp: formatTimestamp(message.timestamp),
+        fullText,
+      });
+    },
+    [formatTimestamp]
   );
 
   const timelineSeries = useMemo(() => {
@@ -834,6 +932,25 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
         return <p className="message-text">(Empty message)</p>;
       }
 
+      const extractedText = extractMessageTextContent(message);
+      if (extractedText && shouldTruncateMessageText(extractedText)) {
+        const truncatedText = truncateMessageText(extractedText);
+        return (
+          <div className="message-content-compact">
+            <p className="message-text message-text--truncated">{truncatedText}</p>
+            <button
+              type="button"
+              className="message-expand-button"
+              onClick={(event) => openExpandedMessageModal(message, extractedText, event.currentTarget)}
+              aria-label={`Expand full message from ${getMessageSource(message)}`}
+              data-testid={`timeline-expand-${message.uuid}`}
+            >
+              Expand
+            </button>
+          </div>
+        );
+      }
+
       const content = message.message.content;
       if (typeof content === 'string') {
         const rendered = renderTextWithCodeBlocks(content, 0);
@@ -849,7 +966,7 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
 
       return <p className="message-text">(Unknown content format)</p>;
     },
-    [renderContentBlock, renderTextWithCodeBlocks]
+    [openExpandedMessageModal, renderContentBlock, renderTextWithCodeBlocks]
   );
 
   useEffect(() => {
@@ -920,6 +1037,34 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
       window.removeEventListener('pointercancel', onPointerUp);
     };
   }, [jumpByViewportRatio]);
+
+  useEffect(() => {
+    if (!expandedMessageModal) {
+      return undefined;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeExpandedMessageModal();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [closeExpandedMessageModal, expandedMessageModal]);
+
+  useEffect(() => {
+    if (!expandedMessageModal) {
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      modalCloseButtonRef.current?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [expandedMessageModal]);
 
   useEffect(() => {
     return () => {
@@ -1175,6 +1320,51 @@ export function MessageTimeline({ sessionId, autoScrollToBottom = true }: Messag
           </div>
         </aside>
       </div>
+
+      {expandedMessageModal && (
+        <div
+          className="timeline-message-modal-overlay"
+          role="presentation"
+          data-testid="timeline-message-modal-overlay"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closeExpandedMessageModal();
+            }
+          }}
+        >
+          <div
+            className="timeline-message-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="timeline-message-modal-title"
+            aria-describedby="timeline-message-modal-content"
+            data-testid="timeline-message-modal"
+            data-message-uuid={expandedMessageModal.messageUuid}
+          >
+            <div className="timeline-message-modal-header">
+              <h3 id="timeline-message-modal-title">
+                Expanded message · {expandedMessageModal.source} · {expandedMessageModal.timestamp}
+              </h3>
+              <button
+                ref={modalCloseButtonRef}
+                type="button"
+                className="timeline-message-modal-close"
+                onClick={closeExpandedMessageModal}
+                aria-label="Close expanded message"
+              >
+                Close
+              </button>
+            </div>
+            <pre
+              id="timeline-message-modal-content"
+              className="timeline-message-modal-content"
+              data-testid="timeline-message-modal-content"
+            >
+              {expandedMessageModal.fullText}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
