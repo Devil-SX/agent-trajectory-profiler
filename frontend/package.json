@@ -25,7 +25,9 @@
     "test:e2e:debug": "playwright test --debug",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "test:check-tags": "node ./scripts/validate-playwright-tags.mjs"
+    "test:check-tags": "node ./scripts/validate-playwright-tags.mjs",
+    "typegen": "node ./scripts/generate-api-types.mjs",
+    "typegen:check": "node ./scripts/generate-api-types.mjs --check"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",
@@ -41,9 +43,9 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.58.1",
+    "@tailwindcss/postcss": "^4.1.18",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
-    "@tailwindcss/postcss": "^4.1.18",
     "@types/lodash.debounce": "^4.0.9",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
@@ -57,6 +59,7 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "jsdom": "^27.0.1",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.5.6",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.1.18",

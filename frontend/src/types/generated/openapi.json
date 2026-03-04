@@ -1,0 +1,5165 @@
+{
+  "components": {
+    "schemas": {
+      "AnalyticsBucket": {
+        "description": "Generic distribution bucket.",
+        "properties": {
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "percent": {
+            "default": 0.0,
+            "title": "Percent",
+            "type": "number"
+          },
+          "value": {
+            "default": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "AnalyticsBucket",
+        "type": "object"
+      },
+      "AnalyticsDistributionResponse": {
+        "description": "Response model for GET /api/analytics/distributions.",
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "dimension": {
+            "enum": [
+              "bottleneck",
+              "project",
+              "branch",
+              "automation_band",
+              "tool",
+              "session_token_share"
+            ],
+            "title": "Dimension",
+            "type": "string"
+          },
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "dimension",
+          "start_date",
+          "end_date",
+          "total",
+          "buckets"
+        ],
+        "title": "AnalyticsDistributionResponse",
+        "type": "object"
+      },
+      "AnalyticsOverviewResponse": {
+        "description": "Response model for GET /api/analytics/overview.",
+        "properties": {
+          "active_time_ratio": {
+            "title": "Active Time Ratio",
+            "type": "number"
+          },
+          "avg_automation_ratio": {
+            "title": "Avg Automation Ratio",
+            "type": "number"
+          },
+          "avg_session_duration_seconds": {
+            "title": "Avg Session Duration Seconds",
+            "type": "number"
+          },
+          "avg_tokens_per_second_mean": {
+            "title": "Avg Tokens Per Second Mean",
+            "type": "number"
+          },
+          "avg_tokens_per_second_median": {
+            "title": "Avg Tokens Per Second Median",
+            "type": "number"
+          },
+          "avg_tokens_per_second_p90": {
+            "title": "Avg Tokens Per Second P90",
+            "type": "number"
+          },
+          "bottleneck_distribution": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsBucket"
+            },
+            "title": "Bottleneck Distribution",
+            "type": "array"
+          },
+          "cache_creation_tokens_per_second_mean": {
+            "title": "Cache Creation Tokens Per Second Mean",
+            "type": "number"
+          },
+          "cache_creation_tokens_per_second_median": {
+            "title": "Cache Creation Tokens Per Second Median",
+            "type": "number"
+          },
+          "cache_creation_tokens_per_second_p90": {
+            "title": "Cache Creation Tokens Per Second P90",
+            "type": "number"
+          },
+          "cache_read_tokens_per_second_mean": {
+            "title": "Cache Read Tokens Per Second Mean",
+            "type": "number"
+          },
+          "cache_read_tokens_per_second_median": {
+            "title": "Cache Read Tokens Per Second Median",
+            "type": "number"
+          },
+          "cache_read_tokens_per_second_p90": {
+            "title": "Cache Read Tokens Per Second P90",
+            "type": "number"
+          },
+          "cache_tokens_per_second_mean": {
+            "title": "Cache Tokens Per Second Mean",
+            "type": "number"
+          },
+          "cache_tokens_per_second_median": {
+            "title": "Cache Tokens Per Second Median",
+            "type": "number"
+          },
+          "cache_tokens_per_second_p90": {
+            "title": "Cache Tokens Per Second P90",
+            "type": "number"
+          },
+          "control_plane": {
+            "$ref": "#/components/schemas/ControlPlaneOverview"
+          },
+          "coverage_day_window_seconds": {
+            "default": 0.0,
+            "title": "Coverage Day Window Seconds",
+            "type": "number"
+          },
+          "coverage_night_window_seconds": {
+            "default": 0.0,
+            "title": "Coverage Night Window Seconds",
+            "type": "number"
+          },
+          "coverage_total_window_seconds": {
+            "default": 0.0,
+            "title": "Coverage Total Window Seconds",
+            "type": "number"
+          },
+          "day_inactive_time_seconds": {
+            "title": "Day Inactive Time Seconds",
+            "type": "number"
+          },
+          "day_model_coverage_seconds": {
+            "default": 0.0,
+            "title": "Day Model Coverage Seconds",
+            "type": "number"
+          },
+          "day_model_time_seconds": {
+            "title": "Day Model Time Seconds",
+            "type": "number"
+          },
+          "day_tool_coverage_seconds": {
+            "default": 0.0,
+            "title": "Day Tool Coverage Seconds",
+            "type": "number"
+          },
+          "day_tool_time_seconds": {
+            "title": "Day Tool Time Seconds",
+            "type": "number"
+          },
+          "day_user_coverage_seconds": {
+            "default": 0.0,
+            "title": "Day User Coverage Seconds",
+            "type": "number"
+          },
+          "day_user_time_seconds": {
+            "title": "Day User Time Seconds",
+            "type": "number"
+          },
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "inactive_time_seconds": {
+            "title": "Inactive Time Seconds",
+            "type": "number"
+          },
+          "leverage_chars_mean": {
+            "title": "Leverage Chars Mean",
+            "type": "number"
+          },
+          "leverage_chars_median": {
+            "title": "Leverage Chars Median",
+            "type": "number"
+          },
+          "leverage_chars_p90": {
+            "title": "Leverage Chars P90",
+            "type": "number"
+          },
+          "leverage_tokens_mean": {
+            "title": "Leverage Tokens Mean",
+            "type": "number"
+          },
+          "leverage_tokens_median": {
+            "title": "Leverage Tokens Median",
+            "type": "number"
+          },
+          "leverage_tokens_p90": {
+            "title": "Leverage Tokens P90",
+            "type": "number"
+          },
+          "model_time_seconds": {
+            "title": "Model Time Seconds",
+            "type": "number"
+          },
+          "model_timeout_count": {
+            "title": "Model Timeout Count",
+            "type": "integer"
+          },
+          "night_inactive_time_seconds": {
+            "title": "Night Inactive Time Seconds",
+            "type": "number"
+          },
+          "night_model_coverage_seconds": {
+            "default": 0.0,
+            "title": "Night Model Coverage Seconds",
+            "type": "number"
+          },
+          "night_model_time_seconds": {
+            "title": "Night Model Time Seconds",
+            "type": "number"
+          },
+          "night_tool_coverage_seconds": {
+            "default": 0.0,
+            "title": "Night Tool Coverage Seconds",
+            "type": "number"
+          },
+          "night_tool_time_seconds": {
+            "title": "Night Tool Time Seconds",
+            "type": "number"
+          },
+          "night_user_coverage_seconds": {
+            "default": 0.0,
+            "title": "Night User Coverage Seconds",
+            "type": "number"
+          },
+          "night_user_time_seconds": {
+            "title": "Night User Time Seconds",
+            "type": "number"
+          },
+          "output_tokens_per_second_mean": {
+            "title": "Output Tokens Per Second Mean",
+            "type": "number"
+          },
+          "output_tokens_per_second_median": {
+            "title": "Output Tokens Per Second Median",
+            "type": "number"
+          },
+          "output_tokens_per_second_p90": {
+            "title": "Output Tokens Per Second P90",
+            "type": "number"
+          },
+          "primary_bottleneck_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Bottleneck Key"
+          },
+          "primary_bottleneck_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Bottleneck Label"
+          },
+          "primary_bottleneck_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "model",
+                  "tool"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Bottleneck Role"
+          },
+          "primary_bottleneck_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Bottleneck Source"
+          },
+          "read_tokens_per_second_mean": {
+            "title": "Read Tokens Per Second Mean",
+            "type": "number"
+          },
+          "read_tokens_per_second_median": {
+            "title": "Read Tokens Per Second Median",
+            "type": "number"
+          },
+          "read_tokens_per_second_p90": {
+            "title": "Read Tokens Per Second P90",
+            "type": "number"
+          },
+          "role_source_breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/RoleSourceAggregate"
+            },
+            "title": "Role Source Breakdown",
+            "type": "array"
+          },
+          "runtime_plane": {
+            "$ref": "#/components/schemas/RuntimePlaneOverview"
+          },
+          "source_breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/EcosystemAggregate"
+            },
+            "title": "Source Breakdown",
+            "type": "array"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          },
+          "tool_time_seconds": {
+            "title": "Tool Time Seconds",
+            "type": "number"
+          },
+          "top_projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectAggregate"
+            },
+            "title": "Top Projects",
+            "type": "array"
+          },
+          "top_tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolAggregate"
+            },
+            "title": "Top Tools",
+            "type": "array"
+          },
+          "total_cache_creation_tokens": {
+            "title": "Total Cache Creation Tokens",
+            "type": "integer"
+          },
+          "total_cache_read_tokens": {
+            "title": "Total Cache Read Tokens",
+            "type": "integer"
+          },
+          "total_chars": {
+            "title": "Total Chars",
+            "type": "integer"
+          },
+          "total_cjk_chars": {
+            "title": "Total Cjk Chars",
+            "type": "integer"
+          },
+          "total_input_tokens": {
+            "title": "Total Input Tokens",
+            "type": "integer"
+          },
+          "total_latin_chars": {
+            "title": "Total Latin Chars",
+            "type": "integer"
+          },
+          "total_messages": {
+            "title": "Total Messages",
+            "type": "integer"
+          },
+          "total_model_chars": {
+            "title": "Total Model Chars",
+            "type": "integer"
+          },
+          "total_other_chars": {
+            "title": "Total Other Chars",
+            "type": "integer"
+          },
+          "total_output_tokens": {
+            "title": "Total Output Tokens",
+            "type": "integer"
+          },
+          "total_sessions": {
+            "title": "Total Sessions",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "total_tool_calls": {
+            "title": "Total Tool Calls",
+            "type": "integer"
+          },
+          "total_tool_chars": {
+            "title": "Total Tool Chars",
+            "type": "integer"
+          },
+          "total_tool_output_tokens": {
+            "title": "Total Tool Output Tokens",
+            "type": "integer"
+          },
+          "total_trajectory_file_size_bytes": {
+            "title": "Total Trajectory File Size Bytes",
+            "type": "integer"
+          },
+          "total_user_chars": {
+            "title": "Total User Chars",
+            "type": "integer"
+          },
+          "user_time_seconds": {
+            "title": "User Time Seconds",
+            "type": "number"
+          },
+          "yield_ratio_chars_mean": {
+            "title": "Yield Ratio Chars Mean",
+            "type": "number"
+          },
+          "yield_ratio_chars_median": {
+            "title": "Yield Ratio Chars Median",
+            "type": "number"
+          },
+          "yield_ratio_chars_p90": {
+            "title": "Yield Ratio Chars P90",
+            "type": "number"
+          },
+          "yield_ratio_tokens_mean": {
+            "title": "Yield Ratio Tokens Mean",
+            "type": "number"
+          },
+          "yield_ratio_tokens_median": {
+            "title": "Yield Ratio Tokens Median",
+            "type": "number"
+          },
+          "yield_ratio_tokens_p90": {
+            "title": "Yield Ratio Tokens P90",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date",
+          "total_sessions",
+          "total_messages",
+          "total_tokens",
+          "total_tool_calls",
+          "total_input_tokens",
+          "total_output_tokens",
+          "total_tool_output_tokens",
+          "total_cache_read_tokens",
+          "total_cache_creation_tokens",
+          "total_trajectory_file_size_bytes",
+          "total_chars",
+          "total_user_chars",
+          "total_model_chars",
+          "total_tool_chars",
+          "total_cjk_chars",
+          "total_latin_chars",
+          "total_other_chars",
+          "yield_ratio_tokens_mean",
+          "yield_ratio_tokens_median",
+          "yield_ratio_tokens_p90",
+          "yield_ratio_chars_mean",
+          "yield_ratio_chars_median",
+          "yield_ratio_chars_p90",
+          "leverage_tokens_mean",
+          "leverage_tokens_median",
+          "leverage_tokens_p90",
+          "leverage_chars_mean",
+          "leverage_chars_median",
+          "leverage_chars_p90",
+          "avg_tokens_per_second_mean",
+          "avg_tokens_per_second_median",
+          "avg_tokens_per_second_p90",
+          "read_tokens_per_second_mean",
+          "read_tokens_per_second_median",
+          "read_tokens_per_second_p90",
+          "output_tokens_per_second_mean",
+          "output_tokens_per_second_median",
+          "output_tokens_per_second_p90",
+          "cache_tokens_per_second_mean",
+          "cache_tokens_per_second_median",
+          "cache_tokens_per_second_p90",
+          "cache_read_tokens_per_second_mean",
+          "cache_read_tokens_per_second_median",
+          "cache_read_tokens_per_second_p90",
+          "cache_creation_tokens_per_second_mean",
+          "cache_creation_tokens_per_second_median",
+          "cache_creation_tokens_per_second_p90",
+          "avg_automation_ratio",
+          "avg_session_duration_seconds",
+          "model_time_seconds",
+          "tool_time_seconds",
+          "user_time_seconds",
+          "inactive_time_seconds",
+          "day_model_time_seconds",
+          "day_tool_time_seconds",
+          "day_user_time_seconds",
+          "day_inactive_time_seconds",
+          "night_model_time_seconds",
+          "night_tool_time_seconds",
+          "night_user_time_seconds",
+          "night_inactive_time_seconds",
+          "active_time_ratio",
+          "model_timeout_count",
+          "source_breakdown",
+          "role_source_breakdown",
+          "primary_bottleneck_key",
+          "primary_bottleneck_label",
+          "primary_bottleneck_source",
+          "primary_bottleneck_role",
+          "bottleneck_distribution",
+          "top_projects",
+          "top_tools",
+          "control_plane",
+          "runtime_plane"
+        ],
+        "title": "AnalyticsOverviewResponse",
+        "type": "object"
+      },
+      "AnalyticsTimeseriesPoint": {
+        "description": "Time-series point for aggregated analytics.",
+        "properties": {
+          "avg_automation_ratio": {
+            "title": "Avg Automation Ratio",
+            "type": "number"
+          },
+          "avg_duration_seconds": {
+            "title": "Avg Duration Seconds",
+            "type": "number"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period",
+          "sessions",
+          "tokens",
+          "tool_calls",
+          "avg_automation_ratio",
+          "avg_duration_seconds"
+        ],
+        "title": "AnalyticsTimeseriesPoint",
+        "type": "object"
+      },
+      "AnalyticsTimeseriesResponse": {
+        "description": "Response model for GET /api/analytics/timeseries.",
+        "properties": {
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "interval": {
+            "enum": [
+              "day",
+              "week"
+            ],
+            "title": "Interval",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsTimeseriesPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interval",
+          "start_date",
+          "end_date",
+          "points"
+        ],
+        "title": "AnalyticsTimeseriesResponse",
+        "type": "object"
+      },
+      "BashBreakdown": {
+        "description": "Detailed breakdown of Bash tool usage.",
+        "properties": {
+          "avg_commands_per_call": {
+            "default": 0.0,
+            "title": "Avg Commands Per Call",
+            "type": "number"
+          },
+          "command_stats": {
+            "items": {
+              "$ref": "#/components/schemas/BashCommandStats"
+            },
+            "title": "Command Stats",
+            "type": "array"
+          },
+          "commands_per_call_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Commands Per Call Distribution",
+            "type": "object"
+          },
+          "total_calls": {
+            "default": 0,
+            "title": "Total Calls",
+            "type": "integer"
+          },
+          "total_sub_commands": {
+            "default": 0,
+            "title": "Total Sub Commands",
+            "type": "integer"
+          }
+        },
+        "title": "BashBreakdown",
+        "type": "object"
+      },
+      "BashCommandStats": {
+        "description": "Stats for a base command (e.g. 'grep', 'python') used within Bash calls.",
+        "properties": {
+          "avg_latency_seconds": {
+            "default": 0.0,
+            "title": "Avg Latency Seconds",
+            "type": "number"
+          },
+          "avg_output_chars": {
+            "default": 0.0,
+            "title": "Avg Output Chars",
+            "type": "number"
+          },
+          "command_name": {
+            "title": "Command Name",
+            "type": "string"
+          },
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "total_latency_seconds": {
+            "default": 0.0,
+            "title": "Total Latency Seconds",
+            "type": "number"
+          },
+          "total_output_chars": {
+            "default": 0,
+            "title": "Total Output Chars",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "command_name"
+        ],
+        "title": "BashCommandStats",
+        "type": "object"
+      },
+      "CapabilityEventShape": {
+        "properties": {
+          "message_events": {
+            "title": "Message Events",
+            "type": "boolean"
+          },
+          "parent_child_session_links": {
+            "title": "Parent Child Session Links",
+            "type": "boolean"
+          },
+          "session_boundary_events": {
+            "title": "Session Boundary Events",
+            "type": "boolean"
+          },
+          "streaming_partial_events": {
+            "title": "Streaming Partial Events",
+            "type": "boolean"
+          },
+          "subagent_events": {
+            "title": "Subagent Events",
+            "type": "boolean"
+          },
+          "timeline_timestamps": {
+            "title": "Timeline Timestamps",
+            "type": "boolean"
+          },
+          "tool_call_events": {
+            "title": "Tool Call Events",
+            "type": "boolean"
+          },
+          "tool_result_events": {
+            "title": "Tool Result Events",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "message_events",
+          "tool_call_events",
+          "tool_result_events",
+          "session_boundary_events",
+          "timeline_timestamps",
+          "subagent_events",
+          "parent_child_session_links",
+          "streaming_partial_events"
+        ],
+        "title": "CapabilityEventShape",
+        "type": "object"
+      },
+      "CapabilityFallbackBehavior": {
+        "properties": {
+          "missing_timestamps": {
+            "title": "Missing Timestamps",
+            "type": "string"
+          },
+          "missing_token_fields": {
+            "title": "Missing Token Fields",
+            "type": "string"
+          },
+          "unknown_tool_errors": {
+            "title": "Unknown Tool Errors",
+            "type": "string"
+          }
+        },
+        "required": [
+          "missing_token_fields",
+          "missing_timestamps",
+          "unknown_tool_errors"
+        ],
+        "title": "CapabilityFallbackBehavior",
+        "type": "object"
+      },
+      "CapabilityListResponse": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/EcosystemCapabilityResponse"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          }
+        },
+        "required": [
+          "capabilities"
+        ],
+        "title": "CapabilityListResponse",
+        "type": "object"
+      },
+      "CapabilityParserInfo": {
+        "properties": {
+          "adapter": {
+            "title": "Adapter",
+            "type": "string"
+          },
+          "default_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Default Roots",
+            "type": "array"
+          },
+          "minimum_agent_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Agent Version"
+          },
+          "session_id_strategy": {
+            "title": "Session Id Strategy",
+            "type": "string"
+          },
+          "supports_logical_session": {
+            "title": "Supports Logical Session",
+            "type": "boolean"
+          },
+          "supports_physical_session": {
+            "title": "Supports Physical Session",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "adapter",
+          "session_id_strategy",
+          "supports_logical_session",
+          "supports_physical_session"
+        ],
+        "title": "CapabilityParserInfo",
+        "type": "object"
+      },
+      "CapabilityTokenFieldSupport": {
+        "properties": {
+          "cache_creation_tokens": {
+            "title": "Cache Creation Tokens",
+            "type": "boolean"
+          },
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "boolean"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "boolean"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "boolean"
+          },
+          "reasoning_tokens": {
+            "title": "Reasoning Tokens",
+            "type": "boolean"
+          },
+          "token_units": {
+            "title": "Token Units",
+            "type": "string"
+          },
+          "tool_output_tokens": {
+            "title": "Tool Output Tokens",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_creation_tokens",
+          "reasoning_tokens",
+          "tool_output_tokens",
+          "token_units"
+        ],
+        "title": "CapabilityTokenFieldSupport",
+        "type": "object"
+      },
+      "CapabilityToolErrorSupport": {
+        "properties": {
+          "categorization_available": {
+            "title": "Categorization Available",
+            "type": "boolean"
+          },
+          "error_detail_available": {
+            "title": "Error Detail Available",
+            "type": "boolean"
+          },
+          "error_preview_available": {
+            "title": "Error Preview Available",
+            "type": "boolean"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "supports_timestamped_error_timeline": {
+            "title": "Supports Timestamped Error Timeline",
+            "type": "boolean"
+          },
+          "supports_tool_name_mapping": {
+            "title": "Supports Tool Name Mapping",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "categorization_available",
+          "rule_version",
+          "error_preview_available",
+          "error_detail_available",
+          "supports_timestamped_error_timeline",
+          "supports_tool_name_mapping"
+        ],
+        "title": "CapabilityToolErrorSupport",
+        "type": "object"
+      },
+      "CharacterBreakdown": {
+        "description": "Character counts by producer and script family.",
+        "properties": {
+          "cjk_chars": {
+            "default": 0,
+            "title": "Cjk Chars",
+            "type": "integer"
+          },
+          "digit_chars": {
+            "default": 0,
+            "title": "Digit Chars",
+            "type": "integer"
+          },
+          "latin_chars": {
+            "default": 0,
+            "title": "Latin Chars",
+            "type": "integer"
+          },
+          "model_chars": {
+            "default": 0,
+            "title": "Model Chars",
+            "type": "integer"
+          },
+          "other_chars": {
+            "default": 0,
+            "title": "Other Chars",
+            "type": "integer"
+          },
+          "tool_chars": {
+            "default": 0,
+            "title": "Tool Chars",
+            "type": "integer"
+          },
+          "total_chars": {
+            "default": 0,
+            "title": "Total Chars",
+            "type": "integer"
+          },
+          "user_chars": {
+            "default": 0,
+            "title": "User Chars",
+            "type": "integer"
+          },
+          "whitespace_chars": {
+            "default": 0,
+            "title": "Whitespace Chars",
+            "type": "integer"
+          }
+        },
+        "title": "CharacterBreakdown",
+        "type": "object"
+      },
+      "ClaudeMessage": {
+        "description": "Claude API message structure.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Content"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MessageRole"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "stop_sequence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Sequence"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ClaudeMessage",
+        "type": "object"
+      },
+      "CompactEvent": {
+        "description": "A single auto-compact (context summarization) event.",
+        "properties": {
+          "pre_tokens": {
+            "default": 0,
+            "title": "Pre Tokens",
+            "type": "integer"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "trigger": {
+            "default": "auto",
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timestamp"
+        ],
+        "title": "CompactEvent",
+        "type": "object"
+      },
+      "ControlPlaneFileStats": {
+        "description": "Tracked file status summary for ingestion/control plane.",
+        "properties": {
+          "error_files": {
+            "title": "Error Files",
+            "type": "integer"
+          },
+          "last_parsed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Parsed At"
+          },
+          "parsed_files": {
+            "title": "Parsed Files",
+            "type": "integer"
+          },
+          "pending_files": {
+            "title": "Pending Files",
+            "type": "integer"
+          },
+          "total_files": {
+            "title": "Total Files",
+            "type": "integer"
+          },
+          "total_tracked_file_size_bytes": {
+            "title": "Total Tracked File Size Bytes",
+            "type": "integer"
+          },
+          "total_trajectory_file_size_bytes": {
+            "title": "Total Trajectory File Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_files",
+          "parsed_files",
+          "error_files",
+          "pending_files",
+          "total_tracked_file_size_bytes",
+          "total_trajectory_file_size_bytes"
+        ],
+        "title": "ControlPlaneFileStats",
+        "type": "object"
+      },
+      "ControlPlaneOverview": {
+        "description": "Control/Ingestion-plane metrics and sync state.",
+        "properties": {
+          "files": {
+            "$ref": "#/components/schemas/ControlPlaneFileStats"
+          },
+          "last_sync": {
+            "$ref": "#/components/schemas/SyncRunDetail"
+          },
+          "logical_sessions": {
+            "title": "Logical Sessions",
+            "type": "integer"
+          },
+          "physical_sessions": {
+            "title": "Physical Sessions",
+            "type": "integer"
+          },
+          "sync_running": {
+            "title": "Sync Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "logical_sessions",
+          "physical_sessions",
+          "files",
+          "sync_running",
+          "last_sync"
+        ],
+        "title": "ControlPlaneOverview",
+        "type": "object"
+      },
+      "EcosystemAggregate": {
+        "description": "Aggregated metrics grouped by source ecosystem.",
+        "properties": {
+          "active_time_seconds": {
+            "title": "Active Time Seconds",
+            "type": "number"
+          },
+          "ecosystem": {
+            "title": "Ecosystem",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "percent_sessions": {
+            "title": "Percent Sessions",
+            "type": "number"
+          },
+          "percent_tokens": {
+            "title": "Percent Tokens",
+            "type": "number"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "total_tool_calls": {
+            "title": "Total Tool Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ecosystem",
+          "label",
+          "sessions",
+          "total_tokens",
+          "total_tool_calls",
+          "active_time_seconds",
+          "percent_sessions",
+          "percent_tokens"
+        ],
+        "title": "EcosystemAggregate",
+        "type": "object"
+      },
+      "EcosystemCapabilityResponse": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "ecosystem": {
+            "title": "Ecosystem",
+            "type": "string"
+          },
+          "event_shape_support": {
+            "$ref": "#/components/schemas/CapabilityEventShape"
+          },
+          "fallback_behavior": {
+            "$ref": "#/components/schemas/CapabilityFallbackBehavior"
+          },
+          "known_limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known Limitations",
+            "type": "array"
+          },
+          "manifest_version": {
+            "title": "Manifest Version",
+            "type": "string"
+          },
+          "parser": {
+            "$ref": "#/components/schemas/CapabilityParserInfo"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "token_field_support": {
+            "$ref": "#/components/schemas/CapabilityTokenFieldSupport"
+          },
+          "tool_error_taxonomy_support": {
+            "$ref": "#/components/schemas/CapabilityToolErrorSupport"
+          }
+        },
+        "required": [
+          "schema_version",
+          "ecosystem",
+          "manifest_version",
+          "display_name",
+          "parser",
+          "event_shape_support",
+          "token_field_support",
+          "tool_error_taxonomy_support",
+          "fallback_behavior"
+        ],
+        "title": "EcosystemCapabilityResponse",
+        "type": "object"
+      },
+      "FrontendPreferences": {
+        "description": "Frontend preference state persisted under ~/.agent-vis/state.",
+        "properties": {
+          "density_mode": {
+            "default": "comfortable",
+            "enum": [
+              "comfortable",
+              "compact"
+            ],
+            "title": "Density Mode",
+            "type": "string"
+          },
+          "locale": {
+            "default": "en",
+            "enum": [
+              "en",
+              "zh-CN"
+            ],
+            "title": "Locale",
+            "type": "string"
+          },
+          "session_aggregation_mode": {
+            "default": "logical",
+            "enum": [
+              "logical",
+              "physical"
+            ],
+            "title": "Session Aggregation Mode",
+            "type": "string"
+          },
+          "session_browser_filters": {
+            "$ref": "#/components/schemas/SessionBrowserFilterState"
+          },
+          "session_view_mode": {
+            "default": "table",
+            "enum": [
+              "cards",
+              "table"
+            ],
+            "title": "Session View Mode",
+            "type": "string"
+          },
+          "theme_mode": {
+            "default": "system",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ],
+            "title": "Theme Mode",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "title": "FrontendPreferences",
+        "type": "object"
+      },
+      "FrontendPreferencesUpdate": {
+        "description": "Partial update payload for frontend preference state.",
+        "properties": {
+          "density_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "comfortable",
+                  "compact"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Density Mode"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "en",
+                  "zh-CN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "session_aggregation_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "logical",
+                  "physical"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Aggregation Mode"
+          },
+          "session_browser_filters": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionBrowserFilterState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_view_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cards",
+                  "table"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session View Mode"
+          },
+          "theme_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "system",
+                  "light",
+                  "dark"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme Mode"
+          }
+        },
+        "title": "FrontendPreferencesUpdate",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "MessageRecord": {
+        "description": "A single message record from a Claude Code session.\n\nThis represents one JSONL line from a session file, including all metadata.",
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agentid"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwd"
+          },
+          "gitBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gitbranch"
+          },
+          "isMeta": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ismeta"
+          },
+          "isSidechain": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issidechain"
+          },
+          "isSnapshotUpdate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issnapshotupdate"
+          },
+          "leafUuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leafuuid"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaudeMessage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "messageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Messageid"
+          },
+          "parentUuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentuuid"
+          },
+          "permissionMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissionmode"
+          },
+          "sessionId": {
+            "title": "Sessionid",
+            "type": "string"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "thinkingMetadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "todos": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TodoItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todos"
+          },
+          "type": {
+            "$ref": "#/components/schemas/MessageType"
+          },
+          "userType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usertype"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "sessionId",
+          "uuid",
+          "timestamp",
+          "type"
+        ],
+        "title": "MessageRecord",
+        "type": "object"
+      },
+      "MessageRole": {
+        "description": "Message role types in Claude sessions.",
+        "enum": [
+          "user",
+          "assistant",
+          "system"
+        ],
+        "title": "MessageRole",
+        "type": "string"
+      },
+      "MessageType": {
+        "description": "Type of message in session.",
+        "enum": [
+          "user",
+          "assistant",
+          "file-history-snapshot",
+          "summary"
+        ],
+        "title": "MessageType",
+        "type": "string"
+      },
+      "ProjectAggregate": {
+        "description": "Aggregated metrics for a project path.",
+        "properties": {
+          "leverage_chars_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leverage Chars Mean"
+          },
+          "leverage_tokens_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leverage Tokens Mean"
+          },
+          "percent_sessions": {
+            "title": "Percent Sessions",
+            "type": "number"
+          },
+          "percent_tokens": {
+            "title": "Percent Tokens",
+            "type": "number"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "project_path": {
+            "title": "Project Path",
+            "type": "string"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "total_messages": {
+            "title": "Total Messages",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_path",
+          "project_name",
+          "sessions",
+          "total_tokens",
+          "total_messages",
+          "percent_sessions",
+          "percent_tokens",
+          "leverage_tokens_mean",
+          "leverage_chars_mean"
+        ],
+        "title": "ProjectAggregate",
+        "type": "object"
+      },
+      "ProjectComparisonItem": {
+        "description": "Per-project KPI row for cross-session comparison.",
+        "properties": {
+          "active_ratio": {
+            "title": "Active Ratio",
+            "type": "number"
+          },
+          "leverage_chars_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leverage Chars Mean"
+          },
+          "leverage_tokens_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leverage Tokens Mean"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "project_path": {
+            "title": "Project Path",
+            "type": "string"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_path",
+          "project_name",
+          "sessions",
+          "total_tokens",
+          "active_ratio",
+          "leverage_tokens_mean",
+          "leverage_chars_mean"
+        ],
+        "title": "ProjectComparisonItem",
+        "type": "object"
+      },
+      "ProjectComparisonResponse": {
+        "description": "Response model for GET /api/analytics/project-comparison.",
+        "properties": {
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectComparisonItem"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          },
+          "total_projects": {
+            "title": "Total Projects",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date",
+          "total_projects",
+          "projects"
+        ],
+        "title": "ProjectComparisonResponse",
+        "type": "object"
+      },
+      "ProjectSwimlanePoint": {
+        "description": "One swimlane cell (project x period).",
+        "properties": {
+          "active_ratio": {
+            "title": "Active Ratio",
+            "type": "number"
+          },
+          "leverage_tokens_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leverage Tokens Mean"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "project_path": {
+            "title": "Project Path",
+            "type": "string"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period",
+          "project_path",
+          "project_name",
+          "sessions",
+          "tokens",
+          "active_ratio",
+          "leverage_tokens_mean"
+        ],
+        "title": "ProjectSwimlanePoint",
+        "type": "object"
+      },
+      "ProjectSwimlaneResponse": {
+        "description": "Response model for GET /api/analytics/project-swimlane.",
+        "properties": {
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "interval": {
+            "enum": [
+              "day",
+              "week"
+            ],
+            "title": "Interval",
+            "type": "string"
+          },
+          "periods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Periods",
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectSwimlanePoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "project_limit": {
+            "title": "Project Limit",
+            "type": "integer"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectComparisonItem"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          },
+          "truncated_project_count": {
+            "title": "Truncated Project Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "interval",
+          "start_date",
+          "end_date",
+          "project_limit",
+          "truncated_project_count",
+          "periods",
+          "projects",
+          "points"
+        ],
+        "title": "ProjectSwimlaneResponse",
+        "type": "object"
+      },
+      "RoleSourceAggregate": {
+        "description": "Aggregated metrics grouped by role x source ecosystem.",
+        "properties": {
+          "ecosystem": {
+            "title": "Ecosystem",
+            "type": "string"
+          },
+          "ecosystem_label": {
+            "title": "Ecosystem Label",
+            "type": "string"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "error_percent": {
+            "title": "Error Percent",
+            "type": "number"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "model",
+              "tool"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "role_label": {
+            "title": "Role Label",
+            "type": "string"
+          },
+          "time_percent": {
+            "title": "Time Percent",
+            "type": "number"
+          },
+          "time_seconds": {
+            "title": "Time Seconds",
+            "type": "number"
+          },
+          "token_count": {
+            "title": "Token Count",
+            "type": "integer"
+          },
+          "token_percent": {
+            "title": "Token Percent",
+            "type": "number"
+          },
+          "tool_call_percent": {
+            "title": "Tool Call Percent",
+            "type": "number"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ecosystem",
+          "ecosystem_label",
+          "role",
+          "role_label",
+          "key",
+          "label",
+          "time_seconds",
+          "time_percent",
+          "token_count",
+          "token_percent",
+          "tool_calls",
+          "tool_call_percent",
+          "error_count",
+          "error_percent"
+        ],
+        "title": "RoleSourceAggregate",
+        "type": "object"
+      },
+      "RuntimePlaneOverview": {
+        "description": "Runtime/Behavior-plane analytics summary.",
+        "properties": {
+          "active_time_ratio": {
+            "title": "Active Time Ratio",
+            "type": "number"
+          },
+          "avg_automation_ratio": {
+            "title": "Avg Automation Ratio",
+            "type": "number"
+          },
+          "avg_session_duration_seconds": {
+            "title": "Avg Session Duration Seconds",
+            "type": "number"
+          },
+          "avg_tokens_per_second_mean": {
+            "title": "Avg Tokens Per Second Mean",
+            "type": "number"
+          },
+          "avg_tokens_per_second_median": {
+            "title": "Avg Tokens Per Second Median",
+            "type": "number"
+          },
+          "avg_tokens_per_second_p90": {
+            "title": "Avg Tokens Per Second P90",
+            "type": "number"
+          },
+          "bottleneck_distribution": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsBucket"
+            },
+            "title": "Bottleneck Distribution",
+            "type": "array"
+          },
+          "cache_creation_tokens_per_second_mean": {
+            "title": "Cache Creation Tokens Per Second Mean",
+            "type": "number"
+          },
+          "cache_creation_tokens_per_second_median": {
+            "title": "Cache Creation Tokens Per Second Median",
+            "type": "number"
+          },
+          "cache_creation_tokens_per_second_p90": {
+            "title": "Cache Creation Tokens Per Second P90",
+            "type": "number"
+          },
+          "cache_read_tokens_per_second_mean": {
+            "title": "Cache Read Tokens Per Second Mean",
+            "type": "number"
+          },
+          "cache_read_tokens_per_second_median": {
+            "title": "Cache Read Tokens Per Second Median",
+            "type": "number"
+          },
+          "cache_read_tokens_per_second_p90": {
+            "title": "Cache Read Tokens Per Second P90",
+            "type": "number"
+          },
+          "cache_tokens_per_second_mean": {
+            "title": "Cache Tokens Per Second Mean",
+            "type": "number"
+          },
+          "cache_tokens_per_second_median": {
+            "title": "Cache Tokens Per Second Median",
+            "type": "number"
+          },
+          "cache_tokens_per_second_p90": {
+            "title": "Cache Tokens Per Second P90",
+            "type": "number"
+          },
+          "coverage_day_window_seconds": {
+            "default": 0.0,
+            "title": "Coverage Day Window Seconds",
+            "type": "number"
+          },
+          "coverage_night_window_seconds": {
+            "default": 0.0,
+            "title": "Coverage Night Window Seconds",
+            "type": "number"
+          },
+          "coverage_total_window_seconds": {
+            "default": 0.0,
+            "title": "Coverage Total Window Seconds",
+            "type": "number"
+          },
+          "day_inactive_time_seconds": {
+            "title": "Day Inactive Time Seconds",
+            "type": "number"
+          },
+          "day_model_coverage_seconds": {
+            "default": 0.0,
+            "title": "Day Model Coverage Seconds",
+            "type": "number"
+          },
+          "day_model_time_seconds": {
+            "title": "Day Model Time Seconds",
+            "type": "number"
+          },
+          "day_tool_coverage_seconds": {
+            "default": 0.0,
+            "title": "Day Tool Coverage Seconds",
+            "type": "number"
+          },
+          "day_tool_time_seconds": {
+            "title": "Day Tool Time Seconds",
+            "type": "number"
+          },
+          "day_user_coverage_seconds": {
+            "default": 0.0,
+            "title": "Day User Coverage Seconds",
+            "type": "number"
+          },
+          "day_user_time_seconds": {
+            "title": "Day User Time Seconds",
+            "type": "number"
+          },
+          "inactive_time_seconds": {
+            "title": "Inactive Time Seconds",
+            "type": "number"
+          },
+          "leverage_chars_mean": {
+            "title": "Leverage Chars Mean",
+            "type": "number"
+          },
+          "leverage_chars_median": {
+            "title": "Leverage Chars Median",
+            "type": "number"
+          },
+          "leverage_chars_p90": {
+            "title": "Leverage Chars P90",
+            "type": "number"
+          },
+          "leverage_tokens_mean": {
+            "title": "Leverage Tokens Mean",
+            "type": "number"
+          },
+          "leverage_tokens_median": {
+            "title": "Leverage Tokens Median",
+            "type": "number"
+          },
+          "leverage_tokens_p90": {
+            "title": "Leverage Tokens P90",
+            "type": "number"
+          },
+          "model_time_seconds": {
+            "title": "Model Time Seconds",
+            "type": "number"
+          },
+          "model_timeout_count": {
+            "title": "Model Timeout Count",
+            "type": "integer"
+          },
+          "night_inactive_time_seconds": {
+            "title": "Night Inactive Time Seconds",
+            "type": "number"
+          },
+          "night_model_coverage_seconds": {
+            "default": 0.0,
+            "title": "Night Model Coverage Seconds",
+            "type": "number"
+          },
+          "night_model_time_seconds": {
+            "title": "Night Model Time Seconds",
+            "type": "number"
+          },
+          "night_tool_coverage_seconds": {
+            "default": 0.0,
+            "title": "Night Tool Coverage Seconds",
+            "type": "number"
+          },
+          "night_tool_time_seconds": {
+            "title": "Night Tool Time Seconds",
+            "type": "number"
+          },
+          "night_user_coverage_seconds": {
+            "default": 0.0,
+            "title": "Night User Coverage Seconds",
+            "type": "number"
+          },
+          "night_user_time_seconds": {
+            "title": "Night User Time Seconds",
+            "type": "number"
+          },
+          "output_tokens_per_second_mean": {
+            "title": "Output Tokens Per Second Mean",
+            "type": "number"
+          },
+          "output_tokens_per_second_median": {
+            "title": "Output Tokens Per Second Median",
+            "type": "number"
+          },
+          "output_tokens_per_second_p90": {
+            "title": "Output Tokens Per Second P90",
+            "type": "number"
+          },
+          "primary_bottleneck_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Bottleneck Key"
+          },
+          "primary_bottleneck_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Bottleneck Label"
+          },
+          "primary_bottleneck_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "model",
+                  "tool"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Bottleneck Role"
+          },
+          "primary_bottleneck_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Bottleneck Source"
+          },
+          "read_tokens_per_second_mean": {
+            "title": "Read Tokens Per Second Mean",
+            "type": "number"
+          },
+          "read_tokens_per_second_median": {
+            "title": "Read Tokens Per Second Median",
+            "type": "number"
+          },
+          "read_tokens_per_second_p90": {
+            "title": "Read Tokens Per Second P90",
+            "type": "number"
+          },
+          "role_source_breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/RoleSourceAggregate"
+            },
+            "title": "Role Source Breakdown",
+            "type": "array"
+          },
+          "source_breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/EcosystemAggregate"
+            },
+            "title": "Source Breakdown",
+            "type": "array"
+          },
+          "tool_time_seconds": {
+            "title": "Tool Time Seconds",
+            "type": "number"
+          },
+          "top_projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectAggregate"
+            },
+            "title": "Top Projects",
+            "type": "array"
+          },
+          "top_tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolAggregate"
+            },
+            "title": "Top Tools",
+            "type": "array"
+          },
+          "total_cache_creation_tokens": {
+            "title": "Total Cache Creation Tokens",
+            "type": "integer"
+          },
+          "total_cache_read_tokens": {
+            "title": "Total Cache Read Tokens",
+            "type": "integer"
+          },
+          "total_chars": {
+            "title": "Total Chars",
+            "type": "integer"
+          },
+          "total_cjk_chars": {
+            "title": "Total Cjk Chars",
+            "type": "integer"
+          },
+          "total_input_tokens": {
+            "title": "Total Input Tokens",
+            "type": "integer"
+          },
+          "total_latin_chars": {
+            "title": "Total Latin Chars",
+            "type": "integer"
+          },
+          "total_messages": {
+            "title": "Total Messages",
+            "type": "integer"
+          },
+          "total_model_chars": {
+            "title": "Total Model Chars",
+            "type": "integer"
+          },
+          "total_other_chars": {
+            "title": "Total Other Chars",
+            "type": "integer"
+          },
+          "total_output_tokens": {
+            "title": "Total Output Tokens",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "total_tool_calls": {
+            "title": "Total Tool Calls",
+            "type": "integer"
+          },
+          "total_tool_chars": {
+            "title": "Total Tool Chars",
+            "type": "integer"
+          },
+          "total_tool_output_tokens": {
+            "title": "Total Tool Output Tokens",
+            "type": "integer"
+          },
+          "total_user_chars": {
+            "title": "Total User Chars",
+            "type": "integer"
+          },
+          "user_time_seconds": {
+            "title": "User Time Seconds",
+            "type": "number"
+          },
+          "yield_ratio_chars_mean": {
+            "title": "Yield Ratio Chars Mean",
+            "type": "number"
+          },
+          "yield_ratio_chars_median": {
+            "title": "Yield Ratio Chars Median",
+            "type": "number"
+          },
+          "yield_ratio_chars_p90": {
+            "title": "Yield Ratio Chars P90",
+            "type": "number"
+          },
+          "yield_ratio_tokens_mean": {
+            "title": "Yield Ratio Tokens Mean",
+            "type": "number"
+          },
+          "yield_ratio_tokens_median": {
+            "title": "Yield Ratio Tokens Median",
+            "type": "number"
+          },
+          "yield_ratio_tokens_p90": {
+            "title": "Yield Ratio Tokens P90",
+            "type": "number"
+          }
+        },
+        "required": [
+          "total_messages",
+          "total_tokens",
+          "total_tool_calls",
+          "total_input_tokens",
+          "total_output_tokens",
+          "total_tool_output_tokens",
+          "total_cache_read_tokens",
+          "total_cache_creation_tokens",
+          "total_chars",
+          "total_user_chars",
+          "total_model_chars",
+          "total_tool_chars",
+          "total_cjk_chars",
+          "total_latin_chars",
+          "total_other_chars",
+          "yield_ratio_tokens_mean",
+          "yield_ratio_tokens_median",
+          "yield_ratio_tokens_p90",
+          "yield_ratio_chars_mean",
+          "yield_ratio_chars_median",
+          "yield_ratio_chars_p90",
+          "leverage_tokens_mean",
+          "leverage_tokens_median",
+          "leverage_tokens_p90",
+          "leverage_chars_mean",
+          "leverage_chars_median",
+          "leverage_chars_p90",
+          "avg_tokens_per_second_mean",
+          "avg_tokens_per_second_median",
+          "avg_tokens_per_second_p90",
+          "read_tokens_per_second_mean",
+          "read_tokens_per_second_median",
+          "read_tokens_per_second_p90",
+          "output_tokens_per_second_mean",
+          "output_tokens_per_second_median",
+          "output_tokens_per_second_p90",
+          "cache_tokens_per_second_mean",
+          "cache_tokens_per_second_median",
+          "cache_tokens_per_second_p90",
+          "cache_read_tokens_per_second_mean",
+          "cache_read_tokens_per_second_median",
+          "cache_read_tokens_per_second_p90",
+          "cache_creation_tokens_per_second_mean",
+          "cache_creation_tokens_per_second_median",
+          "cache_creation_tokens_per_second_p90",
+          "avg_automation_ratio",
+          "avg_session_duration_seconds",
+          "model_time_seconds",
+          "tool_time_seconds",
+          "user_time_seconds",
+          "inactive_time_seconds",
+          "day_model_time_seconds",
+          "day_tool_time_seconds",
+          "day_user_time_seconds",
+          "day_inactive_time_seconds",
+          "night_model_time_seconds",
+          "night_tool_time_seconds",
+          "night_user_time_seconds",
+          "night_inactive_time_seconds",
+          "active_time_ratio",
+          "model_timeout_count",
+          "source_breakdown",
+          "role_source_breakdown",
+          "primary_bottleneck_key",
+          "primary_bottleneck_label",
+          "primary_bottleneck_source",
+          "primary_bottleneck_role",
+          "bottleneck_distribution",
+          "top_projects",
+          "top_tools"
+        ],
+        "title": "RuntimePlaneOverview",
+        "type": "object"
+      },
+      "Session": {
+        "description": "Complete Claude Code session with all messages and subagents.\n\nThis is the top-level model representing a full session file.",
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageRecord"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/SessionMetadata"
+          },
+          "statistics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionStatistics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subagent_sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SubagentSession"
+            },
+            "title": "Subagent Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "metadata",
+          "messages"
+        ],
+        "title": "Session",
+        "type": "object"
+      },
+      "SessionBrowserFilterState": {
+        "description": "Persisted filter state for Session Browser.",
+        "properties": {
+          "automation_band": {
+            "default": "all",
+            "enum": [
+              "all",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Automation Band",
+            "type": "string"
+          },
+          "automation_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automation Max"
+          },
+          "automation_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automation Min"
+          },
+          "bottleneck": {
+            "default": "all",
+            "enum": [
+              "all",
+              "model",
+              "tool",
+              "user"
+            ],
+            "title": "Bottleneck",
+            "type": "string"
+          },
+          "ecosystem": {
+            "default": "all",
+            "enum": [
+              "all",
+              "codex",
+              "claude_code"
+            ],
+            "title": "Ecosystem",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "message_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Max"
+          },
+          "message_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Min"
+          },
+          "search_query": {
+            "default": "",
+            "title": "Search Query",
+            "type": "string"
+          },
+          "sort_by": {
+            "default": "updated",
+            "enum": [
+              "updated",
+              "created",
+              "tokens",
+              "duration",
+              "automation",
+              "messages"
+            ],
+            "title": "Sort By",
+            "type": "string"
+          },
+          "sort_direction": {
+            "default": "desc",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Sort Direction",
+            "type": "string"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "token_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Max"
+          },
+          "token_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Min"
+          }
+        },
+        "title": "SessionBrowserFilterState",
+        "type": "object"
+      },
+      "SessionDetailResponse": {
+        "description": "Response model for GET /api/sessions/{id}.",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "SessionDetailResponse",
+        "type": "object"
+      },
+      "SessionListResponse": {
+        "description": "Response model for GET /api/sessions.",
+        "properties": {
+          "count": {
+            "description": "Total number of sessions",
+            "title": "Count",
+            "type": "integer"
+          },
+          "page": {
+            "default": 1,
+            "description": "Current page number",
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "default": 50,
+            "description": "Number of items per page",
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionSummary"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "total_pages": {
+            "description": "Total number of pages",
+            "title": "Total Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sessions",
+          "count",
+          "total_pages"
+        ],
+        "title": "SessionListResponse",
+        "type": "object"
+      },
+      "SessionMetadata": {
+        "description": "Metadata about a Claude Code session.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "git_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Branch"
+          },
+          "logical_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logical Session Id"
+          },
+          "parent_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Session Id"
+          },
+          "physical_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Session Id"
+          },
+          "project_path": {
+            "title": "Project Path",
+            "type": "string"
+          },
+          "root_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Session Id"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "total_messages": {
+            "title": "Total Messages",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Type"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "project_path",
+          "version",
+          "created_at",
+          "total_messages",
+          "total_tokens"
+        ],
+        "title": "SessionMetadata",
+        "type": "object"
+      },
+      "SessionStatistics": {
+        "description": "Comprehensive statistics for a session.",
+        "properties": {
+          "assistant_message_count": {
+            "title": "Assistant Message Count",
+            "type": "integer"
+          },
+          "average_tokens_per_message": {
+            "description": "Calculate average tokens per message.",
+            "readOnly": true,
+            "title": "Average Tokens Per Message",
+            "type": "number"
+          },
+          "avg_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Tokens Per Second"
+          },
+          "bash_breakdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BashBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cache_creation_tokens": {
+            "default": 0,
+            "title": "Cache Creation Tokens",
+            "type": "integer"
+          },
+          "cache_creation_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Tokens Per Second"
+          },
+          "cache_read_tokens": {
+            "default": 0,
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_read_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Tokens Per Second"
+          },
+          "cache_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Tokens Per Second"
+          },
+          "character_breakdown": {
+            "$ref": "#/components/schemas/CharacterBreakdown"
+          },
+          "compact_count": {
+            "default": 0,
+            "title": "Compact Count",
+            "type": "integer"
+          },
+          "compact_events": {
+            "items": {
+              "$ref": "#/components/schemas/CompactEvent"
+            },
+            "title": "Compact Events",
+            "type": "array"
+          },
+          "error_taxonomy_version": {
+            "default": "0.0.0",
+            "title": "Error Taxonomy Version",
+            "type": "string"
+          },
+          "first_message_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Message Time"
+          },
+          "last_message_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message Time"
+          },
+          "leverage_ratio_chars": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of character yield ratio for leverage-oriented API clients.",
+            "readOnly": true,
+            "title": "Leverage Ratio Chars"
+          },
+          "leverage_ratio_tokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alias of token yield ratio for leverage-oriented API clients.",
+            "readOnly": true,
+            "title": "Leverage Ratio Tokens"
+          },
+          "message_count": {
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "output_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens Per Second"
+          },
+          "read_tokens_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Tokens Per Second"
+          },
+          "session_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Duration Seconds"
+          },
+          "subagent_count": {
+            "default": 0,
+            "title": "Subagent Count",
+            "type": "integer"
+          },
+          "subagent_sessions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Subagent Sessions",
+            "type": "object"
+          },
+          "system_message_count": {
+            "title": "System Message Count",
+            "type": "integer"
+          },
+          "time_breakdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token_breakdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallStatistics"
+            },
+            "title": "Tool Calls",
+            "type": "array"
+          },
+          "tool_error_category_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Tool Error Category Counts",
+            "type": "object"
+          },
+          "tool_error_records": {
+            "items": {
+              "$ref": "#/components/schemas/ToolErrorRecord"
+            },
+            "title": "Tool Error Records",
+            "type": "array"
+          },
+          "tool_groups": {
+            "items": {
+              "$ref": "#/components/schemas/ToolGroupStatistics"
+            },
+            "title": "Tool Groups",
+            "type": "array"
+          },
+          "total_input_tokens": {
+            "title": "Total Input Tokens",
+            "type": "integer"
+          },
+          "total_output_tokens": {
+            "title": "Total Output Tokens",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "total_tool_calls": {
+            "default": 0,
+            "title": "Total Tool Calls",
+            "type": "integer"
+          },
+          "trajectory_file_size_bytes": {
+            "default": 0,
+            "title": "Trajectory File Size Bytes",
+            "type": "integer"
+          },
+          "user_message_count": {
+            "title": "User Message Count",
+            "type": "integer"
+          },
+          "user_yield_ratio_chars": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Yield Ratio Chars"
+          },
+          "user_yield_ratio_tokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Yield Ratio Tokens"
+          }
+        },
+        "required": [
+          "message_count",
+          "user_message_count",
+          "assistant_message_count",
+          "system_message_count",
+          "total_tokens",
+          "total_input_tokens",
+          "total_output_tokens",
+          "average_tokens_per_message",
+          "leverage_ratio_tokens",
+          "leverage_ratio_chars"
+        ],
+        "title": "SessionStatistics",
+        "type": "object"
+      },
+      "SessionStatisticsResponse": {
+        "description": "Response model for GET /api/sessions/{id}/statistics.",
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/SessionStatistics"
+          }
+        },
+        "required": [
+          "session_id",
+          "statistics"
+        ],
+        "title": "SessionStatisticsResponse",
+        "type": "object"
+      },
+      "SessionSummary": {
+        "description": "Summary of a session for list endpoint.\n\nContains minimal information for overview display.",
+        "properties": {
+          "automation_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automation Ratio"
+          },
+          "bottleneck": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bottleneck"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Created At"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "ecosystem": {
+            "default": "claude_code",
+            "title": "Ecosystem",
+            "type": "string"
+          },
+          "git_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Branch"
+          },
+          "logical_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logical Session Id"
+          },
+          "parsed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parsed At"
+          },
+          "physical_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Session Id"
+          },
+          "project_path": {
+            "title": "Project Path",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "total_messages": {
+            "title": "Total Messages",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "version": {
+            "default": "",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "project_path",
+          "created_at",
+          "total_messages",
+          "total_tokens"
+        ],
+        "title": "SessionSummary",
+        "type": "object"
+      },
+      "SubagentSession": {
+        "description": "A subagent session nested within a main session.\n\nSubagents are spawned for specific tasks (e.g., exploration, bash commands).",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_type": {
+            "$ref": "#/components/schemas/SubagentType"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageRecord"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "parent_message_uuid": {
+            "title": "Parent Message Uuid",
+            "type": "string"
+          },
+          "start_time": {
+            "format": "date-time",
+            "title": "Start Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "agent_type",
+          "messages",
+          "start_time",
+          "parent_message_uuid"
+        ],
+        "title": "SubagentSession",
+        "type": "object"
+      },
+      "SubagentType": {
+        "description": "Types of subagents that can be invoked.",
+        "enum": [
+          "Explore",
+          "Bash",
+          "general-purpose",
+          "Plan",
+          "test-runner",
+          "build-validator",
+          "statusline-setup",
+          "aprompt_suggestion",
+          "other"
+        ],
+        "title": "SubagentType",
+        "type": "string"
+      },
+      "SyncEcosystemDetail": {
+        "description": "Per-ecosystem sync detail.",
+        "properties": {
+          "ecosystem": {
+            "title": "Ecosystem",
+            "type": "string"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "file_size_bytes": {
+            "title": "File Size Bytes",
+            "type": "integer"
+          },
+          "files_scanned": {
+            "title": "Files Scanned",
+            "type": "integer"
+          },
+          "parsed": {
+            "title": "Parsed",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ecosystem",
+          "files_scanned",
+          "file_size_bytes",
+          "parsed",
+          "skipped",
+          "errors"
+        ],
+        "title": "SyncEcosystemDetail",
+        "type": "object"
+      },
+      "SyncRunDetail": {
+        "description": "Detail payload for sync execution status and results.",
+        "properties": {
+          "ecosystems": {
+            "items": {
+              "$ref": "#/components/schemas/SyncEcosystemDetail"
+            },
+            "title": "Ecosystems",
+            "type": "array"
+          },
+          "error_samples": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Error Samples",
+            "type": "array"
+          },
+          "errors": {
+            "default": 0,
+            "title": "Errors",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "parsed": {
+            "default": 0,
+            "title": "Parsed",
+            "type": "integer"
+          },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "idle",
+              "running",
+              "completed",
+              "failed",
+              "already_running"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total_file_size_bytes": {
+            "default": 0,
+            "title": "Total File Size Bytes",
+            "type": "integer"
+          },
+          "total_files_scanned": {
+            "default": 0,
+            "title": "Total Files Scanned",
+            "type": "integer"
+          },
+          "trigger": {
+            "enum": [
+              "startup",
+              "manual",
+              "refresh"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "trigger"
+        ],
+        "title": "SyncRunDetail",
+        "type": "object"
+      },
+      "SyncStatusResponse": {
+        "description": "Response model for GET /api/sync/status.",
+        "properties": {
+          "last_parsed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Parsed At"
+          },
+          "last_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncRunDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sync_running": {
+            "default": false,
+            "title": "Sync Running",
+            "type": "boolean"
+          },
+          "total_files": {
+            "title": "Total Files",
+            "type": "integer"
+          },
+          "total_sessions": {
+            "title": "Total Sessions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_files",
+          "total_sessions"
+        ],
+        "title": "SyncStatusResponse",
+        "type": "object"
+      },
+      "SyncTriggerRequest": {
+        "description": "Request model for POST /api/sync/run.",
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "title": "SyncTriggerRequest",
+        "type": "object"
+      },
+      "ThinkingMetadata": {
+        "description": "Metadata for thinking/reasoning.",
+        "properties": {
+          "maxThinkingTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxthinkingtokens"
+          }
+        },
+        "title": "ThinkingMetadata",
+        "type": "object"
+      },
+      "TimeBreakdown": {
+        "description": "Breakdown of session time by category.",
+        "properties": {
+          "active_time_ratio": {
+            "default": 0.0,
+            "title": "Active Time Ratio",
+            "type": "number"
+          },
+          "inactive_time_percent": {
+            "default": 0.0,
+            "title": "Inactive Time Percent",
+            "type": "number"
+          },
+          "inactivity_threshold_seconds": {
+            "default": 1800.0,
+            "title": "Inactivity Threshold Seconds",
+            "type": "number"
+          },
+          "interactions_per_hour": {
+            "default": 0.0,
+            "title": "Interactions Per Hour",
+            "type": "number"
+          },
+          "model_time_percent": {
+            "default": 0.0,
+            "title": "Model Time Percent",
+            "type": "number"
+          },
+          "model_timeout_count": {
+            "default": 0,
+            "title": "Model Timeout Count",
+            "type": "integer"
+          },
+          "model_timeout_threshold_seconds": {
+            "default": 600.0,
+            "title": "Model Timeout Threshold Seconds",
+            "type": "number"
+          },
+          "tool_time_percent": {
+            "default": 0.0,
+            "title": "Tool Time Percent",
+            "type": "number"
+          },
+          "total_active_time_seconds": {
+            "default": 0.0,
+            "title": "Total Active Time Seconds",
+            "type": "number"
+          },
+          "total_inactive_time_seconds": {
+            "default": 0.0,
+            "title": "Total Inactive Time Seconds",
+            "type": "number"
+          },
+          "total_model_time_seconds": {
+            "default": 0.0,
+            "title": "Total Model Time Seconds",
+            "type": "number"
+          },
+          "total_tool_time_seconds": {
+            "default": 0.0,
+            "title": "Total Tool Time Seconds",
+            "type": "number"
+          },
+          "total_user_time_seconds": {
+            "default": 0.0,
+            "title": "Total User Time Seconds",
+            "type": "number"
+          },
+          "user_interaction_count": {
+            "default": 0,
+            "title": "User Interaction Count",
+            "type": "integer"
+          },
+          "user_time_percent": {
+            "default": 0.0,
+            "title": "User Time Percent",
+            "type": "number"
+          }
+        },
+        "title": "TimeBreakdown",
+        "type": "object"
+      },
+      "TodoItem": {
+        "description": "Todo item in session.",
+        "properties": {
+          "activeForm": {
+            "title": "Activeform",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "status",
+          "activeForm"
+        ],
+        "title": "TodoItem",
+        "type": "object"
+      },
+      "TokenBreakdown": {
+        "description": "Percentage breakdown of token usage by category.",
+        "properties": {
+          "cache_creation_percent": {
+            "default": 0.0,
+            "title": "Cache Creation Percent",
+            "type": "number"
+          },
+          "cache_read_percent": {
+            "default": 0.0,
+            "title": "Cache Read Percent",
+            "type": "number"
+          },
+          "input_percent": {
+            "default": 0.0,
+            "title": "Input Percent",
+            "type": "number"
+          },
+          "output_percent": {
+            "default": 0.0,
+            "title": "Output Percent",
+            "type": "number"
+          }
+        },
+        "title": "TokenBreakdown",
+        "type": "object"
+      },
+      "TokenUsage": {
+        "description": "Token usage statistics for a message.",
+        "properties": {
+          "cache_creation_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Input Tokens"
+          },
+          "cache_read_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Input Tokens"
+          },
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "service_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Tier"
+          }
+        },
+        "title": "TokenUsage",
+        "type": "object"
+      },
+      "ToolAggregate": {
+        "description": "Aggregated metrics for a tool across sessions.",
+        "properties": {
+          "avg_latency_seconds": {
+            "title": "Avg Latency Seconds",
+            "type": "number"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "percent_of_tool_calls": {
+            "title": "Percent Of Tool Calls",
+            "type": "number"
+          },
+          "sessions_using_tool": {
+            "title": "Sessions Using Tool",
+            "type": "integer"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "total_calls": {
+            "title": "Total Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tool_name",
+          "total_calls",
+          "sessions_using_tool",
+          "error_count",
+          "avg_latency_seconds",
+          "percent_of_tool_calls"
+        ],
+        "title": "ToolAggregate",
+        "type": "object"
+      },
+      "ToolCallStatistics": {
+        "description": "Statistics about tool calls in a session.",
+        "properties": {
+          "avg_latency_seconds": {
+            "default": 0.0,
+            "title": "Avg Latency Seconds",
+            "type": "number"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "error_count": {
+            "default": 0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "success_count": {
+            "default": 0,
+            "title": "Success Count",
+            "type": "integer"
+          },
+          "tool_group": {
+            "default": "",
+            "title": "Tool Group",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "total_latency_seconds": {
+            "default": 0.0,
+            "title": "Total Latency Seconds",
+            "type": "number"
+          },
+          "total_tokens": {
+            "default": 0,
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tool_name",
+          "count"
+        ],
+        "title": "ToolCallStatistics",
+        "type": "object"
+      },
+      "ToolErrorRecord": {
+        "description": "Detailed record for one failed tool execution.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "detail_snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail Snippet"
+          },
+          "matched_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Rule"
+          },
+          "preview": {
+            "title": "Preview",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timestamp",
+          "tool_name",
+          "category",
+          "preview",
+          "detail"
+        ],
+        "title": "ToolErrorRecord",
+        "type": "object"
+      },
+      "ToolGroupStatistics": {
+        "description": "Aggregated statistics for a group of related tools (e.g., all MCP tools from one server).",
+        "properties": {
+          "avg_latency_seconds": {
+            "default": 0.0,
+            "title": "Avg Latency Seconds",
+            "type": "number"
+          },
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "error_count": {
+            "default": 0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "group_name": {
+            "title": "Group Name",
+            "type": "string"
+          },
+          "success_count": {
+            "default": 0,
+            "title": "Success Count",
+            "type": "integer"
+          },
+          "tool_count": {
+            "default": 0,
+            "title": "Tool Count",
+            "type": "integer"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "total_latency_seconds": {
+            "default": 0.0,
+            "title": "Total Latency Seconds",
+            "type": "number"
+          },
+          "total_tokens": {
+            "default": 0,
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group_name"
+        ],
+        "title": "ToolGroupStatistics",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "REST API for visualizing and analyzing local agent trajectories",
+    "title": "Agent Trajectory Visualizer API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api": {
+      "get": {
+        "description": "API root endpoint with API information.",
+        "operationId": "api_root_api_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Api Root Api Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Root",
+        "tags": [
+          "Root"
+        ]
+      }
+    },
+    "/api/analytics/distributions": {
+      "get": {
+        "description": "Returns percentage breakdowns for bottlenecks, projects, tools, etc.",
+        "operationId": "get_analytics_distributions_api_analytics_distributions_get",
+        "parameters": [
+          {
+            "description": "Distribution dimension: bottleneck|project|branch|automation_band|tool|session_token_share",
+            "in": "query",
+            "name": "dimension",
+            "required": false,
+            "schema": {
+              "default": "bottleneck",
+              "description": "Distribution dimension: bottleneck|project|branch|automation_band|tool|session_token_share",
+              "enum": [
+                "bottleneck",
+                "project",
+                "branch",
+                "automation_band",
+                "tool",
+                "session_token_share"
+              ],
+              "title": "Dimension",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Range start date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range start date (YYYY-MM-DD)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Range end date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range end date (YYYY-MM-DD)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Optional source filter (e.g. claude_code, codex)",
+            "in": "query",
+            "name": "ecosystem",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional source filter (e.g. claude_code, codex)",
+              "title": "Ecosystem"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsDistributionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get distribution metrics across sessions",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/overview": {
+      "get": {
+        "description": "Aggregated analytics across sessions for a selected date range.",
+        "operationId": "get_analytics_overview_api_analytics_overview_get",
+        "parameters": [
+          {
+            "description": "Range start date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range start date (YYYY-MM-DD)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Range end date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range end date (YYYY-MM-DD)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Optional source filter (e.g. claude_code, codex)",
+            "in": "query",
+            "name": "ecosystem",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional source filter (e.g. claude_code, codex)",
+              "title": "Ecosystem"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get cross-session overview metrics",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/project-comparison": {
+      "get": {
+        "description": "Returns project-level KPI comparison for selected date range.",
+        "operationId": "get_project_comparison_api_analytics_project_comparison_get",
+        "parameters": [
+          {
+            "description": "Range start date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range start date (YYYY-MM-DD)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Range end date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range end date (YYYY-MM-DD)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Maximum projects to return",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "description": "Maximum projects to return",
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional source filter (e.g. claude_code, codex)",
+            "in": "query",
+            "name": "ecosystem",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional source filter (e.g. claude_code, codex)",
+              "title": "Ecosystem"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectComparisonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get cross-project comparison metrics",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/project-swimlane": {
+      "get": {
+        "description": "Returns project x time points for swimlane visualizations.",
+        "operationId": "get_project_swimlane_api_analytics_project_swimlane_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "interval",
+            "required": false,
+            "schema": {
+              "default": "day",
+              "enum": [
+                "day",
+                "week"
+              ],
+              "title": "Interval",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Range start date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range start date (YYYY-MM-DD)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Range end date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range end date (YYYY-MM-DD)",
+              "title": "End Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_limit",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Project Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional source filter (e.g. claude_code, codex)",
+            "in": "query",
+            "name": "ecosystem",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional source filter (e.g. claude_code, codex)",
+              "title": "Ecosystem"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSwimlaneResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get project swimlane points",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/timeseries": {
+      "get": {
+        "description": "Returns day/week aggregated metrics for session activity trends.",
+        "operationId": "get_analytics_timeseries_api_analytics_timeseries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "interval",
+            "required": false,
+            "schema": {
+              "default": "day",
+              "enum": [
+                "day",
+                "week"
+              ],
+              "title": "Interval",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Range start date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range start date (YYYY-MM-DD)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Range end date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Range end date (YYYY-MM-DD)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Optional source filter (e.g. claude_code, codex)",
+            "in": "query",
+            "name": "ecosystem",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional source filter (e.g. claude_code, codex)",
+              "title": "Ecosystem"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsTimeseriesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get time-series metrics across sessions",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/capabilities": {
+      "get": {
+        "description": "Return explicit capability declarations for each registered ecosystem parser.",
+        "operationId": "get_capabilities_api_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List ecosystem capability manifests",
+        "tags": [
+          "Capabilities"
+        ]
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "description": "Get a list of all available agent sessions with basic metadata",
+        "operationId": "list_sessions_api_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter sessions created on or after this date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter sessions created on or after this date (YYYY-MM-DD)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Filter sessions created on or before this date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter sessions created on or before this date (YYYY-MM-DD)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Filter sessions by ecosystem (e.g. claude_code, codex)",
+            "in": "query",
+            "name": "ecosystem",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter sessions by ecosystem (e.g. claude_code, codex)",
+              "title": "Ecosystem"
+            }
+          },
+          {
+            "description": "Filter sessions by bottleneck category",
+            "in": "query",
+            "name": "bottleneck",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "model",
+                    "tool",
+                    "user"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter sessions by bottleneck category",
+              "title": "Bottleneck"
+            }
+          },
+          {
+            "description": "Sort key for session list",
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "default": "updated",
+              "description": "Sort key for session list",
+              "enum": [
+                "updated",
+                "created",
+                "tokens",
+                "duration",
+                "automation",
+                "messages"
+              ],
+              "title": "Sort By",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort direction for session list",
+            "in": "query",
+            "name": "sort_direction",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "description": "Sort direction for session list",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Sort Direction",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Minimum token count",
+            "in": "query",
+            "name": "min_tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum token count",
+              "title": "Min Tokens"
+            }
+          },
+          {
+            "description": "Maximum token count",
+            "in": "query",
+            "name": "max_tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum token count",
+              "title": "Max Tokens"
+            }
+          },
+          {
+            "description": "Minimum message count",
+            "in": "query",
+            "name": "min_messages",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum message count",
+              "title": "Min Messages"
+            }
+          },
+          {
+            "description": "Maximum message count",
+            "in": "query",
+            "name": "max_messages",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum message count",
+              "title": "Max Messages"
+            }
+          },
+          {
+            "description": "Minimum automation ratio",
+            "in": "query",
+            "name": "min_automation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum automation ratio",
+              "title": "Min Automation"
+            }
+          },
+          {
+            "description": "Maximum automation ratio",
+            "in": "query",
+            "name": "max_automation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum automation ratio",
+              "title": "Max Automation"
+            }
+          },
+          {
+            "description": "Session view mode: logical (dedup parent/sub-agent) or physical (raw files)",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "logical",
+              "description": "Session view mode: logical (dedup parent/sub-agent) or physical (raw files)",
+              "enum": [
+                "logical",
+                "physical"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List all sessions",
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/api/sessions/{session_id}": {
+      "get": {
+        "description": "Get detailed information for a specific session including all messages and subagents",
+        "operationId": "get_session_api_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get session details",
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/api/sessions/{session_id}/statistics": {
+      "get": {
+        "description": "Get computed analytics and statistics for a specific session",
+        "operationId": "get_session_statistics_api_sessions__session_id__statistics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatisticsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get session statistics",
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/api/state/frontend-preferences": {
+      "get": {
+        "description": "Load frontend locale/theme/density/view preferences from local ~/.agent-vis state.",
+        "operationId": "get_frontend_preferences_api_state_frontend_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get persisted frontend preferences",
+        "tags": [
+          "State"
+        ]
+      },
+      "put": {
+        "description": "Persist partial frontend preferences to local ~/.agent-vis state storage.",
+        "operationId": "update_frontend_preferences_api_state_frontend_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrontendPreferencesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrontendPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update persisted frontend preferences",
+        "tags": [
+          "State"
+        ]
+      }
+    },
+    "/api/sync/run": {
+      "post": {
+        "description": "Trigger a manual synchronization run and return execution details.",
+        "operationId": "run_sync_api_sync_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SyncTriggerRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger sync",
+        "tags": [
+          "Sync"
+        ]
+      }
+    },
+    "/api/sync/status": {
+      "get": {
+        "description": "Get the current synchronization status of the database",
+        "operationId": "sync_status_api_sync_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get sync status",
+        "tags": [
+          "Sync"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Health check endpoint.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Check Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check",
+        "tags": [
+          "Health"
+        ]
+      }
+    }
+  }
+}

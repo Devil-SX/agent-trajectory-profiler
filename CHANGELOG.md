@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Automated backend-to-frontend API contract generation chain: OpenAPI export script (`scripts/export_openapi_schema.py`), frontend typegen script (`frontend/scripts/generate-api-types.mjs`), generated contract artifacts (`frontend/src/types/generated/openapi.json`, `api.generated.ts`, `api-contracts.ts`), and npm commands (`typegen`, `typegen:check`).
+- Backend OpenAPI schema regression tests (`tests/test_api_contract_schema.py`) that pin key frontend contract fields (`Session.subagent_sessions/statistics`, `ToolErrorRecord.tool_call_id/summary/detail_snippet`, `SubagentType.aprompt_suggestion`) to prevent drift.
 - Timeline long-message compaction flow: oversized user/assistant text messages now render in a truncated preview state with per-message `Expand` actions, and expose a full-content modal with keyboard support (Enter/ESC), overlay/button close paths, and focus-return behavior.
 - Frontend visual/readability regression coverage for Cross-Session analytics rendering and detail-roundtrip continuity (`frontend/tests/advanced-analytics-ux.spec.ts`).
 - Local privacy-preserving Codex regression smoke test that can target a developer-provided real rollout fixture via `AGENT_VIS_PRIVATE_CODEX_CASE`, while skipping safely in CI when no private fixture is present.
@@ -21,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Frontend API client contract imports now point to generated OpenAPI-derived types in `frontend/src/api/sessions.ts`, while frontend-only filter/view-model types remain in `frontend/src/types/session.ts`.
+- CI `frontend-static-checks` now installs backend deps via `uv` and runs `npm run typegen:check` to fail fast when generated API contracts are stale.
 - Introduced shared chart-theme tokens (`--chart-*`) and a reusable chart style utility (`frontend/src/utils/chartTheme.ts`) to standardize axis/grid/tooltip semantics and color mapping in analytics visualizations.
 - Updated `AdvancedAnalytics`, `MetricComparison`, and `TimeBreakdownChart` visuals to use app design tokens, improving light/dark consistency, contrast, and chart readability.
 - Frontend chart axis formatting is now unified through shared utilities: token axes use compact `K/M/B` ticks, time axes auto-scale to `min/hour/day`, and related tooltips now follow the same compact-vs-raw semantics across Cross-Session, Advanced Analytics, Statistics, and Metric Comparison charts.

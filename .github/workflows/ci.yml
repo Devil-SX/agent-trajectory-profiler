@@ -54,6 +54,16 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install backend dependencies for OpenAPI export
+        run: uv sync --all-extras
+
+      - name: API contract freshness
+        working-directory: frontend
+        run: npm run typegen:check
+
       - name: ESLint
         working-directory: frontend
         run: npm run lint

@@ -18,8 +18,8 @@ import type {
   SessionListResponse,
   SessionDetailResponse,
   SessionStatisticsResponse,
-  SessionQueryFilters,
-} from '../types/session';
+} from '../types/generated/api-contracts';
+import type { SessionQueryFilters } from '../types/session';
 
 function resolveApiBaseUrl(): string {
   const fromEnv = import.meta.env.VITE_API_BASE_URL?.trim();

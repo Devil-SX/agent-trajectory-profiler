@@ -231,6 +231,12 @@ agent-vis serve --reload --log-level debug
 # Frontend dev server (separate terminal)
 cd frontend && npm run dev
 
+# Regenerate frontend API contract types from backend OpenAPI schema
+npm --prefix frontend run typegen
+
+# CI-style freshness check (fails if generated files are stale)
+npm --prefix frontend run typegen:check
+
 # Run tests
 uv run pytest
 
@@ -239,6 +245,8 @@ uv run ruff check .
 uv run black .
 uv run mypy .
 ```
+
+Frontend API contracts are generated artifacts and should be committed. When backend API models/routes change, regenerate with `npm --prefix frontend run typegen`, commit updated files under `frontend/src/types/generated/`, and keep `typegen:check` green in CI.
 
 ## License
 

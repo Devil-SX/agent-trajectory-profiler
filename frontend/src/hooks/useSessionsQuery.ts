@@ -120,7 +120,7 @@ export function useSessionsQuery(
 ): UseQueryResult<SessionListResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.list(page, pageSize, startDate, endDate, viewMode, filters),
-    queryFn: () => fetchSessions(page, pageSize, startDate, endDate, viewMode, filters),
+    queryFn: async () => (await fetchSessions(page, pageSize, startDate, endDate, viewMode, filters)) as SessionListResponse,
     placeholderData: (previousData) => previousData,
     retry: 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -135,7 +135,7 @@ export function useSessionDetailQuery(
 ): UseQueryResult<SessionDetailResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.detail(sessionId || ''),
-    queryFn: () => fetchSessionDetail(sessionId!),
+    queryFn: async () => (await fetchSessionDetail(sessionId!)) as SessionDetailResponse,
     enabled: !!sessionId,
     placeholderData: (previousData) => previousData,
     retry: 0,
@@ -151,7 +151,7 @@ export function useSessionStatisticsQuery(
 ): UseQueryResult<SessionStatisticsResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.statistic(sessionId || ''),
-    queryFn: () => fetchSessionStatistics(sessionId!),
+    queryFn: async () => (await fetchSessionStatistics(sessionId!)) as SessionStatisticsResponse,
     enabled: !!sessionId,
     placeholderData: (previousData) => previousData,
     retry: 0,
@@ -169,7 +169,8 @@ export function useAnalyticsOverviewQuery(
 ): UseQueryResult<AnalyticsOverviewResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.analyticsOverviewByEcosystem(startDate, endDate, ecosystem),
-    queryFn: () => fetchAnalyticsOverview(startDate, endDate, ecosystem),
+    queryFn: async () =>
+      (await fetchAnalyticsOverview(startDate, endDate, ecosystem)) as AnalyticsOverviewResponse,
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -185,7 +186,7 @@ export function useAnalyticsDistributionQuery(
 ): UseQueryResult<AnalyticsDistributionResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.analyticsDistribution(dimension, startDate, endDate, ecosystem),
-    queryFn: () => fetchAnalyticsDistribution(dimension, startDate, endDate, ecosystem),
+    queryFn: async () => (await fetchAnalyticsDistribution(dimension, startDate, endDate, ecosystem)) as AnalyticsDistributionResponse,
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -201,7 +202,7 @@ export function useAnalyticsTimeseriesQuery(
 ): UseQueryResult<AnalyticsTimeseriesResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.analyticsTimeseries(interval, startDate, endDate, ecosystem),
-    queryFn: () => fetchAnalyticsTimeseries(interval, startDate, endDate, ecosystem),
+    queryFn: async () => (await fetchAnalyticsTimeseries(interval, startDate, endDate, ecosystem)) as AnalyticsTimeseriesResponse,
     staleTime: 60 * 1000, // 1 minute
   });
 }
@@ -217,7 +218,8 @@ export function useProjectComparisonQuery(
 ): UseQueryResult<ProjectComparisonResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.projectComparison(startDate, endDate, limit, ecosystem),
-    queryFn: () => fetchProjectComparison(startDate, endDate, limit, ecosystem),
+    queryFn: async () =>
+      (await fetchProjectComparison(startDate, endDate, limit, ecosystem)) as ProjectComparisonResponse,
     staleTime: 60 * 1000,
   });
 }
@@ -234,7 +236,7 @@ export function useProjectSwimlaneQuery(
 ): UseQueryResult<ProjectSwimlaneResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.projectSwimlane(interval, startDate, endDate, projectLimit, ecosystem),
-    queryFn: () => fetchProjectSwimlane(interval, startDate, endDate, projectLimit, ecosystem),
+    queryFn: async () => (await fetchProjectSwimlane(interval, startDate, endDate, projectLimit, ecosystem)) as ProjectSwimlaneResponse,
     staleTime: 60 * 1000,
   });
 }
@@ -245,7 +247,7 @@ export function useProjectSwimlaneQuery(
 export function useSyncStatusQuery(): UseQueryResult<SyncStatusResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.syncStatus(),
-    queryFn: fetchSyncStatus,
+    queryFn: async () => (await fetchSyncStatus()) as SyncStatusResponse,
     staleTime: 15 * 1000,
     refetchInterval: 15 * 1000,
   });
@@ -257,7 +259,7 @@ export function useSyncStatusQuery(): UseQueryResult<SyncStatusResponse, Error> 
 export function useCapabilitiesQuery(): UseQueryResult<CapabilityListResponse, Error> {
   return useQuery({
     queryKey: sessionKeys.capabilities(),
-    queryFn: fetchCapabilities,
+    queryFn: async () => (await fetchCapabilities()) as CapabilityListResponse,
     staleTime: 10 * 60 * 1000,
   });
 }
@@ -269,7 +271,7 @@ export function useRunSyncMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<SyncRunDetail, Error, { force?: boolean }>({
-    mutationFn: async ({ force = false }) => triggerSync(force),
+    mutationFn: async ({ force = false }) => (await triggerSync(force)) as SyncRunDetail,
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: sessionKeys.syncStatus() }),
@@ -285,7 +287,7 @@ export function useRunSyncMutation() {
 export function useFrontendPreferencesQuery(): UseQueryResult<FrontendPreferences, Error> {
   return useQuery({
     queryKey: sessionKeys.frontendPreferences(),
-    queryFn: fetchFrontendPreferences,
+    queryFn: async () => (await fetchFrontendPreferences()) as FrontendPreferences,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -297,7 +299,7 @@ export function useUpdateFrontendPreferencesMutation() {
   const queryClient = useQueryClient();
 
   return useMutation<FrontendPreferences, Error, FrontendPreferencesUpdate>({
-    mutationFn: updateFrontendPreferences,
+    mutationFn: async (payload) => (await updateFrontendPreferences(payload)) as FrontendPreferences,
     onSuccess: (data) => {
       queryClient.setQueryData(sessionKeys.frontendPreferences(), data);
     },
