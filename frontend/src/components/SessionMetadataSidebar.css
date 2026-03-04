@@ -302,77 +302,74 @@
   }
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .metadata-sidebar {
-    background-color: #1a1a1a;
-    border-left-color: #444;
-  }
+:root[data-theme='dark'] .metadata-sidebar {
+  background-color: #1a1a1a;
+  border-left-color: #444;
+}
 
-  .sidebar-title {
-    color: #e0e0e0;
-  }
+:root[data-theme='dark'] .sidebar-title {
+  color: #e0e0e0;
+}
 
-  .section-title {
-    color: #999;
-  }
+:root[data-theme='dark'] .section-title {
+  color: #999;
+}
 
-  .label {
-    color: #999;
-  }
+:root[data-theme='dark'] .label {
+  color: #999;
+}
 
-  .value {
-    color: #e0e0e0;
-  }
+:root[data-theme='dark'] .value {
+  color: #e0e0e0;
+}
 
-  .session-id,
-  .git-branch {
-    background-color: #2a2a2a;
-    color: #e0e0e0;
-  }
+:root[data-theme='dark'] .session-id,
+:root[data-theme='dark'] .git-branch {
+  background-color: #2a2a2a;
+  color: #e0e0e0;
+}
 
-  .model-item {
-    background-color: #2a2a2a;
-    color: #e0e0e0;
-  }
+:root[data-theme='dark'] .model-item {
+  background-color: #2a2a2a;
+  color: #e0e0e0;
+}
 
-  .sidebar-refresh-indicator {
-    border-color: #4a4a4a;
-    background: #242424;
-    color: #bdbdbd;
-  }
+:root[data-theme='dark'] .sidebar-refresh-indicator {
+  border-color: #4a4a4a;
+  background: #242424;
+  color: #bdbdbd;
+}
 
-  .sidebar-loading-overlay {
-    background: rgba(20, 20, 20, 0.7);
-    color: #d5d5d5;
-  }
+:root[data-theme='dark'] .sidebar-loading-overlay {
+  background: rgba(20, 20, 20, 0.7);
+  color: #d5d5d5;
+}
 
-  .sidebar-loading-skeleton-row {
-    background: linear-gradient(90deg, #2d2d2d 0%, #373737 45%, #2d2d2d 100%);
-    background-size: 220% 100%;
-  }
+:root[data-theme='dark'] .sidebar-loading-skeleton-row {
+  background: linear-gradient(90deg, #2d2d2d 0%, #373737 45%, #2d2d2d 100%);
+  background-size: 220% 100%;
+}
 
-  .sidebar-retry-button {
-    border-color: #4a4a4a;
-    background: #262626;
-    color: #e0e0e0;
-  }
+:root[data-theme='dark'] .sidebar-retry-button {
+  border-color: #4a4a4a;
+  background: #262626;
+  color: #e0e0e0;
+}
 
-  .sidebar-retry-button:hover {
-    background: #313131;
-  }
+:root[data-theme='dark'] .sidebar-retry-button:hover {
+  background: #313131;
+}
 
-  .project-path {
-    color: #999;
-  }
+:root[data-theme='dark'] .project-path {
+  color: #999;
+}
 
-  .metadata-section {
-    border-bottom-color: #333;
-  }
+:root[data-theme='dark'] .metadata-section {
+  border-bottom-color: #333;
+}
 
-  @media (max-width: 768px) {
-    .metadata-sidebar {
-      border-top-color: #444;
-    }
+@media (max-width: 768px) {
+  :root[data-theme='dark'] .metadata-sidebar {
+    border-top-color: #444;
   }
 }
