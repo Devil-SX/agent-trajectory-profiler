@@ -145,7 +145,7 @@ class TestCodexParser:
         ]
         assert user_texts.count(prompt) == 2
 
-    def test_parse_codex_jsonl_file_with_diagnostics_reports_unmapped_event_counts(self) -> None:
+    def test_parse_codex_jsonl_file_with_diagnostics_reports_policy_drop_counts(self) -> None:
         parity_fixture = (
             Path(__file__).parent
             / "fixtures"
@@ -159,8 +159,9 @@ class TestCodexParser:
         assert diagnostics["raw_event_kind_counts"]["session_meta"] == 1
         assert diagnostics["raw_event_kind_counts"]["event_msg"] == 3
         assert diagnostics["raw_event_kind_counts"]["response_item"] == 6
-        assert diagnostics["unmapped_event_counts"]["event_msg:turn_context"] == 1
-        assert diagnostics["unmapped_event_counts"]["response_item:reasoning"] == 1
+        assert diagnostics["unmapped_event_counts"] == {}
+        assert diagnostics["policy_drop_counts"]["event_msg:turn_context"] == 1
+        assert diagnostics["policy_drop_counts"]["response_item:reasoning"] == 1
         assert diagnostics["deduped_user_prompt_count"] == 1
         assert diagnostics["coverage_matrix"] == CODEX_EVENT_COVERAGE_MATRIX
         assert any(
@@ -186,7 +187,7 @@ class TestCodexParser:
             },
             {
                 "timestamp": "2026-03-01T11:00:00.500Z",
-                "type": "turn_context",
+                "type": "unknown_top_level_event",
                 "payload": {"type": "turn_context", "turn_id": "turn-1"},
             },
             {
@@ -205,7 +206,178 @@ class TestCodexParser:
 
         messages, diagnostics = parse_codex_jsonl_file_with_diagnostics(rollout)
         assert len(messages) == 2
-        assert diagnostics["dropped_top_level_counts"]["turn_context"] == 1
+        assert diagnostics["dropped_top_level_counts"]["unknown_top_level_event"] == 1
         assert any(
-            sample["event_type"] == "turn_context" for sample in diagnostics["dropped_samples"]
+            sample["event_type"] == "unknown_top_level_event"
+            for sample in diagnostics["dropped_samples"]
         )
+
+    def test_parse_codex_jsonl_file_covers_all_observed_event_families(
+        self, tmp_path: Path
+    ) -> None:
+        session_id = "66666666-6666-6666-6666-666666666666"
+        rollout = tmp_path / f"rollout-2026-03-01T12-00-00-{session_id}.jsonl"
+        events = [
+            {
+                "timestamp": "2026-03-01T12:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-project",
+                    "cli_version": "0.107.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.050Z",
+                "type": "turn_context",
+                "payload": {"turn": 1},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.060Z",
+                "type": "compacted",
+                "payload": {"reason": "auto"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.100Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "hello"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.120Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": {"input_tokens": 2, "output_tokens": 1}},
+                },
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.130Z",
+                "type": "event_msg",
+                "payload": {"type": "agent_message", "message": "thinking done"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.140Z",
+                "type": "event_msg",
+                "payload": {"type": "agent_reasoning", "message": "reasoning"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.150Z",
+                "type": "event_msg",
+                "payload": {"type": "task_started", "task": "x"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.160Z",
+                "type": "event_msg",
+                "payload": {"type": "task_complete", "task": "x"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.170Z",
+                "type": "event_msg",
+                "payload": {"type": "turn_aborted", "turn_id": "1"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.180Z",
+                "type": "event_msg",
+                "payload": {"type": "context_compacted", "tokens": 1},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.190Z",
+                "type": "event_msg",
+                "payload": {"type": "item_completed", "item_id": "item-1"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.200Z",
+                "type": "event_msg",
+                "payload": {"type": "turn_context", "turn_id": "turn-1"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.210Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "ack"}],
+                },
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.220Z",
+                "type": "response_item",
+                "payload": {"type": "reasoning", "summary": [{"text": "plan"}]},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.230Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "Read",
+                    "arguments": '{"path":"README.md"}',
+                    "call_id": "call-1",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.240Z",
+                "type": "response_item",
+                "payload": {"type": "function_call_output", "call_id": "call-1", "output": "ok"},
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.250Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "web",
+                    "input": {"q": "x"},
+                    "call_id": "c2",
+                },
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.260Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "c2",
+                    "output": '{"output":"ok"}',
+                },
+            },
+            {
+                "timestamp": "2026-03-01T12:00:00.270Z",
+                "type": "response_item",
+                "payload": {"type": "web_search_call", "query": "codex parser"},
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages, diagnostics = parse_codex_jsonl_file_with_diagnostics(rollout)
+
+        assert len(messages) == 9
+        assert diagnostics["raw_event_count"] == len(events)
+        assert diagnostics["dropped_top_level_counts"] == {}
+        assert diagnostics["unmapped_event_counts"] == {}
+        observed_keys = {
+            "session_meta",
+            "turn_context",
+            "compacted",
+            "event_msg:user_message",
+            "event_msg:token_count",
+            "event_msg:agent_message",
+            "event_msg:agent_reasoning",
+            "event_msg:task_started",
+            "event_msg:task_complete",
+            "event_msg:turn_aborted",
+            "event_msg:context_compacted",
+            "event_msg:item_completed",
+            "event_msg:turn_context",
+            "response_item:message",
+            "response_item:reasoning",
+            "response_item:function_call",
+            "response_item:function_call_output",
+            "response_item:custom_tool_call",
+            "response_item:custom_tool_call_output",
+            "response_item:web_search_call",
+        }
+        assert observed_keys.issubset(set(diagnostics["coverage_matrix"].keys()))
+        assert diagnostics["policy_drop_counts"]["turn_context"] == 1
+        assert diagnostics["policy_drop_counts"]["compacted"] == 1
+        assert diagnostics["policy_drop_counts"]["response_item:web_search_call"] == 1

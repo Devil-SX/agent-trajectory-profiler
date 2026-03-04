@@ -62,6 +62,18 @@ Implementation anchors:
 | `actor` | `string \\| null` | yes | Source actor/type marker |
 | `payload` | `object` | yes | Lossless source payload snapshot |
 
+### Event Coverage Policy Status
+
+Adapters that publish an event coverage matrix (for example Codex) must classify each observed
+event key with one of:
+
+- `supported`: converted to unified `MessageRecord`.
+- `stored_not_used_yet`: retained in canonical events but intentionally excluded from unified
+  message mapping for now.
+- `ignored_expected`: intentionally ignored with explicit diagnostic reasons.
+
+This prevents silent event loss when new source shapes are introduced.
+
 ## 4.3 Unified Session Envelope
 
 Canonical conversion must materialize a unified session envelope with identity semantics:

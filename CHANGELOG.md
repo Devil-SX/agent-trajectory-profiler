@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Local privacy-preserving Codex regression smoke test that can target a developer-provided real rollout fixture via `AGENT_VIS_PRIVATE_CODEX_CASE`, while skipping safely in CI when no private fixture is present.
+- Codex full-coverage regression guard for observed event families (`session_meta`, top-level `turn_context/compacted`, expanded `event_msg:*`, and `response_item:*` including `web_search_call`) to prevent implicit parser drift.
+
+### Changed
+
+- Codex canonical coverage policy now classifies non-message-consumed event kinds as `stored_not_used_yet` with explicit diagnostics (`policy_drop_counts`) instead of generic unmapped drops.
+- Codex adapter now ingests top-level `turn_context` and `compacted` into canonical events, preserving these raw payloads for future APIs while keeping current message-level behavior stable.
+- Codex ecosystem and canonical schema docs now explicitly define `supported / stored_not_used_yet / ignored_expected` event-policy semantics.
 
 ### Fixed
 

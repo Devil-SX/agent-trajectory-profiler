@@ -16,7 +16,8 @@ Adapter: `CodexEventAdapter`
   - preferred: parsed `session_meta.payload.id` when present
   - fallback: UUID tail extracted from `rollout-*.jsonl` filename stem
 - Logical lineage resolution:
-  - inspect `session_meta.payload.lineage` (or flat payload keys)
+  - inspect `session_meta.payload.lineage`, flat payload keys, and nested source lineage
+  - nested source lineage path: `session_meta.payload.source.subagent.thread_spawn`
   - keys: `parent_session_id|parent_thread_id|parent_id|...` and `root_session_id|root_thread_id|root_id|...`
   - `logical_session_id = root_session_id or parent_session_id or physical_session_id`
 - Supports both logical and physical session dimensions.
@@ -29,8 +30,10 @@ Top-level source event types accepted by adapter:
 - `session_meta`
 - `response_item`
 - `event_msg`
+- `turn_context`
+- `compacted`
 
-All other top-level types are ignored.
+All other top-level types are ignored with explicit diagnostics.
 
 ### Event Coverage Matrix
 
@@ -39,13 +42,23 @@ All other top-level types are ignored.
 | `session_meta` | supported | mapped to synthetic metadata marker message |
 | `event_msg:user_message` | supported | mapped to user text message |
 | `event_msg:token_count` | supported | mapped to assistant `token_count` message with usage |
-| `event_msg:turn_context` | ignored_expected | not mapped to `MessageRecord`; counted in diagnostics |
+| `event_msg:agent_message` | supported | mapped to assistant text message |
+| `event_msg:agent_reasoning` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `event_msg:task_started` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `event_msg:task_complete` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `event_msg:turn_aborted` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `event_msg:context_compacted` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `event_msg:item_completed` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `event_msg:turn_context` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
 | `response_item:message` | supported | mapped to role-preserving user/assistant message |
 | `response_item:function_call` | supported | mapped to assistant `tool_use` |
 | `response_item:custom_tool_call` | supported | mapped to assistant `tool_use` |
 | `response_item:function_call_output` | supported | mapped to user `tool_result` |
 | `response_item:custom_tool_call_output` | supported | mapped to user `tool_result` |
-| `response_item:reasoning` | pending | currently unmapped; counted in diagnostics |
+| `response_item:web_search_call` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `response_item:reasoning` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `turn_context` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
+| `compacted` | stored_not_used_yet | retained in canonical events; excluded from message mapping |
 | `<unknown_top_level>` | ignored_expected | dropped before canonical conversion; counted in diagnostics |
 
 ## 4. Mapping to Canonical and Unified Model
@@ -103,6 +116,7 @@ Current parser behavior:
 - `raw_event_kind_counts`
 - `dropped_top_level_counts`
 - `unmapped_event_counts` (by `top_level[:subtype]`)
+- `policy_drop_counts` (events intentionally retained in canonical stream but excluded from message mapping)
 - `deduped_user_prompt_count`
 - `dropped_samples` (minimal `{line_number, event_type, reason}` entries)
 

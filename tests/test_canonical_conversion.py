@@ -81,7 +81,7 @@ class TestCanonicalConversionContract:
             handle.write(
                 json.dumps(
                     {
-                        "type": "turn_context",
+                        "type": "unknown_top_level",
                         "timestamp": "2026-03-01T10:00:01.000Z",
                         "payload": {"type": "turn_context"},
                     }
@@ -97,8 +97,8 @@ class TestCanonicalConversionContract:
         assert len(canonical_session.events) == 1
         assert diagnostics.raw_event_count == 2
         assert diagnostics.raw_event_kind_counts["session_meta"] == 1
-        assert diagnostics.raw_event_kind_counts["turn_context"] == 1
-        assert diagnostics.dropped_event_kind_counts["turn_context"] == 1
+        assert diagnostics.raw_event_kind_counts["unknown_top_level"] == 1
+        assert diagnostics.dropped_event_kind_counts["unknown_top_level"] == 1
         assert diagnostics.dropped_samples[0].line_number == 2
 
     def test_canonical_conversion_matches_current_claude_parser_output(

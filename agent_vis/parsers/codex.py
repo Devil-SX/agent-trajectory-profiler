@@ -49,52 +49,95 @@ _ROOT_ID_KEYS = (
     "rootThreadId",
 )
 _MAX_DIAGNOSTIC_SAMPLES = 12
+_STATUS_SUPPORTED = "supported"
+_STATUS_STORED_NOT_USED_YET = "stored_not_used_yet"
+_STATUS_IGNORED_EXPECTED = "ignored_expected"
 
 logger = logging.getLogger(__name__)
 
 CODEX_EVENT_COVERAGE_MATRIX: dict[str, dict[str, str]] = {
     "session_meta": {
-        "status": "supported",
+        "status": _STATUS_SUPPORTED,
         "behavior": "maps to synthetic metadata marker message",
     },
+    "turn_context": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
+    "compacted": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
     "event_msg:user_message": {
-        "status": "supported",
+        "status": _STATUS_SUPPORTED,
         "behavior": "maps to user text message",
     },
     "event_msg:token_count": {
-        "status": "supported",
+        "status": _STATUS_SUPPORTED,
         "behavior": "maps to assistant token_count message with usage",
     },
+    "event_msg:agent_message": {
+        "status": _STATUS_SUPPORTED,
+        "behavior": "maps to assistant text message",
+    },
+    "event_msg:agent_reasoning": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
+    "event_msg:task_started": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
+    "event_msg:task_complete": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
+    "event_msg:turn_aborted": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
+    "event_msg:context_compacted": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
+    "event_msg:item_completed": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
     "event_msg:turn_context": {
-        "status": "ignored_expected",
-        "behavior": "tracked in diagnostics as unmapped context-only event",
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
     },
     "response_item:message": {
-        "status": "supported",
+        "status": _STATUS_SUPPORTED,
         "behavior": "maps to role-preserving message",
     },
     "response_item:function_call": {
-        "status": "supported",
+        "status": _STATUS_SUPPORTED,
         "behavior": "maps to assistant tool_use block",
     },
     "response_item:custom_tool_call": {
-        "status": "supported",
+        "status": _STATUS_SUPPORTED,
         "behavior": "maps to assistant tool_use block",
     },
     "response_item:function_call_output": {
-        "status": "supported",
+        "status": _STATUS_SUPPORTED,
         "behavior": "maps to user tool_result block",
     },
     "response_item:custom_tool_call_output": {
-        "status": "supported",
+        "status": _STATUS_SUPPORTED,
         "behavior": "maps to user tool_result block",
     },
+    "response_item:web_search_call": {
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
+    },
     "response_item:reasoning": {
-        "status": "pending",
-        "behavior": "currently unmapped; diagnostics capture line + subtype",
+        "status": _STATUS_STORED_NOT_USED_YET,
+        "behavior": "retained as canonical event; currently excluded from message mapping",
     },
     "<unknown_top_level>": {
-        "status": "ignored_expected",
+        "status": _STATUS_IGNORED_EXPECTED,
         "behavior": (
             "dropped before canonical conversion; " "diagnostics capture top-level type + line"
         ),
@@ -320,6 +363,16 @@ def _coverage_key_from_raw_event(raw_event: dict[str, Any]) -> str:
     return f"{top_type}:{subtype.strip()}"
 
 
+def _coverage_status(coverage_key: str) -> str | None:
+    entry = CODEX_EVENT_COVERAGE_MATRIX.get(coverage_key)
+    if entry is None:
+        return None
+    status = entry.get("status")
+    if isinstance(status, str):
+        return status
+    return None
+
+
 def _append_drop_sample(
     samples: list[dict[str, Any]],
     *,
@@ -358,6 +411,26 @@ def _extract_text_blocks(content: Any) -> str | list[dict[str, Any]]:
     if len(text_blocks) == 1:
         return text_blocks[0]["text"]
     return text_blocks
+
+
+def _summarize_text_like_payload(payload: dict[str, Any]) -> str:
+    candidates = (
+        payload.get("message"),
+        payload.get("summary"),
+        payload.get("reason"),
+        payload.get("status"),
+    )
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+        if isinstance(candidate, list):
+            for item in candidate:
+                if not isinstance(item, dict):
+                    continue
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+    return f"{payload.get('type', 'event')}"
 
 
 def _build_message_record(
@@ -401,7 +474,13 @@ class CodexEventAdapter(TrajectoryEventAdapter):
         self, raw_event: dict[str, Any], *, source_path: Path, line_number: int
     ) -> CanonicalEvent | None:
         top_type = raw_event.get("type")
-        if top_type not in {"session_meta", "response_item", "event_msg"}:
+        if top_type not in {
+            "session_meta",
+            "response_item",
+            "event_msg",
+            "turn_context",
+            "compacted",
+        }:
             return None
 
         return CanonicalEvent(
@@ -440,6 +519,9 @@ class CodexEventAdapter(TrajectoryEventAdapter):
                 ),
             )
 
+        if top_type in {"turn_context", "compacted"}:
+            return None
+
         if top_type == "event_msg":
             event_kind = payload_dict.get("type")
             if event_kind == "user_message":
@@ -476,6 +558,14 @@ class CodexEventAdapter(TrajectoryEventAdapter):
                     role="assistant",
                     content="token_count",
                     usage=usage,
+                )
+            if event_kind == "agent_message":
+                return _build_message_record(
+                    session_id=session_id,
+                    uuid=f"{session_id}-agent-{event.line_number}",
+                    timestamp=timestamp,
+                    role="assistant",
+                    content=_summarize_text_like_payload(payload_dict),
                 )
             return None
 
@@ -579,6 +669,9 @@ class CodexEventAdapter(TrajectoryEventAdapter):
                 ],
             )
 
+        if item_type in {"reasoning", "web_search_call"}:
+            return None
+
         return None
 
 
@@ -597,6 +690,7 @@ def parse_codex_jsonl_file_with_diagnostics(
 
     pre_dedupe_messages: list[MessageRecord] = []
     unmapped_event_counts: dict[str, int] = {}
+    policy_drop_counts: dict[str, int] = {}
     dropped_samples: list[dict[str, Any]] = []
 
     for sample in canonical_diag.dropped_samples:
@@ -627,6 +721,18 @@ def parse_codex_jsonl_file_with_diagnostics(
             pre_dedupe_messages.append(message)
             continue
 
+        coverage_status = _coverage_status(coverage_key)
+        if coverage_status in {_STATUS_STORED_NOT_USED_YET, _STATUS_IGNORED_EXPECTED}:
+            policy_drop_counts[coverage_key] = policy_drop_counts.get(coverage_key, 0) + 1
+            _append_drop_sample(
+                dropped_samples,
+                line_number=event.line_number,
+                event_type=coverage_key,
+                reason=f"policy_{coverage_status}",
+                sample_limit=sample_limit,
+            )
+            continue
+
         unmapped_event_counts[coverage_key] = unmapped_event_counts.get(coverage_key, 0) + 1
         _append_drop_sample(
             dropped_samples,
@@ -643,6 +749,7 @@ def parse_codex_jsonl_file_with_diagnostics(
         "raw_event_kind_counts": dict(canonical_diag.raw_event_kind_counts),
         "dropped_top_level_counts": dict(canonical_diag.dropped_event_kind_counts),
         "unmapped_event_counts": unmapped_event_counts,
+        "policy_drop_counts": policy_drop_counts,
         "mapped_message_count_before_dedupe": len(pre_dedupe_messages),
         "mapped_message_count_after_dedupe": len(messages),
         "deduped_user_prompt_count": deduped_user_prompt_count,
@@ -658,15 +765,17 @@ def parse_codex_jsonl_file(file_path: Path) -> list[MessageRecord]:
     if (
         diagnostics["dropped_top_level_counts"]
         or diagnostics["unmapped_event_counts"]
+        or diagnostics["policy_drop_counts"]
         or diagnostics["deduped_user_prompt_count"] > 0
     ):
         logger.info(
             "Codex coverage diagnostics for %s | raw=%s | dropped_top=%s | "
-            "unmapped=%s | deduped=%s | samples=%s",
+            "unmapped=%s | policy_drop=%s | deduped=%s | samples=%s",
             file_path,
             diagnostics["raw_event_kind_counts"],
             diagnostics["dropped_top_level_counts"],
             diagnostics["unmapped_event_counts"],
+            diagnostics["policy_drop_counts"],
             diagnostics["deduped_user_prompt_count"],
             diagnostics["dropped_samples"],
         )
