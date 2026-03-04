@@ -18,6 +18,7 @@ import type {
   SessionListResponse,
   SessionDetailResponse,
   SessionStatisticsResponse,
+  SessionQueryFilters,
 } from '../types/session';
 
 function resolveApiBaseUrl(): string {
@@ -174,7 +175,8 @@ export async function fetchSessions(
   pageSize: number = 50,
   startDate: string | null = null,
   endDate: string | null = null,
-  viewMode: 'logical' | 'physical' = 'logical'
+  viewMode: 'logical' | 'physical' = 'logical',
+  filters?: SessionQueryFilters
 ): Promise<SessionListResponse> {
   try {
     const params = new URLSearchParams({
@@ -189,6 +191,38 @@ export async function fetchSessions(
 
     if (endDate) {
       params.append('end_date', endDate);
+    }
+
+    if (filters?.ecosystem) {
+      params.append('ecosystem', filters.ecosystem);
+    }
+    if (filters?.bottleneck) {
+      params.append('bottleneck', filters.bottleneck);
+    }
+    if (filters?.sort_by) {
+      params.append('sort_by', filters.sort_by);
+    }
+    if (filters?.sort_direction) {
+      params.append('sort_direction', filters.sort_direction);
+    }
+
+    if (filters?.min_tokens !== null && filters?.min_tokens !== undefined) {
+      params.append('min_tokens', String(filters.min_tokens));
+    }
+    if (filters?.max_tokens !== null && filters?.max_tokens !== undefined) {
+      params.append('max_tokens', String(filters.max_tokens));
+    }
+    if (filters?.min_messages !== null && filters?.min_messages !== undefined) {
+      params.append('min_messages', String(filters.min_messages));
+    }
+    if (filters?.max_messages !== null && filters?.max_messages !== undefined) {
+      params.append('max_messages', String(filters.max_messages));
+    }
+    if (filters?.min_automation !== null && filters?.min_automation !== undefined) {
+      params.append('min_automation', String(filters.min_automation));
+    }
+    if (filters?.max_automation !== null && filters?.max_automation !== undefined) {
+      params.append('max_automation', String(filters.max_automation));
     }
 
     const response = await fetchWithRetry(`${API_BASE_URL}/api/sessions?${params}`);

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionSummary } from '../../src/types/session';
-import { filterAndSortSessions, filterSessions, sortSessions } from '../../src/utils/sessionFilters';
+import {
+  buildSessionQueryFilters,
+  DEFAULT_SESSION_FILTERS,
+  filterAndSortSessions,
+  filterSessions,
+  hasActiveSessionFilter,
+  resolveAutomationRange,
+  sortSessions,
+} from '../../src/utils/sessionFilters';
 
 const sessions: SessionSummary[] = [
   {
@@ -46,32 +54,84 @@ const sessions: SessionSummary[] = [
     parsed_at: null,
     duration_seconds: 900,
     bottleneck: 'user',
-    automation_ratio: 0.4,
+    automation_ratio: 3.4,
   },
 ];
 
 describe('sessionFilters', () => {
-  it('filters by search query and bottleneck', () => {
-    const byProject = filterSessions(sessions, 'frontend-app', 'all');
-    expect(byProject).toHaveLength(2);
+  it('applies multi-dimensional filters with AND semantics', () => {
+    const filtered = filterSessions(sessions, {
+      ...DEFAULT_SESSION_FILTERS,
+      search_query: 'frontend-app',
+      ecosystem: 'codex',
+      bottleneck: 'user',
+      token_min: 3000,
+      token_max: 7000,
+      message_min: 10,
+      message_max: 15,
+      automation_band: 'high',
+    });
 
-    const byId = filterSessions(sessions, 'session-02', 'all');
-    expect(byId.map((session) => session.session_id)).toEqual(['session-02']);
-
-    const byBottleneck = filterSessions(sessions, '', 'tool');
-    expect(byBottleneck.map((session) => session.session_id)).toEqual(['session-02']);
+    expect(filtered.map((session) => session.session_id)).toEqual(['session-03']);
   });
 
-  it('sorts according to requested strategy', () => {
-    expect(sortSessions(sessions, 'tokens')[0].session_id).toBe('session-02');
-    expect(sortSessions(sessions, 'duration')[0].session_id).toBe('session-02');
-    expect(sortSessions(sessions, 'automation')[0].session_id).toBe('session-02');
-    expect(sortSessions(sessions, 'created')[0].session_id).toBe('session-02');
-    expect(sortSessions(sessions, 'updated')[0].session_id).toBe('session-02');
+  it('resolves automation band and manual range as intersection', () => {
+    expect(resolveAutomationRange('medium', null, null)).toEqual([1, 3]);
+    expect(resolveAutomationRange('medium', 1.5, 2.2)).toEqual([1.5, 2.2]);
+    expect(resolveAutomationRange('high', 4.0, null)).toEqual([4.0, null]);
   });
 
-  it('combines filter and sort deterministically', () => {
-    const result = filterAndSortSessions(sessions, 'frontend-app', 'all', 'tokens');
-    expect(result.map((session) => session.session_id)).toEqual(['session-01', 'session-03']);
+  it('supports sort direction for all key metrics', () => {
+    expect(sortSessions(sessions, 'tokens', 'desc')[0].session_id).toBe('session-02');
+    expect(sortSessions(sessions, 'tokens', 'asc')[0].session_id).toBe('session-03');
+
+    expect(sortSessions(sessions, 'messages', 'desc')[0].session_id).toBe('session-02');
+    expect(sortSessions(sessions, 'messages', 'asc')[0].session_id).toBe('session-03');
+  });
+
+  it('combines filtering and sorting deterministically', () => {
+    const result = filterAndSortSessions(sessions, {
+      ...DEFAULT_SESSION_FILTERS,
+      ecosystem: 'codex',
+      sort_by: 'tokens',
+      sort_direction: 'asc',
+    });
+    expect(result.map((session) => session.session_id)).toEqual(['session-03', 'session-01']);
+  });
+
+  it('builds server query filters from browser state', () => {
+    const query = buildSessionQueryFilters({
+      ...DEFAULT_SESSION_FILTERS,
+      bottleneck: 'tool',
+      ecosystem: 'claude_code',
+      sort_by: 'messages',
+      sort_direction: 'asc',
+      token_min: 1000,
+      message_max: 60,
+      automation_band: 'medium',
+    });
+
+    expect(query).toEqual({
+      bottleneck: 'tool',
+      ecosystem: 'claude_code',
+      sort_by: 'messages',
+      sort_direction: 'asc',
+      min_tokens: 1000,
+      max_tokens: null,
+      min_messages: null,
+      max_messages: 60,
+      min_automation: 1,
+      max_automation: 3,
+    });
+  });
+
+  it('tracks whether any filter is active', () => {
+    expect(hasActiveSessionFilter(DEFAULT_SESSION_FILTERS)).toBe(false);
+    expect(
+      hasActiveSessionFilter({
+        ...DEFAULT_SESSION_FILTERS,
+        search_query: 'abc',
+      })
+    ).toBe(true);
   });
 });

@@ -39,6 +39,7 @@ import type {
   SessionListResponse,
   SessionDetailResponse,
   SessionStatisticsResponse,
+  SessionQueryFilters,
 } from '../types/session';
 
 /**
@@ -53,8 +54,9 @@ export const sessionKeys = {
     startDate?: string | null,
     endDate?: string | null,
     viewMode: 'logical' | 'physical' = 'logical',
+    filters?: SessionQueryFilters,
   ) =>
-    [...sessionKeys.lists(), { page, pageSize, startDate, endDate, viewMode }] as const,
+    [...sessionKeys.lists(), { page, pageSize, startDate, endDate, viewMode, filters }] as const,
   details: () => [...sessionKeys.all, 'detail'] as const,
   detail: (id: string) => [...sessionKeys.details(), id] as const,
   statistics: () => [...sessionKeys.all, 'statistics'] as const,
@@ -114,10 +116,11 @@ export function useSessionsQuery(
   startDate: string | null = null,
   endDate: string | null = null,
   viewMode: 'logical' | 'physical' = 'logical',
+  filters?: SessionQueryFilters,
 ): UseQueryResult<SessionListResponse, Error> {
   return useQuery({
-    queryKey: sessionKeys.list(page, pageSize, startDate, endDate, viewMode),
-    queryFn: () => fetchSessions(page, pageSize, startDate, endDate, viewMode),
+    queryKey: sessionKeys.list(page, pageSize, startDate, endDate, viewMode, filters),
+    queryFn: () => fetchSessions(page, pageSize, startDate, endDate, viewMode, filters),
     placeholderData: (previousData) => previousData,
     retry: 0,
     staleTime: 5 * 60 * 1000, // 5 minutes

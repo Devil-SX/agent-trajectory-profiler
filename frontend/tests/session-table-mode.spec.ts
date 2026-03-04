@@ -60,6 +60,57 @@ const mockTableSessions = {
 };
 
 async function setupTableModeMockApi(page: Page): Promise<void> {
+  const frontendPreferences = {
+    locale: 'en',
+    theme_mode: 'system',
+    density_mode: 'comfortable',
+    session_view_mode: 'table',
+    session_aggregation_mode: 'logical',
+    session_browser_filters: {
+      search_query: '',
+      start_date: null,
+      end_date: null,
+      sort_by: 'updated',
+      sort_direction: 'desc',
+      bottleneck: 'all',
+      ecosystem: 'all',
+      token_min: null,
+      token_max: null,
+      message_min: null,
+      message_max: null,
+      automation_band: 'all',
+      automation_min: null,
+      automation_max: null,
+    },
+    updated_at: null,
+  };
+
+  await page.route(/\/api\/state\/frontend-preferences(?:\?.*)?$/, async (route) => {
+    const method = route.request().method();
+    if (method === 'PUT') {
+      const patch = (await route.request().postDataJSON()) as Record<string, unknown> | null;
+      if (patch && typeof patch === 'object') {
+        if (
+          patch.session_browser_filters &&
+          typeof patch.session_browser_filters === 'object' &&
+          !Array.isArray(patch.session_browser_filters)
+        ) {
+          frontendPreferences.session_browser_filters = {
+            ...frontendPreferences.session_browser_filters,
+            ...(patch.session_browser_filters as Record<string, unknown>),
+          };
+        }
+      }
+      frontendPreferences.updated_at = '2026-02-12T13:00:00Z';
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(frontendPreferences),
+    });
+  });
+
   await page.route(/\/api\/sessions(\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -203,5 +254,52 @@ test.describe('@full Session Table Mode', () => {
     await page.locator('.sort-select').selectOption('updated');
     const firstByUpdated = page.locator('.session-table tbody tr[data-session-id]').first();
     await expect(firstByUpdated).toHaveAttribute('data-session-id', 'session-gamma');
+  });
+
+  test('@smoke applies multi-dimensional filters and clear-all in table mode', async ({ page }) => {
+    const sessionRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/api/sessions?')) {
+        sessionRequests.push(request.url());
+      }
+    });
+
+    await setupTableModeMockApi(page);
+    await page.goto('/');
+    await page.waitForSelector('.session-table', { timeout: 10000 });
+
+    await page.locator('#ecosystem-select').selectOption('codex');
+    await page.locator('.filter-button--tool').click();
+    await page.locator('#token-min-input').fill('40000');
+    await page.locator('#message-min-input').fill('60');
+    await page.locator('#automation-band-select').selectOption('high');
+    await page.waitForTimeout(700);
+
+    const rows = page.locator('.session-table tbody tr[data-session-id]');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toHaveAttribute('data-session-id', 'session-beta');
+
+    await expect(page.locator('.chips-row .filter-chip')).toHaveCount(5);
+
+    await expect
+      .poll(
+        () =>
+          sessionRequests.some(
+            (url) =>
+              url.includes('ecosystem=codex') &&
+              url.includes('bottleneck=tool') &&
+              url.includes('min_tokens=40000') &&
+              url.includes('min_messages=60') &&
+              url.includes('min_automation=3')
+          ),
+        { timeout: 10000 }
+      )
+      .toBeTruthy();
+
+    await page.locator('.clear-all-button').click();
+    await page.waitForTimeout(700);
+
+    await expect(page.locator('.session-table tbody tr[data-session-id]')).toHaveCount(3);
+    await expect(page.locator('.chips-row .filter-chip--placeholder')).toBeVisible();
   });
 });

@@ -133,6 +133,8 @@ class TestFrontendStateAPI:
                     assert default_payload["density_mode"] == "comfortable"
                     assert default_payload["session_view_mode"] == "table"
                     assert default_payload["session_aggregation_mode"] == "logical"
+                    assert default_payload["session_browser_filters"]["sort_by"] == "updated"
+                    assert default_payload["session_browser_filters"]["sort_direction"] == "desc"
                     assert default_payload["updated_at"] is None
 
                     update_response = client.put(
@@ -143,6 +145,22 @@ class TestFrontendStateAPI:
                             "density_mode": "compact",
                             "session_view_mode": "cards",
                             "session_aggregation_mode": "physical",
+                            "session_browser_filters": {
+                                "search_query": "backend-api",
+                                "start_date": "2026-02-01",
+                                "end_date": "2026-02-28",
+                                "sort_by": "tokens",
+                                "sort_direction": "asc",
+                                "bottleneck": "tool",
+                                "ecosystem": "codex",
+                                "token_min": 1000,
+                                "token_max": 50000,
+                                "message_min": 10,
+                                "message_max": 200,
+                                "automation_band": "high",
+                                "automation_min": 3.0,
+                                "automation_max": None,
+                            },
                         },
                     )
                     assert update_response.status_code == 200
@@ -152,6 +170,11 @@ class TestFrontendStateAPI:
                     assert updated_payload["density_mode"] == "compact"
                     assert updated_payload["session_view_mode"] == "cards"
                     assert updated_payload["session_aggregation_mode"] == "physical"
+                    assert (
+                        updated_payload["session_browser_filters"]["search_query"] == "backend-api"
+                    )
+                    assert updated_payload["session_browser_filters"]["sort_by"] == "tokens"
+                    assert updated_payload["session_browser_filters"]["sort_direction"] == "asc"
                     assert updated_payload["updated_at"] is not None
 
                     readback = client.get("/api/state/frontend-preferences")
@@ -165,6 +188,7 @@ class TestFrontendStateAPI:
             saved = json.loads(state_file.read_text(encoding="utf-8"))
             assert saved["session_view_mode"] == "cards"
             assert saved["session_aggregation_mode"] == "physical"
+            assert saved["session_browser_filters"]["ecosystem"] == "codex"
         finally:
             get_settings.cache_clear()
 
@@ -301,6 +325,69 @@ class TestSessionListAPI:
             # Verify sessions are sorted in descending order by created_at
             for i in range(len(sessions) - 1):
                 assert sessions[i]["created_at"] >= sessions[i + 1]["created_at"]
+
+    def test_list_sessions_supports_multi_dimensional_filters_and_sort_direction(
+        self, test_client: TestClient
+    ) -> None:
+        source = test_client.get("/api/sessions?view=physical&page_size=200")
+        assert source.status_code == 200
+        source_sessions = source.json()["sessions"]
+
+        candidate = next(
+            (
+                session
+                for session in source_sessions
+                if session.get("automation_ratio") is not None
+                and isinstance(session.get("bottleneck"), str)
+                and str(session["bottleneck"]).strip().lower() in {"model", "tool", "user"}
+            ),
+            None,
+        )
+        if candidate is None:
+            pytest.skip("No session with stable automation+bottleneck fields in fixture set")
+
+        bottleneck = str(candidate["bottleneck"]).strip().lower()
+        automation = float(candidate["automation_ratio"])
+        token_value = int(candidate["total_tokens"])
+        message_value = int(candidate["total_messages"])
+        token_min = max(token_value - 1, 0)
+        token_max = token_value + 1
+        message_min = max(message_value - 1, 0)
+        message_max = message_value + 1
+        automation_min = max(automation - 0.01, 0.0)
+        automation_max = automation + 0.01
+
+        query = (
+            "/api/sessions"
+            f"?view=physical&page_size=200"
+            f"&ecosystem={candidate['ecosystem']}"
+            f"&bottleneck={bottleneck}"
+            f"&min_tokens={token_min}&max_tokens={token_max}"
+            f"&min_messages={message_min}&max_messages={message_max}"
+            f"&min_automation={automation_min}&max_automation={automation_max}"
+            "&sort_by=tokens&sort_direction=asc"
+        )
+        response = test_client.get(query)
+        assert response.status_code == 200
+        payload = response.json()
+        sessions = payload["sessions"]
+        assert len(sessions) >= 1
+
+        for session in sessions:
+            assert session["ecosystem"] == candidate["ecosystem"]
+            assert str(session.get("bottleneck") or "").strip().lower() == bottleneck
+            assert token_min <= int(session["total_tokens"]) <= token_max
+            assert message_min <= int(session["total_messages"]) <= message_max
+            assert session["automation_ratio"] is not None
+            assert automation_min <= float(session["automation_ratio"]) <= automation_max
+
+        token_values = [int(item["total_tokens"]) for item in sessions]
+        assert token_values == sorted(token_values)
+
+    def test_list_sessions_rejects_invalid_filter_ranges(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/sessions?min_tokens=50&max_tokens=10")
+        assert response.status_code == 400
+        assert "min_tokens must be <= max_tokens" in response.text
 
     def test_list_sessions_defaults_to_logical_view_for_codex_hierarchy(
         self,

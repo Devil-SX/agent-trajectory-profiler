@@ -194,6 +194,28 @@ async def list_sessions(
         default=None,
         description="Filter sessions by ecosystem (e.g. claude_code, codex)",
     ),
+    bottleneck: Literal["model", "tool", "user"] | None = Query(
+        default=None,
+        description="Filter sessions by bottleneck category",
+    ),
+    sort_by: Literal["updated", "created", "tokens", "duration", "automation", "messages"] = Query(
+        default="updated",
+        description="Sort key for session list",
+    ),
+    sort_direction: Literal["asc", "desc"] = Query(
+        default="desc",
+        description="Sort direction for session list",
+    ),
+    min_tokens: int | None = Query(default=None, ge=0, description="Minimum token count"),
+    max_tokens: int | None = Query(default=None, ge=0, description="Maximum token count"),
+    min_messages: int | None = Query(default=None, ge=0, description="Minimum message count"),
+    max_messages: int | None = Query(default=None, ge=0, description="Maximum message count"),
+    min_automation: float | None = Query(
+        default=None, ge=0, description="Minimum automation ratio"
+    ),
+    max_automation: float | None = Query(
+        default=None, ge=0, description="Maximum automation ratio"
+    ),
     view: Literal["logical", "physical"] = Query(
         default="logical",
         description="Session view mode: logical (dedup parent/sub-agent) or physical (raw files)",
@@ -219,16 +241,36 @@ async def list_sessions(
         raise HTTPException(status_code=400, detail="Page must be >= 1")
     if page_size < 1 or page_size > 200:
         raise HTTPException(status_code=400, detail="Page size must be between 1 and 200")
+    if min_tokens is not None and max_tokens is not None and min_tokens > max_tokens:
+        raise HTTPException(status_code=400, detail="min_tokens must be <= max_tokens")
+    if min_messages is not None and max_messages is not None and min_messages > max_messages:
+        raise HTTPException(status_code=400, detail="min_messages must be <= max_messages")
+    if (
+        min_automation is not None
+        and max_automation is not None
+        and min_automation > max_automation
+    ):
+        raise HTTPException(status_code=400, detail="min_automation must be <= max_automation")
 
     start_date, end_date = _normalize_date_range(start_date, end_date)
+    ecosystem_filter = None if ecosystem in (None, "", "all") else ecosystem
 
     try:
         sessions, total_count = await session_service.list_sessions(
             page,
             page_size,
+            sort_by=sort_by,
+            sort_order=sort_direction.upper(),
             start_date=start_date,
             end_date=end_date,
-            ecosystem=ecosystem,
+            ecosystem=ecosystem_filter,
+            bottleneck=bottleneck,
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            min_messages=min_messages,
+            max_messages=max_messages,
+            min_automation=min_automation,
+            max_automation=max_automation,
             view_mode=view,
         )
         total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0

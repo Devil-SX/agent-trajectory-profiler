@@ -13,18 +13,24 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { useRunSyncMutation, useSessionsQuery, useSyncStatusQuery } from '../hooks/useSessionsQuery';
-import type { SessionSummary } from '../types/session';
 import {
-  SessionFilter,
-  type SortOption,
-  type BottleneckFilter,
-} from './SessionFilter';
-import type { DateRange } from './DateRangePicker';
+  useFrontendPreferencesQuery,
+  useRunSyncMutation,
+  useSessionsQuery,
+  useSyncStatusQuery,
+  useUpdateFrontendPreferencesMutation,
+} from '../hooks/useSessionsQuery';
+import type { SessionSummary } from '../types/session';
+import { SessionFilter } from './SessionFilter';
 import { SessionListView } from './SessionListView';
 import { SyncControl } from './SyncControl';
 import { useI18n } from '../i18n';
-import { filterAndSortSessions } from '../utils/sessionFilters';
+import {
+  DEFAULT_SESSION_FILTERS,
+  buildSessionQueryFilters,
+  filterAndSortSessions,
+  type SessionBrowserFilters,
+} from '../utils/sessionFilters';
 import './SessionBrowser.css';
 
 interface SessionBrowserProps {
@@ -63,12 +69,9 @@ export function SessionBrowser({
   const { t, formatNumber } = useI18n();
   const [page] = useState(1);
   const [pageSize] = useState(200);
-
-  // Date range filter state
-  const [dateRange, setDateRange] = useState<DateRange>({
-    start_date: null,
-    end_date: null,
-  });
+  const [filters, setFilters] = useState<SessionBrowserFilters>({ ...DEFAULT_SESSION_FILTERS });
+  const filterHydrationRef = useRef(false);
+  const skipNextFilterPersistRef = useRef(true);
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     controlledSelectedSessionId
@@ -80,19 +83,20 @@ export function SessionBrowser({
   const viewMode = controlledViewMode ?? viewModeState;
   const aggregationMode = controlledAggregationMode ?? aggregationModeState;
 
-  // Filter and sort state
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [sortBy, setSortBy] = useState<SortOption>('updated');
-  const [bottleneckFilter, setBottleneckFilter] = useState<BottleneckFilter>(
-    'all'
+  const frontendPreferencesQuery = useFrontendPreferencesQuery();
+  const updateFrontendPreferencesMutation = useUpdateFrontendPreferencesMutation();
+  const serverQueryFilters = useMemo(
+    () => buildSessionQueryFilters(filters),
+    [filters]
   );
 
   const { data, isLoading, isFetching, error: queryError, refetch } = useSessionsQuery(
     page,
     pageSize,
-    dateRange.start_date,
-    dateRange.end_date,
-    aggregationMode
+    filters.start_date,
+    filters.end_date,
+    aggregationMode,
+    serverQueryFilters,
   );
   const syncStatusQuery = useSyncStatusQuery();
   const runSyncMutation = useRunSyncMutation();
@@ -115,6 +119,42 @@ export function SessionBrowser({
       toast.error(error);
     }
   }, [error]);
+
+  useEffect(() => {
+    if (filterHydrationRef.current) {
+      return;
+    }
+    if (frontendPreferencesQuery.data) {
+      const hydrated = {
+        ...DEFAULT_SESSION_FILTERS,
+        ...(frontendPreferencesQuery.data.session_browser_filters || {}),
+      };
+      setFilters(hydrated);
+      filterHydrationRef.current = true;
+      return;
+    }
+    if (frontendPreferencesQuery.isError) {
+      filterHydrationRef.current = true;
+    }
+  }, [frontendPreferencesQuery.data, frontendPreferencesQuery.isError]);
+
+  useEffect(() => {
+    if (!filterHydrationRef.current) {
+      return;
+    }
+    if (skipNextFilterPersistRef.current) {
+      skipNextFilterPersistRef.current = false;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      updateFrontendPreferencesMutation.mutate({
+        session_browser_filters: filters,
+      });
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [filters, updateFrontendPreferencesMutation]);
 
   useEffect(() => {
     if (controlledViewMode !== undefined) {
@@ -173,8 +213,8 @@ export function SessionBrowser({
 
   // Filter and sort sessions
   const filteredAndSortedSessions = useMemo(() => {
-    return filterAndSortSessions(sessions, searchQuery, bottleneckFilter, sortBy);
-  }, [sessions, searchQuery, bottleneckFilter, sortBy]);
+    return filterAndSortSessions(sessions, filters);
+  }, [sessions, filters]);
 
   useEffect(() => {
     if (filteredAndSortedSessions.length === 0) {
@@ -335,14 +375,8 @@ export function SessionBrowser({
             )}
             <div className="session-browser-filter">
               <SessionFilter
-                onSearchChange={setSearchQuery}
-                onSortChange={setSortBy}
-                onBottleneckFilterChange={setBottleneckFilter}
-                onDateRangeChange={setDateRange}
-                searchQuery={searchQuery}
-                sortBy={sortBy}
-                bottleneckFilter={bottleneckFilter}
-                dateRange={dateRange}
+                value={filters}
+                onChange={setFilters}
               />
             </div>
 

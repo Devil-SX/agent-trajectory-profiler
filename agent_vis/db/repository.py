@@ -174,6 +174,13 @@ class SessionRepository:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        bottleneck: str | None = None,
+        min_tokens: int | None = None,
+        max_tokens: int | None = None,
+        min_messages: int | None = None,
+        max_messages: int | None = None,
+        min_automation: float | None = None,
+        max_automation: float | None = None,
         view_mode: SessionViewMode = "physical",
     ) -> list[sqlite3.Row]:
         """
@@ -187,29 +194,38 @@ class SessionRepository:
             start_date: Include sessions created on or after this date (YYYY-MM-DD).
             end_date: Include sessions created on or before this date (YYYY-MM-DD).
         """
-        allowed_sort = {
-            "created_at",
-            "parsed_at",
-            "total_tokens",
-            "duration_seconds",
-            "total_messages",
-            "session_id",
+        allowed_sort_map = {
+            "created_at": "created_at",
+            "updated_at": "COALESCE(updated_at, created_at)",
+            "parsed_at": "parsed_at",
+            "total_tokens": "total_tokens",
+            "duration_seconds": "duration_seconds",
+            "total_messages": "total_messages",
+            "automation_ratio": "automation_ratio",
+            "session_id": "session_id",
         }
-        if sort_by not in allowed_sort:
-            sort_by = "created_at"
+        sort_expr = allowed_sort_map.get(sort_by, "created_at")
         if sort_order.upper() not in ("ASC", "DESC"):
             sort_order = "DESC"
+        sort_order = sort_order.upper()
 
         where_clauses, params = self._build_date_filter(
             start_date,
             end_date,
             ecosystem=ecosystem,
+            bottleneck=bottleneck,
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            min_messages=min_messages,
+            max_messages=max_messages,
+            min_automation=min_automation,
+            max_automation=max_automation,
         )
         where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
 
         if view_mode == "logical":
             all_rows = self._fetch_sessions(
-                sort_by=sort_by,
+                sort_by=sort_expr,
                 sort_order=sort_order,
                 where_sql=where_sql,
                 params=params,
@@ -219,7 +235,7 @@ class SessionRepository:
 
         params.extend([limit, offset])
         cur = self._conn.execute(
-            f"SELECT * FROM sessions {where_sql}ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?",
+            f"SELECT * FROM sessions {where_sql}ORDER BY {sort_expr} {sort_order} LIMIT ? OFFSET ?",
             params,
         )
         return cur.fetchall()
@@ -229,6 +245,13 @@ class SessionRepository:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        bottleneck: str | None = None,
+        min_tokens: int | None = None,
+        max_tokens: int | None = None,
+        min_messages: int | None = None,
+        max_messages: int | None = None,
+        min_automation: float | None = None,
+        max_automation: float | None = None,
         view_mode: SessionViewMode = "physical",
     ) -> int:
         """Return total number of sessions, optionally filtered by date range."""
@@ -236,6 +259,13 @@ class SessionRepository:
             start_date,
             end_date,
             ecosystem=ecosystem,
+            bottleneck=bottleneck,
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            min_messages=min_messages,
+            max_messages=max_messages,
+            min_automation=min_automation,
+            max_automation=max_automation,
         )
         where_sql = f"WHERE {' AND '.join(where_clauses)} " if where_clauses else ""
 
@@ -342,9 +372,20 @@ class SessionRepository:
         end_date: str | None,
         *,
         ecosystem: str | None = None,
+        bottleneck: str | None = None,
+        min_tokens: int | None = None,
+        max_tokens: int | None = None,
+        min_messages: int | None = None,
+        max_messages: int | None = None,
+        min_automation: float | None = None,
+        max_automation: float | None = None,
         created_col: str = "created_at",
         ecosystem_col: str = "ecosystem",
-    ) -> tuple[list[str], list[str]]:
+        bottleneck_col: str = "bottleneck",
+        total_tokens_col: str = "total_tokens",
+        total_messages_col: str = "total_messages",
+        automation_col: str = "automation_ratio",
+    ) -> tuple[list[str], list[object]]:
         """Build WHERE clause fragments for date filtering on created_at.
 
         Returns (clauses, params) for parameterized queries.
@@ -353,7 +394,7 @@ class SessionRepository:
         from datetime import timedelta
 
         clauses: list[str] = []
-        params: list[str] = []
+        params: list[object] = []
 
         if start_date:
             datetime.fromisoformat(start_date)  # Validate format
@@ -369,6 +410,31 @@ class SessionRepository:
         if ecosystem:
             clauses.append(f"{ecosystem_col} = ?")
             params.append(ecosystem)
+
+        if bottleneck:
+            clauses.append(f"LOWER(COALESCE({bottleneck_col}, '')) = ?")
+            params.append(bottleneck.strip().lower())
+
+        if min_tokens is not None:
+            clauses.append(f"COALESCE({total_tokens_col}, 0) >= ?")
+            params.append(min_tokens)
+        if max_tokens is not None:
+            clauses.append(f"COALESCE({total_tokens_col}, 0) <= ?")
+            params.append(max_tokens)
+
+        if min_messages is not None:
+            clauses.append(f"COALESCE({total_messages_col}, 0) >= ?")
+            params.append(min_messages)
+        if max_messages is not None:
+            clauses.append(f"COALESCE({total_messages_col}, 0) <= ?")
+            params.append(max_messages)
+
+        if min_automation is not None:
+            clauses.append(f"{automation_col} >= ?")
+            params.append(min_automation)
+        if max_automation is not None:
+            clauses.append(f"{automation_col} <= ?")
+            params.append(max_automation)
 
         return clauses, params
 
@@ -433,7 +499,7 @@ class SessionRepository:
         sort_by: str,
         sort_order: str,
         where_sql: str,
-        params: list[str],
+        params: list[object],
     ) -> list[sqlite3.Row]:
         cur = self._conn.execute(
             f"SELECT * FROM sessions {where_sql}ORDER BY {sort_by} {sort_order}",

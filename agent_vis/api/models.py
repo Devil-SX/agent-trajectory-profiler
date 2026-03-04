@@ -103,6 +103,27 @@ class SyncStatusResponse(BaseModel):
     last_sync: SyncRunDetail | None = None
 
 
+class SessionBrowserFilterState(BaseModel):
+    """Persisted filter state for Session Browser."""
+
+    search_query: str = ""
+    start_date: str | None = None
+    end_date: str | None = None
+    sort_by: Literal["updated", "created", "tokens", "duration", "automation", "messages"] = (
+        "updated"
+    )
+    sort_direction: Literal["asc", "desc"] = "desc"
+    bottleneck: Literal["all", "model", "tool", "user"] = "all"
+    ecosystem: Literal["all", "codex", "claude_code"] = "all"
+    token_min: int | None = None
+    token_max: int | None = None
+    message_min: int | None = None
+    message_max: int | None = None
+    automation_band: Literal["all", "low", "medium", "high"] = "all"
+    automation_min: float | None = None
+    automation_max: float | None = None
+
+
 class FrontendPreferences(BaseModel):
     """Frontend preference state persisted under ~/.agent-vis/state."""
 
@@ -111,6 +132,9 @@ class FrontendPreferences(BaseModel):
     density_mode: Literal["comfortable", "compact"] = "comfortable"
     session_view_mode: Literal["cards", "table"] = "table"
     session_aggregation_mode: Literal["logical", "physical"] = "logical"
+    session_browser_filters: SessionBrowserFilterState = Field(
+        default_factory=SessionBrowserFilterState
+    )
     updated_at: str | None = None
 
 
@@ -122,6 +146,7 @@ class FrontendPreferencesUpdate(BaseModel):
     density_mode: Literal["comfortable", "compact"] | None = None
     session_view_mode: Literal["cards", "table"] | None = None
     session_aggregation_mode: Literal["logical", "physical"] | None = None
+    session_browser_filters: SessionBrowserFilterState | None = None
 
 
 class CapabilityParserInfo(BaseModel):

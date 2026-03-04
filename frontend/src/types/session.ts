@@ -68,6 +68,34 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 export type DensityMode = 'comfortable' | 'compact';
 export type SessionViewMode = 'cards' | 'table';
 export type SessionAggregationMode = 'logical' | 'physical';
+export type SessionSortOption =
+  | 'updated'
+  | 'created'
+  | 'tokens'
+  | 'duration'
+  | 'automation'
+  | 'messages';
+export type SessionSortDirection = 'asc' | 'desc';
+export type SessionBottleneckFilter = 'all' | 'model' | 'tool' | 'user';
+export type SessionEcosystemFilter = 'all' | 'codex' | 'claude_code';
+export type SessionAutomationBand = 'all' | 'low' | 'medium' | 'high';
+
+export interface SessionBrowserFilters {
+  search_query: string;
+  start_date: string | null;
+  end_date: string | null;
+  sort_by: SessionSortOption;
+  sort_direction: SessionSortDirection;
+  bottleneck: SessionBottleneckFilter;
+  ecosystem: SessionEcosystemFilter;
+  token_min: number | null;
+  token_max: number | null;
+  message_min: number | null;
+  message_max: number | null;
+  automation_band: SessionAutomationBand;
+  automation_min: number | null;
+  automation_max: number | null;
+}
 
 export interface FrontendPreferences {
   locale: LocaleOption;
@@ -75,6 +103,7 @@ export interface FrontendPreferences {
   density_mode: DensityMode;
   session_view_mode: SessionViewMode;
   session_aggregation_mode: SessionAggregationMode;
+  session_browser_filters: SessionBrowserFilters;
   updated_at: string | null;
 }
 
@@ -84,6 +113,20 @@ export interface FrontendPreferencesUpdate {
   density_mode?: DensityMode;
   session_view_mode?: SessionViewMode;
   session_aggregation_mode?: SessionAggregationMode;
+  session_browser_filters?: SessionBrowserFilters;
+}
+
+export interface SessionQueryFilters {
+  ecosystem?: Exclude<SessionEcosystemFilter, 'all'> | null;
+  bottleneck?: Exclude<SessionBottleneckFilter, 'all'> | null;
+  sort_by?: SessionSortOption;
+  sort_direction?: SessionSortDirection;
+  min_tokens?: number | null;
+  max_tokens?: number | null;
+  min_messages?: number | null;
+  max_messages?: number | null;
+  min_automation?: number | null;
+  max_automation?: number | null;
 }
 
 export interface CapabilityParserInfo {

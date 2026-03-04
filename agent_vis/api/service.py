@@ -140,6 +140,22 @@ class SessionService:
             "density_mode": "comfortable",
             "session_view_mode": "table",
             "session_aggregation_mode": "logical",
+            "session_browser_filters": {
+                "search_query": "",
+                "start_date": None,
+                "end_date": None,
+                "sort_by": "updated",
+                "sort_direction": "desc",
+                "bottleneck": "all",
+                "ecosystem": "all",
+                "token_min": None,
+                "token_max": None,
+                "message_min": None,
+                "message_max": None,
+                "automation_band": "all",
+                "automation_min": None,
+                "automation_max": None,
+            },
             "updated_at": None,
         }
 
@@ -382,11 +398,18 @@ class SessionService:
         self,
         page: int = 1,
         page_size: int = 50,
-        sort_by: str = "created_at",
+        sort_by: str = "updated",
         sort_order: str = "DESC",
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        bottleneck: str | None = None,
+        min_tokens: int | None = None,
+        max_tokens: int | None = None,
+        min_messages: int | None = None,
+        max_messages: int | None = None,
+        min_automation: float | None = None,
+        max_automation: float | None = None,
         view_mode: Literal["logical", "physical"] = "logical",
     ) -> tuple[list[SessionSummary], int]:
         """
@@ -403,16 +426,47 @@ class SessionService:
                 start_date,
                 end_date,
                 ecosystem,
+                bottleneck,
+                min_tokens,
+                max_tokens,
+                min_messages,
+                max_messages,
+                min_automation,
+                max_automation,
                 view_mode,
             )
         return self._list_from_memory(
             page,
             page_size,
+            sort_by,
+            sort_order,
             start_date,
             end_date,
             ecosystem,
+            bottleneck,
+            min_tokens,
+            max_tokens,
+            min_messages,
+            max_messages,
+            min_automation,
+            max_automation,
             view_mode,
         )
+
+    @staticmethod
+    def _resolve_repo_sort_key(sort_by: str) -> str:
+        mapping = {
+            "updated": "updated_at",
+            "created": "created_at",
+            "tokens": "total_tokens",
+            "duration": "duration_seconds",
+            "automation": "automation_ratio",
+            "messages": "total_messages",
+            # Backward-compatible aliases.
+            "updated_at": "updated_at",
+            "created_at": "created_at",
+        }
+        return mapping.get(sort_by, "created_at")
 
     def _list_from_db(
         self,
@@ -423,24 +477,46 @@ class SessionService:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        bottleneck: str | None = None,
+        min_tokens: int | None = None,
+        max_tokens: int | None = None,
+        min_messages: int | None = None,
+        max_messages: int | None = None,
+        min_automation: float | None = None,
+        max_automation: float | None = None,
         view_mode: Literal["logical", "physical"] = "logical",
     ) -> tuple[list[SessionSummary], int]:
         assert self._repo is not None
+        sort_key = self._resolve_repo_sort_key(sort_by)
         total_count = self._repo.count_sessions(
             start_date=start_date,
             end_date=end_date,
             ecosystem=ecosystem,
+            bottleneck=bottleneck,
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            min_messages=min_messages,
+            max_messages=max_messages,
+            min_automation=min_automation,
+            max_automation=max_automation,
             view_mode=view_mode,
         )
         offset = (page - 1) * page_size
         rows = self._repo.list_sessions(
-            sort_by=sort_by,
+            sort_by=sort_key,
             sort_order=sort_order,
             limit=page_size,
             offset=offset,
             start_date=start_date,
             end_date=end_date,
             ecosystem=ecosystem,
+            bottleneck=bottleneck,
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            min_messages=min_messages,
+            max_messages=max_messages,
+            min_automation=min_automation,
+            max_automation=max_automation,
             view_mode=view_mode,
         )
         summaries = []
@@ -470,12 +546,21 @@ class SessionService:
         self,
         page: int,
         page_size: int,
+        sort_by: str,
+        sort_order: str,
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        bottleneck: str | None = None,
+        min_tokens: int | None = None,
+        max_tokens: int | None = None,
+        min_messages: int | None = None,
+        max_messages: int | None = None,
+        min_automation: float | None = None,
+        max_automation: float | None = None,
         view_mode: Literal["logical", "physical"] = "logical",
     ) -> tuple[list[SessionSummary], int]:
-        summaries = []
+        summaries: list[SessionSummary] = []
         for session in self._sessions.values():
             sid = session.metadata.session_id
             session_ecosystem = self._session_ecosystem.get(sid, "claude_code")
@@ -509,10 +594,53 @@ class SessionService:
             )
             summaries.append(summary)
 
-        summaries.sort(key=lambda x: str(x.created_at), reverse=True)
+        filtered = []
+        for summary in summaries:
+            if bottleneck and (summary.bottleneck or "").strip().lower() != bottleneck.lower():
+                continue
+            if min_tokens is not None and int(summary.total_tokens or 0) < min_tokens:
+                continue
+            if max_tokens is not None and int(summary.total_tokens or 0) > max_tokens:
+                continue
+            if min_messages is not None and int(summary.total_messages or 0) < min_messages:
+                continue
+            if max_messages is not None and int(summary.total_messages or 0) > max_messages:
+                continue
+            if min_automation is not None:
+                if (
+                    summary.automation_ratio is None
+                    or float(summary.automation_ratio) < min_automation
+                ):
+                    continue
+            if max_automation is not None:
+                if (
+                    summary.automation_ratio is None
+                    or float(summary.automation_ratio) > max_automation
+                ):
+                    continue
+            filtered.append(summary)
+
+        descending = sort_order.upper() != "ASC"
+
+        def _sort_value(item: SessionSummary) -> float | int | str:
+            if sort_by in {"updated", "updated_at"}:
+                return str(item.updated_at or item.created_at or "")
+            if sort_by in {"created", "created_at"}:
+                return str(item.created_at or "")
+            if sort_by == "tokens":
+                return int(item.total_tokens or 0)
+            if sort_by == "duration":
+                return float(item.duration_seconds or 0.0)
+            if sort_by == "automation":
+                return float(item.automation_ratio or 0.0)
+            if sort_by == "messages":
+                return int(item.total_messages or 0)
+            return str(item.created_at or "")
+
+        filtered.sort(key=_sort_value, reverse=descending)
         if view_mode == "logical":
             deduped: dict[str, SessionSummary] = {}
-            for summary in summaries:
+            for summary in filtered:
                 logical_id = summary.logical_session_id or summary.session_id
                 existing = deduped.get(logical_id)
                 if existing is None:
@@ -522,12 +650,12 @@ class SessionService:
                 current_is_root = summary.session_id == logical_id
                 if current_is_root and not existing_is_root:
                     deduped[logical_id] = summary
-            summaries = list(deduped.values())
+            filtered = list(deduped.values())
 
-        total_count = len(summaries)
+        total_count = len(filtered)
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
-        return summaries[start_idx:end_idx], total_count
+        return filtered[start_idx:end_idx], total_count
 
     async def get_session(self, session_id: str) -> Session | None:
         """

@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Codex full-coverage regression guard for observed event families (`session_meta`, top-level `turn_context/compacted`, expanded `event_msg:*`, and `response_item:*` including `web_search_call`) to prevent implicit parser drift.
 - Codex/web-search regression coverage for status-aware tool error annotations, including result-only tool records without prior `tool_use` blocks.
 - Day/Night wall-clock coverage metrics (OR-union semantics) in analytics overview payloads, including day/night window seconds and per-role coverage seconds (`model/tool/user`) bounded to physical window limits.
+- Session Browser multi-dimensional filter model with persisted frontend state (`session_browser_filters`) covering date range, bottleneck, ecosystem, sort key/direction, token/message ranges, automation band, and automation numeric range.
+- New Session Browser active-filter chips and one-click clear-all behavior, plus smoke coverage for representative multi-filter combinations and reset flow in table mode.
+- Backend session list API now supports server-side composable range/source filters and sort direction (`/api/sessions` query params for bottleneck, ecosystem, tokens/messages/automation min-max, sort key, and asc/desc direction).
 
 ### Changed
 
@@ -23,6 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Codex session-id resolution now prefers `session_meta.payload.id` from raw source scanning over first-mapped-message fallback, improving identity stability when event order varies.
 - Tool error timeline payloads now include optional `tool_call_id`, concise `summary`, and bounded `detail_snippet` fields alongside existing preview/detail text.
 - Cross-session Day/Night UI now keeps existing summed-duration view and adds explicit ratio-denominator toggle (include vs exclude inactive) that updates chart/table percentage semantics consistently, plus a dedicated coverage table with explainability text.
+- Session list backend query pipeline now applies AND semantics across active server-side filters in both physical and logical views, keeping logical dedup behavior consistent after sorting and filtering.
+- Frontend session filtering utilities now use a single typed filter-state contract shared by UI, local filtering, and API query construction, including automation-band to numeric-range normalization.
 
 ### Fixed
 

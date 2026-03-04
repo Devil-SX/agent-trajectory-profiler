@@ -536,6 +536,22 @@ export async function setupMockApi(page: Page) {
     density_mode: 'comfortable',
     session_view_mode: 'table',
     session_aggregation_mode: 'logical',
+    session_browser_filters: {
+      search_query: '',
+      start_date: null,
+      end_date: null,
+      sort_by: 'updated',
+      sort_direction: 'desc',
+      bottleneck: 'all',
+      ecosystem: 'all',
+      token_min: null,
+      token_max: null,
+      message_min: null,
+      message_max: null,
+      automation_band: 'all',
+      automation_min: null,
+      automation_max: null,
+    },
     updated_at: null as string | null,
   };
 
@@ -788,6 +804,16 @@ export async function setupMockApi(page: Page) {
           patch.session_aggregation_mode === 'physical'
         ) {
           frontendPreferences.session_aggregation_mode = patch.session_aggregation_mode;
+        }
+        if (
+          patch.session_browser_filters &&
+          typeof patch.session_browser_filters === 'object' &&
+          !Array.isArray(patch.session_browser_filters)
+        ) {
+          frontendPreferences.session_browser_filters = {
+            ...frontendPreferences.session_browser_filters,
+            ...(patch.session_browser_filters as Record<string, unknown>),
+          };
         }
       }
       frontendPreferences.updated_at = '2026-02-27T02:00:00.000Z';
