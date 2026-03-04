@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-04
+
+> **Code Stats** | Total: 67,942 lines | Delta: +5,584 (-234) = **+5,350 net** | Change: **+8.5%** vs v1.1.0
+
 ### Added
 
 - New Codex end-to-end parity regression baseline with a golden raw rollout fixture and layered tests:
