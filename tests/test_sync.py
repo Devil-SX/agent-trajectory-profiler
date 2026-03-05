@@ -201,3 +201,30 @@ class TestSyncEngineDataIntegrity:
 
         engine.sync(session_dir)
         assert "Capability warning" in caplog.text
+
+    def test_sync_rollback_on_persistence_exception(
+        self,
+        engine: SyncEngine,
+        session_dir: Path,
+        repo: SessionRepository,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        original_upsert_session = repo.upsert_session
+        call_count = {"value": 0}
+
+        def _raise_on_second(*args: object, **kwargs: object) -> None:
+            call_count["value"] += 1
+            if call_count["value"] == 2:
+                raise RuntimeError("forced write failure")
+            original_upsert_session(*args, **kwargs)
+
+        monkeypatch.setattr(repo, "upsert_session", _raise_on_second)
+
+        with pytest.raises(RuntimeError, match="forced write failure"):
+            engine.sync(session_dir, force=True)
+
+        assert repo.count_sessions() == 0
+        tracked_count = repo._conn.execute("SELECT COUNT(*) AS c FROM tracked_files").fetchone()[
+            "c"
+        ]
+        assert tracked_count == 0

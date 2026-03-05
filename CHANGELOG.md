@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Parser/Sync regression tests for transaction rollback safety and character-classification edge cases (`tests/test_sync.py`, `tests/test_repository.py`, `tests/test_character_metrics.py`).
 - Analytics read-path regression tests for lightweight query routing and cache lifecycle behavior (`tests/test_api_integration.py`), plus repository coverage for selective statistics fetch (`tests/test_repository.py`).
 - Persistent backend performance framework with budgeted benchmark runner (`scripts/run_backend_perf.py` + `agent_vis/perf/*`), synthetic perf dataset generation, and structured JSON/Markdown artifacts under `output/perf/`.
 - New repository-tracked performance budget config and regression tests (`tests/perf/budgets.json`, `tests/test_perf_framework.py`, `tests/test_perf_runner.py`) covering soft-gate evaluation behavior and artifact generation.
@@ -30,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Sync write path now runs inside a repository transaction boundary to batch SQLite commits and keep persistence atomic on unexpected write failures (`agent_vis/db/sync.py`, `agent_vis/db/repository.py`).
+- Character classification hotpath now uses an ASCII-first fast path with lower per-character overhead while preserving existing CJK/Latin/digit/whitespace/other semantics (`agent_vis/parsers/claude_code.py`).
 - Analytics service now uses split data access paths: lightweight session-summary reads for `timeseries` and non-tool `distribution` dimensions, while statistics JSON is loaded on-demand for heavy aggregations.
 - Added short-TTL analytics response cache keyed by query parameters and automatic invalidation after sync completion to reduce repeated aggregation overhead.
 - Repository analytics helpers now support selective statistics fetch by session IDs (`SessionRepository.list_statistics_for_sessions`) to avoid full-table JSON decode work.

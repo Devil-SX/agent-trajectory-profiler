@@ -160,6 +160,30 @@ class TestSessions:
         assert repo.count_sessions() == 0
         assert repo.get_statistics("s1") is None
 
+    def test_transaction_rolls_back_on_exception(self, repo: SessionRepository) -> None:
+        file_id = repo.upsert_tracked_file("/tmp/tx.jsonl", 200, 2.0, parse_status="parsed")
+
+        with pytest.raises(RuntimeError, match="forced rollback"):
+            with repo.transaction():
+                repo.upsert_session(
+                    session_id="tx-session",
+                    file_id=file_id,
+                    ecosystem="claude_code",
+                    project_path="/tmp/project",
+                    git_branch="main",
+                    created_at="2026-02-01T10:00:00Z",
+                    updated_at="2026-02-01T10:05:00Z",
+                    total_messages=10,
+                    total_tokens=100,
+                    duration_seconds=60.0,
+                    total_tool_calls=2,
+                    bottleneck="Model",
+                    automation_ratio=1.0,
+                )
+                raise RuntimeError("forced rollback")
+
+        assert repo.get_session("tx-session") is None
+
 
 class TestSessionStatistics:
     def test_upsert_and_get_statistics(self, repo: SessionRepository) -> None:

@@ -93,3 +93,61 @@ def test_parse_session_records_trajectory_file_size(temp_session_dir: Path) -> N
     session = parse_session_file(file_path)
     assert session.statistics is not None
     assert session.statistics.trajectory_file_size_bytes == file_path.stat().st_size
+
+
+def test_character_breakdown_whitespace_and_unicode_digits(temp_session_dir: Path) -> None:
+    """Classifier should keep whitespace and unicode-digit accounting stable."""
+    messages = [
+        {
+            "type": "user",
+            "sessionId": "char-metrics-003",
+            "uuid": "msg-1",
+            "timestamp": "2026-02-10T11:00:00.000Z",
+            "message": {"role": "user", "content": "A1 \t"},
+        },
+        {
+            "type": "assistant",
+            "sessionId": "char-metrics-003",
+            "uuid": "msg-2",
+            "timestamp": "2026-02-10T11:00:01.000Z",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "中B"}],
+            },
+        },
+        {
+            "type": "user",
+            "sessionId": "char-metrics-003",
+            "uuid": "msg-3",
+            "timestamp": "2026-02-10T11:00:02.000Z",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool-1",
+                        "content": "９\n?",
+                        "is_error": False,
+                    }
+                ],
+            },
+        },
+    ]
+    file_path = temp_session_dir / "char-metrics-unicode.jsonl"
+    with file_path.open("w", encoding="utf-8") as handle:
+        for message in messages:
+            handle.write(json.dumps(message) + "\n")
+
+    parsed_messages = parse_jsonl_file(file_path)
+    stats = calculate_session_statistics(parsed_messages)
+    chars = stats.character_breakdown
+
+    assert chars.total_chars == 9
+    assert chars.user_chars == 4
+    assert chars.model_chars == 2
+    assert chars.tool_chars == 3
+    assert chars.cjk_chars == 1
+    assert chars.latin_chars == 2
+    assert chars.digit_chars == 2
+    assert chars.whitespace_chars == 3
+    assert chars.other_chars == 1

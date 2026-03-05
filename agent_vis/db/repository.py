@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -22,6 +23,34 @@ class SessionRepository:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
+        self._transaction_depth = 0
+
+    def _commit_if_needed(self) -> None:
+        if self._transaction_depth == 0:
+            self._conn.commit()
+
+    @contextmanager
+    def transaction(self) -> object:
+        """
+        Group multiple repository writes into one transaction.
+
+        Nested transaction blocks are supported and only the outermost
+        block controls BEGIN/COMMIT/ROLLBACK.
+        """
+        is_outermost = self._transaction_depth == 0
+        if is_outermost:
+            self._conn.execute("BEGIN")
+        self._transaction_depth += 1
+        try:
+            yield
+            if is_outermost:
+                self._conn.commit()
+        except Exception:
+            if is_outermost:
+                self._conn.rollback()
+            raise
+        finally:
+            self._transaction_depth -= 1
 
     # ------------------------------------------------------------------
     # tracked_files
@@ -59,7 +88,7 @@ class SessionRepository:
             """,
             (file_path, file_size, file_mtime, ecosystem, now, parse_status),
         )
-        self._conn.commit()
+        self._commit_if_needed()
 
         row = self.get_tracked_file(file_path)
         assert row is not None
@@ -72,7 +101,7 @@ class SessionRepository:
             "UPDATE tracked_files SET parse_status = ?, last_parsed_at = ? WHERE file_path = ?",
             (status, now, file_path),
         )
-        self._conn.commit()
+        self._commit_if_needed()
 
     # ------------------------------------------------------------------
     # sessions
@@ -155,7 +184,7 @@ class SessionRepository:
                 version,
             ),
         )
-        self._conn.commit()
+        self._commit_if_needed()
 
     def get_session(self, session_id: str) -> sqlite3.Row | None:
         """Return session summary row or None."""
@@ -469,7 +498,7 @@ class SessionRepository:
         """Delete a session and its statistics."""
         self._conn.execute("DELETE FROM session_statistics WHERE session_id = ?", (session_id,))
         self._conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
-        self._conn.commit()
+        self._commit_if_needed()
 
     # ------------------------------------------------------------------
     # session_statistics
@@ -489,7 +518,7 @@ class SessionRepository:
             """,
             (session_id, json_str, now),
         )
-        self._conn.commit()
+        self._commit_if_needed()
 
     def get_statistics(self, session_id: str) -> SessionStatistics | None:
         """Load and deserialize statistics for a session."""

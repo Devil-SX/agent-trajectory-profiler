@@ -65,123 +65,126 @@ class SyncEngine:
             result.errors.append(str(exc))
             return result
 
-        for file_path in files:
-            abs_path = str(file_path.resolve())
-            try:
-                stat = file_path.stat()
-            except OSError as exc:
-                result.errors.append(f"{file_path.name}: {exc}")
-                continue
+        with self._repo.transaction():
+            for file_path in files:
+                abs_path = str(file_path.resolve())
+                try:
+                    stat = file_path.stat()
+                except OSError as exc:
+                    result.errors.append(f"{file_path.name}: {exc}")
+                    continue
 
-            current_size = stat.st_size
-            current_mtime = stat.st_mtime
+                current_size = stat.st_size
+                current_mtime = stat.st_mtime
 
-            if not force:
-                existing = self._repo.get_tracked_file(abs_path)
-                if existing is not None:
-                    if (
-                        existing["file_size"] == current_size
-                        and existing["file_mtime"] == current_mtime
-                        and existing["parse_status"] == "parsed"
-                    ):
-                        result.skipped += 1
-                        continue
+                if not force:
+                    existing = self._repo.get_tracked_file(abs_path)
+                    if existing is not None:
+                        if (
+                            existing["file_size"] == current_size
+                            and existing["file_mtime"] == current_mtime
+                            and existing["parse_status"] == "parsed"
+                        ):
+                            result.skipped += 1
+                            continue
 
-            # File is new or changed — parse it
-            try:
-                session = self._parser.parse_session(file_path)
-            except SessionParseError as exc:
-                result.errors.append(f"{file_path.name}: {exc}")
-                self._repo.upsert_tracked_file(
-                    abs_path,
-                    current_size,
-                    current_mtime,
-                    ecosystem=self._parser.ecosystem_name,
-                    parse_status="error",
-                )
-                continue
-            except Exception as exc:
-                result.errors.append(f"{file_path.name}: unexpected error: {exc}")
-                self._repo.upsert_tracked_file(
-                    abs_path,
-                    current_size,
-                    current_mtime,
-                    ecosystem=self._parser.ecosystem_name,
-                    parse_status="error",
-                )
-                continue
-
-            # Persist
-            file_id = self._repo.upsert_tracked_file(
-                abs_path,
-                current_size,
-                current_mtime,
-                ecosystem=self._parser.ecosystem_name,
-                parse_status="parsed",
-            )
-
-            meta = session.metadata
-            stats = session.statistics
-
-            if stats is not None:
-                warnings = get_capability_warnings(
-                    self._parser.ecosystem_name,
-                    total_tool_calls=stats.total_tool_calls,
-                    cache_read_tokens=stats.cache_read_tokens,
-                    cache_creation_tokens=stats.cache_creation_tokens,
-                    has_tool_error_records=bool(stats.tool_error_records),
-                    has_subagent_sessions=bool(session.subagent_sessions),
-                )
-                for warning in warnings:
-                    logger.warning(
-                        "Capability warning [%s][%s]: %s",
-                        self._parser.ecosystem_name,
-                        meta.session_id,
-                        warning,
+                # File is new or changed — parse it
+                try:
+                    session = self._parser.parse_session(file_path)
+                except SessionParseError as exc:
+                    result.errors.append(f"{file_path.name}: {exc}")
+                    self._repo.upsert_tracked_file(
+                        abs_path,
+                        current_size,
+                        current_mtime,
+                        ecosystem=self._parser.ecosystem_name,
+                        parse_status="error",
                     )
+                    continue
+                except Exception as exc:
+                    result.errors.append(f"{file_path.name}: unexpected error: {exc}")
+                    self._repo.upsert_tracked_file(
+                        abs_path,
+                        current_size,
+                        current_mtime,
+                        ecosystem=self._parser.ecosystem_name,
+                        parse_status="error",
+                    )
+                    continue
 
-            # Compute bottleneck and automation ratio
-            bottleneck: str | None = None
-            automation_ratio: float | None = None
-            if stats and stats.time_breakdown:
-                tbd = stats.time_breakdown
-                categories = [
-                    ("Model", tbd.model_time_percent),
-                    ("Tool", tbd.tool_time_percent),
-                    ("User", tbd.user_time_percent),
-                ]
-                bottleneck = max(categories, key=lambda x: x[1])[0]
-                if tbd.user_interaction_count > 0 and stats:
-                    automation_ratio = round(stats.total_tool_calls / tbd.user_interaction_count, 2)
+                # Persist
+                file_id = self._repo.upsert_tracked_file(
+                    abs_path,
+                    current_size,
+                    current_mtime,
+                    ecosystem=self._parser.ecosystem_name,
+                    parse_status="parsed",
+                )
 
-            created_at_str = meta.created_at.isoformat() if meta.created_at else None
-            updated_at_str = meta.updated_at.isoformat() if meta.updated_at else None
+                meta = session.metadata
+                stats = session.statistics
 
-            self._repo.upsert_session(
-                session_id=meta.session_id,
-                file_id=file_id,
-                ecosystem=self._parser.ecosystem_name,
-                physical_session_id=meta.physical_session_id,
-                logical_session_id=meta.logical_session_id,
-                parent_session_id=meta.parent_session_id,
-                root_session_id=meta.root_session_id,
-                project_path=meta.project_path,
-                git_branch=meta.git_branch,
-                created_at=created_at_str,
-                updated_at=updated_at_str,
-                total_messages=meta.total_messages,
-                total_tokens=meta.total_tokens,
-                duration_seconds=stats.session_duration_seconds if stats else None,
-                total_tool_calls=stats.total_tool_calls if stats else 0,
-                bottleneck=bottleneck,
-                automation_ratio=automation_ratio,
-                version=meta.version,
-            )
+                if stats is not None:
+                    warnings = get_capability_warnings(
+                        self._parser.ecosystem_name,
+                        total_tool_calls=stats.total_tool_calls,
+                        cache_read_tokens=stats.cache_read_tokens,
+                        cache_creation_tokens=stats.cache_creation_tokens,
+                        has_tool_error_records=bool(stats.tool_error_records),
+                        has_subagent_sessions=bool(session.subagent_sessions),
+                    )
+                    for warning in warnings:
+                        logger.warning(
+                            "Capability warning [%s][%s]: %s",
+                            self._parser.ecosystem_name,
+                            meta.session_id,
+                            warning,
+                        )
 
-            if stats:
-                self._repo.upsert_statistics(meta.session_id, stats)
+                # Compute bottleneck and automation ratio
+                bottleneck: str | None = None
+                automation_ratio: float | None = None
+                if stats and stats.time_breakdown:
+                    tbd = stats.time_breakdown
+                    categories = [
+                        ("Model", tbd.model_time_percent),
+                        ("Tool", tbd.tool_time_percent),
+                        ("User", tbd.user_time_percent),
+                    ]
+                    bottleneck = max(categories, key=lambda x: x[1])[0]
+                    if tbd.user_interaction_count > 0 and stats:
+                        automation_ratio = round(
+                            stats.total_tool_calls / tbd.user_interaction_count, 2
+                        )
 
-            result.parsed += 1
-            logger.debug("Parsed %s -> session %s", file_path.name, meta.session_id)
+                created_at_str = meta.created_at.isoformat() if meta.created_at else None
+                updated_at_str = meta.updated_at.isoformat() if meta.updated_at else None
+
+                self._repo.upsert_session(
+                    session_id=meta.session_id,
+                    file_id=file_id,
+                    ecosystem=self._parser.ecosystem_name,
+                    physical_session_id=meta.physical_session_id,
+                    logical_session_id=meta.logical_session_id,
+                    parent_session_id=meta.parent_session_id,
+                    root_session_id=meta.root_session_id,
+                    project_path=meta.project_path,
+                    git_branch=meta.git_branch,
+                    created_at=created_at_str,
+                    updated_at=updated_at_str,
+                    total_messages=meta.total_messages,
+                    total_tokens=meta.total_tokens,
+                    duration_seconds=stats.session_duration_seconds if stats else None,
+                    total_tool_calls=stats.total_tool_calls if stats else 0,
+                    bottleneck=bottleneck,
+                    automation_ratio=automation_ratio,
+                    version=meta.version,
+                )
+
+                if stats:
+                    self._repo.upsert_statistics(meta.session_id, stats)
+
+                result.parsed += 1
+                logger.debug("Parsed %s -> session %s", file_path.name, meta.session_id)
 
         return result

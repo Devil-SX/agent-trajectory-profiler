@@ -283,31 +283,48 @@ def _ensure_tool_stats_bucket(
 
 def _classify_characters(text: str) -> dict[str, int]:
     """Count text characters by script family."""
-    counts = {
-        "cjk": 0,
-        "latin": 0,
-        "digit": 0,
-        "whitespace": 0,
-        "other": 0,
-    }
+    cjk_count = 0
+    latin_count = 0
+    digit_count = 0
+    whitespace_count = 0
+    other_count = 0
+
     for char in text:
         code_point = ord(char)
-        if char.isspace():
-            counts["whitespace"] += 1
-        elif (
+
+        # ASCII fast path for the majority of tool/command outputs.
+        if code_point <= 0x7F:
+            if code_point in {9, 10, 11, 12, 13, 32}:
+                whitespace_count += 1
+            elif 48 <= code_point <= 57:
+                digit_count += 1
+            elif 65 <= code_point <= 90 or 97 <= code_point <= 122:
+                latin_count += 1
+            else:
+                other_count += 1
+            continue
+
+        if (
             0x4E00 <= code_point <= 0x9FFF
             or 0x3400 <= code_point <= 0x4DBF
             or 0x3040 <= code_point <= 0x30FF
             or 0xAC00 <= code_point <= 0xD7AF
         ):
-            counts["cjk"] += 1
-        elif ("a" <= char <= "z") or ("A" <= char <= "Z"):
-            counts["latin"] += 1
+            cjk_count += 1
+        elif char.isspace():
+            whitespace_count += 1
         elif char.isdigit():
-            counts["digit"] += 1
+            digit_count += 1
         else:
-            counts["other"] += 1
-    return counts
+            other_count += 1
+
+    return {
+        "cjk": cjk_count,
+        "latin": latin_count,
+        "digit": digit_count,
+        "whitespace": whitespace_count,
+        "other": other_count,
+    }
 
 
 _CLAUDE_RECORD_TYPES = {"user", "assistant", "file-history-snapshot", "summary"}
