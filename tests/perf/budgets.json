@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "modes": {
+    "quick": {
+      "metrics": {
+        "sync_full_parse_seconds": {
+          "description": "Sync end-to-end elapsed time",
+          "unit": "s",
+          "direction": "lower_is_better",
+          "target": 1.8,
+          "warn": 2.8
+        },
+        "sync_sessions_per_second": {
+          "description": "Sync throughput",
+          "unit": "sessions/s",
+          "direction": "higher_is_better",
+          "target": 10.0,
+          "warn": 7.0
+        },
+        "parser_statistics_p50_ms": {
+          "description": "calculate_session_statistics median latency",
+          "unit": "ms",
+          "direction": "lower_is_better",
+          "target": 6.0,
+          "warn": 9.0
+        },
+        "api_overview_p50_ms": {
+          "description": "GET analytics overview median latency",
+          "unit": "ms",
+          "direction": "lower_is_better",
+          "target": 90.0,
+          "warn": 130.0
+        },
+        "api_timeseries_p50_ms": {
+          "description": "GET analytics timeseries median latency",
+          "unit": "ms",
+          "direction": "lower_is_better",
+          "target": 70.0,
+          "warn": 110.0
+        }
+      }
+    },
+    "full": {
+      "metrics": {
+        "sync_full_parse_seconds": {
+          "description": "Sync end-to-end elapsed time",
+          "unit": "s",
+          "direction": "lower_is_better",
+          "target": 7.0,
+          "warn": 10.0
+        },
+        "sync_sessions_per_second": {
+          "description": "Sync throughput",
+          "unit": "sessions/s",
+          "direction": "higher_is_better",
+          "target": 12.0,
+          "warn": 8.0
+        },
+        "parser_statistics_p50_ms": {
+          "description": "calculate_session_statistics median latency",
+          "unit": "ms",
+          "direction": "lower_is_better",
+          "target": 8.5,
+          "warn": 12.0
+        },
+        "api_overview_p50_ms": {
+          "description": "GET analytics overview median latency",
+          "unit": "ms",
+          "direction": "lower_is_better",
+          "target": 150.0,
+          "warn": 220.0
+        },
+        "api_timeseries_p50_ms": {
+          "description": "GET analytics timeseries median latency",
+          "unit": "ms",
+          "direction": "lower_is_better",
+          "target": 120.0,
+          "warn": 180.0
+        }
+      }
+    }
+  }
+}

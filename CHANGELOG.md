@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Persistent backend performance framework with budgeted benchmark runner (`scripts/run_backend_perf.py` + `agent_vis/perf/*`), synthetic perf dataset generation, and structured JSON/Markdown artifacts under `output/perf/`.
+- New repository-tracked performance budget config and regression tests (`tests/perf/budgets.json`, `tests/test_perf_framework.py`, `tests/test_perf_runner.py`) covering soft-gate evaluation behavior and artifact generation.
+- New CI workflow for backend performance trend checks (`.github/workflows/backend-performance.yml`) with PR quick profile, nightly full profile, job summary publishing, and artifact upload.
+- Backend performance playbook documenting local execution, metric semantics, soft-gate policy, CI integration, and budget governance (`docs/performance.md`).
 - Automated backend-to-frontend API contract generation chain: OpenAPI export script (`scripts/export_openapi_schema.py`), frontend typegen script (`frontend/scripts/generate-api-types.mjs`), generated contract artifacts (`frontend/src/types/generated/openapi.json`, `api.generated.ts`, `api-contracts.ts`), and npm commands (`typegen`, `typegen:check`).
 - Backend OpenAPI schema regression tests (`tests/test_api_contract_schema.py`) that pin key frontend contract fields (`Session.subagent_sessions/statistics`, `ToolErrorRecord.tool_call_id/summary/detail_snippet`, `SubagentType.aprompt_suggestion`) to prevent drift.
 - Shared parser normalization module with typed intermediate models (`NormalizedRecordIR`/`NormalizedMessageIR`) for timestamp coercion, message-content fallback, lineage extraction helpers, and bounded tool-result normalization (`agent_vis/parsers/normalization.py`).
@@ -25,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- README (EN/ZH) development sections now include backend performance quick/full commands and cross-link to `docs/performance.md`.
 - Frontend API client contract imports now point to generated OpenAPI-derived types in `frontend/src/api/sessions.ts`, while frontend-only filter/view-model types remain in `frontend/src/types/session.ts`.
 - CI `frontend-static-checks` now installs backend deps via `uv` and runs `npm run typegen:check` to fail fast when generated API contracts are stale.
 - Canonical parser adapters for both `codex` and `claude_code` now materialize `MessageRecord` via a shared normalization path plus typed intermediate records, while preserving existing canonical diagnostics outputs (`raw_event_kind_counts`, drop samples, coverage/policy-drop behavior).

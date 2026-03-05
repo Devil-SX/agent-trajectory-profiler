@@ -237,6 +237,12 @@ npm --prefix frontend run typegen
 # CI-style freshness check (fails if generated files are stale)
 npm --prefix frontend run typegen:check
 
+# Backend performance quick profile (PR-oriented soft gate)
+uv run python scripts/run_backend_perf.py --mode quick
+
+# Backend performance full profile (nightly trend)
+uv run python scripts/run_backend_perf.py --mode full
+
 # Run tests
 uv run pytest
 
@@ -247,6 +253,8 @@ uv run mypy .
 ```
 
 Frontend API contracts are generated artifacts and should be committed. When backend API models/routes change, regenerate with `npm --prefix frontend run typegen`, commit updated files under `frontend/src/types/generated/`, and keep `typegen:check` green in CI.
+
+Backend performance artifacts and budget policy are documented in `docs/performance.md`.
 
 ## License
 

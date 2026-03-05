@@ -231,6 +231,12 @@ agent-vis serve --reload --log-level debug
 # 前端开发服务器（另开终端）
 cd frontend && npm run dev
 
+# 后端性能 quick 档（PR 场景，软门禁）
+uv run python scripts/run_backend_perf.py --mode quick
+
+# 后端性能 full 档（夜间趋势）
+uv run python scripts/run_backend_perf.py --mode full
+
 # 运行测试
 uv run pytest
 
@@ -239,6 +245,8 @@ uv run ruff check .
 uv run black .
 uv run mypy .
 ```
+
+后端性能预算、指标口径与 CI 产物说明见 `docs/performance.md`。
 
 ## 许可证
 
