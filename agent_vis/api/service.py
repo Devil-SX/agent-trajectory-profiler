@@ -10,6 +10,7 @@ import functools
 import json
 import math
 import sqlite3
+import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -97,6 +98,8 @@ class SessionService:
         self._sync_running = False
         self._last_sync_detail: dict[str, Any] | None = None
         self._initialized = False
+        self._analytics_cache_ttl_seconds = 15.0
+        self._analytics_cache: dict[str, tuple[float, Any]] = {}
 
     def _sync_targets(self) -> list[tuple[str, Path]]:
         return [
@@ -295,6 +298,7 @@ class SessionService:
         detail["finished_at"] = datetime.now(timezone.utc).isoformat()
         detail["status"] = "failed" if int(detail["errors"]) > 0 else "completed"
         self._last_sync_detail = detail
+        self._invalidate_analytics_cache()
         return detail
 
     async def _auto_sync(self, *, trigger: str = "refresh") -> dict[str, Any]:
@@ -393,6 +397,7 @@ class SessionService:
             await self._auto_sync(trigger="refresh")
         else:
             await self._load_sessions_in_memory()
+            self._invalidate_analytics_cache()
 
     async def list_sessions(
         self,
@@ -805,10 +810,57 @@ class SessionService:
             last_sync=cast(dict[str, Any], last_sync),
         )
 
+    def _analytics_cache_key(self, namespace: str, **params: Any) -> str:
+        parts = [namespace]
+        for key in sorted(params.keys()):
+            value = params[key]
+            normalized = "" if value is None else str(value)
+            parts.append(f"{key}={normalized}")
+        return "|".join(parts)
+
+    def _get_cached_analytics_response(self, cache_key: str) -> Any | None:
+        cached = self._analytics_cache.get(cache_key)
+        if cached is None:
+            return None
+
+        expires_at, response = cached
+        if expires_at <= time.monotonic():
+            self._analytics_cache.pop(cache_key, None)
+            return None
+
+        if hasattr(response, "model_copy"):
+            return response.model_copy(deep=True)
+        return response
+
+    def _set_cached_analytics_response(self, cache_key: str, response: Any) -> None:
+        expires_at = time.monotonic() + self._analytics_cache_ttl_seconds
+        if hasattr(response, "model_copy"):
+            stored = response.model_copy(deep=True)
+        else:
+            stored = response
+        self._analytics_cache[cache_key] = (expires_at, stored)
+
+    def _invalidate_analytics_cache(self) -> None:
+        self._analytics_cache.clear()
+
+    def _cache_response_and_return(self, cache_key: str, response: Any) -> Any:
+        self._set_cached_analytics_response(cache_key, response)
+        return response
+
     async def get_analytics_overview(
         self, start_date: str, end_date: str, ecosystem: str | None = None
     ) -> AnalyticsOverviewResponse:
         """Compute cross-session overview metrics for a date range."""
+        cache_key = self._analytics_cache_key(
+            "overview",
+            start_date=start_date,
+            end_date=end_date,
+            ecosystem=ecosystem,
+        )
+        cached_response = self._get_cached_analytics_response(cache_key)
+        if cached_response is not None:
+            return cast(AnalyticsOverviewResponse, cached_response)
+
         rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
         coverage = self._compute_day_night_role_coverage(rows, start_date, end_date)
         total_sessions = len(rows)
@@ -899,92 +951,95 @@ class SessionService:
                 logical_sessions=0,
                 total_trajectory_file_size_bytes=0,
             )
-            return AnalyticsOverviewResponse(
-                start_date=start_date,
-                end_date=end_date,
-                total_sessions=0,
-                total_messages=0,
-                total_tokens=0,
-                total_tool_calls=0,
-                total_input_tokens=0,
-                total_output_tokens=0,
-                total_tool_output_tokens=0,
-                total_cache_read_tokens=0,
-                total_cache_creation_tokens=0,
-                total_trajectory_file_size_bytes=0,
-                total_chars=0,
-                total_user_chars=0,
-                total_model_chars=0,
-                total_tool_chars=0,
-                total_cjk_chars=0,
-                total_latin_chars=0,
-                total_other_chars=0,
-                yield_ratio_tokens_mean=0.0,
-                yield_ratio_tokens_median=0.0,
-                yield_ratio_tokens_p90=0.0,
-                yield_ratio_chars_mean=0.0,
-                yield_ratio_chars_median=0.0,
-                yield_ratio_chars_p90=0.0,
-                leverage_tokens_mean=0.0,
-                leverage_tokens_median=0.0,
-                leverage_tokens_p90=0.0,
-                leverage_chars_mean=0.0,
-                leverage_chars_median=0.0,
-                leverage_chars_p90=0.0,
-                avg_tokens_per_second_mean=0.0,
-                avg_tokens_per_second_median=0.0,
-                avg_tokens_per_second_p90=0.0,
-                read_tokens_per_second_mean=0.0,
-                read_tokens_per_second_median=0.0,
-                read_tokens_per_second_p90=0.0,
-                output_tokens_per_second_mean=0.0,
-                output_tokens_per_second_median=0.0,
-                output_tokens_per_second_p90=0.0,
-                cache_tokens_per_second_mean=0.0,
-                cache_tokens_per_second_median=0.0,
-                cache_tokens_per_second_p90=0.0,
-                cache_read_tokens_per_second_mean=0.0,
-                cache_read_tokens_per_second_median=0.0,
-                cache_read_tokens_per_second_p90=0.0,
-                cache_creation_tokens_per_second_mean=0.0,
-                cache_creation_tokens_per_second_median=0.0,
-                cache_creation_tokens_per_second_p90=0.0,
-                avg_automation_ratio=0.0,
-                avg_session_duration_seconds=0.0,
-                model_time_seconds=0.0,
-                tool_time_seconds=0.0,
-                user_time_seconds=0.0,
-                inactive_time_seconds=0.0,
-                day_model_time_seconds=0.0,
-                day_tool_time_seconds=0.0,
-                day_user_time_seconds=0.0,
-                day_inactive_time_seconds=0.0,
-                night_model_time_seconds=0.0,
-                night_tool_time_seconds=0.0,
-                night_user_time_seconds=0.0,
-                night_inactive_time_seconds=0.0,
-                coverage_total_window_seconds=float(coverage["coverage_total_window_seconds"]),
-                coverage_day_window_seconds=float(coverage["coverage_day_window_seconds"]),
-                coverage_night_window_seconds=float(coverage["coverage_night_window_seconds"]),
-                day_model_coverage_seconds=float(coverage["day_model_coverage_seconds"]),
-                day_tool_coverage_seconds=float(coverage["day_tool_coverage_seconds"]),
-                day_user_coverage_seconds=float(coverage["day_user_coverage_seconds"]),
-                night_model_coverage_seconds=float(coverage["night_model_coverage_seconds"]),
-                night_tool_coverage_seconds=float(coverage["night_tool_coverage_seconds"]),
-                night_user_coverage_seconds=float(coverage["night_user_coverage_seconds"]),
-                active_time_ratio=0.0,
-                model_timeout_count=0,
-                source_breakdown=[],
-                role_source_breakdown=[],
-                primary_bottleneck_key=None,
-                primary_bottleneck_label=None,
-                primary_bottleneck_source=None,
-                primary_bottleneck_role=None,
-                bottleneck_distribution=[],
-                top_projects=[],
-                top_tools=[],
-                control_plane=control_plane,
-                runtime_plane=runtime_plane,
+            return self._cache_response_and_return(
+                cache_key,
+                AnalyticsOverviewResponse(
+                    start_date=start_date,
+                    end_date=end_date,
+                    total_sessions=0,
+                    total_messages=0,
+                    total_tokens=0,
+                    total_tool_calls=0,
+                    total_input_tokens=0,
+                    total_output_tokens=0,
+                    total_tool_output_tokens=0,
+                    total_cache_read_tokens=0,
+                    total_cache_creation_tokens=0,
+                    total_trajectory_file_size_bytes=0,
+                    total_chars=0,
+                    total_user_chars=0,
+                    total_model_chars=0,
+                    total_tool_chars=0,
+                    total_cjk_chars=0,
+                    total_latin_chars=0,
+                    total_other_chars=0,
+                    yield_ratio_tokens_mean=0.0,
+                    yield_ratio_tokens_median=0.0,
+                    yield_ratio_tokens_p90=0.0,
+                    yield_ratio_chars_mean=0.0,
+                    yield_ratio_chars_median=0.0,
+                    yield_ratio_chars_p90=0.0,
+                    leverage_tokens_mean=0.0,
+                    leverage_tokens_median=0.0,
+                    leverage_tokens_p90=0.0,
+                    leverage_chars_mean=0.0,
+                    leverage_chars_median=0.0,
+                    leverage_chars_p90=0.0,
+                    avg_tokens_per_second_mean=0.0,
+                    avg_tokens_per_second_median=0.0,
+                    avg_tokens_per_second_p90=0.0,
+                    read_tokens_per_second_mean=0.0,
+                    read_tokens_per_second_median=0.0,
+                    read_tokens_per_second_p90=0.0,
+                    output_tokens_per_second_mean=0.0,
+                    output_tokens_per_second_median=0.0,
+                    output_tokens_per_second_p90=0.0,
+                    cache_tokens_per_second_mean=0.0,
+                    cache_tokens_per_second_median=0.0,
+                    cache_tokens_per_second_p90=0.0,
+                    cache_read_tokens_per_second_mean=0.0,
+                    cache_read_tokens_per_second_median=0.0,
+                    cache_read_tokens_per_second_p90=0.0,
+                    cache_creation_tokens_per_second_mean=0.0,
+                    cache_creation_tokens_per_second_median=0.0,
+                    cache_creation_tokens_per_second_p90=0.0,
+                    avg_automation_ratio=0.0,
+                    avg_session_duration_seconds=0.0,
+                    model_time_seconds=0.0,
+                    tool_time_seconds=0.0,
+                    user_time_seconds=0.0,
+                    inactive_time_seconds=0.0,
+                    day_model_time_seconds=0.0,
+                    day_tool_time_seconds=0.0,
+                    day_user_time_seconds=0.0,
+                    day_inactive_time_seconds=0.0,
+                    night_model_time_seconds=0.0,
+                    night_tool_time_seconds=0.0,
+                    night_user_time_seconds=0.0,
+                    night_inactive_time_seconds=0.0,
+                    coverage_total_window_seconds=float(coverage["coverage_total_window_seconds"]),
+                    coverage_day_window_seconds=float(coverage["coverage_day_window_seconds"]),
+                    coverage_night_window_seconds=float(coverage["coverage_night_window_seconds"]),
+                    day_model_coverage_seconds=float(coverage["day_model_coverage_seconds"]),
+                    day_tool_coverage_seconds=float(coverage["day_tool_coverage_seconds"]),
+                    day_user_coverage_seconds=float(coverage["day_user_coverage_seconds"]),
+                    night_model_coverage_seconds=float(coverage["night_model_coverage_seconds"]),
+                    night_tool_coverage_seconds=float(coverage["night_tool_coverage_seconds"]),
+                    night_user_coverage_seconds=float(coverage["night_user_coverage_seconds"]),
+                    active_time_ratio=0.0,
+                    model_timeout_count=0,
+                    source_breakdown=[],
+                    role_source_breakdown=[],
+                    primary_bottleneck_key=None,
+                    primary_bottleneck_label=None,
+                    primary_bottleneck_source=None,
+                    primary_bottleneck_role=None,
+                    bottleneck_distribution=[],
+                    top_projects=[],
+                    top_tools=[],
+                    control_plane=control_plane,
+                    runtime_plane=runtime_plane,
+                ),
             )
 
         total_messages = sum(int(row.get("total_messages") or 0) for row in rows)
@@ -1565,101 +1620,118 @@ class SessionService:
             total_trajectory_file_size_bytes=total_trajectory_file_size_bytes,
         )
 
-        return AnalyticsOverviewResponse(
-            start_date=start_date,
-            end_date=end_date,
-            total_sessions=total_sessions,
-            total_messages=total_messages,
-            total_tokens=total_tokens,
-            total_tool_calls=total_tool_calls,
-            total_input_tokens=total_input_tokens,
-            total_output_tokens=total_output_tokens,
-            total_tool_output_tokens=total_tool_output_tokens,
-            total_cache_read_tokens=total_cache_read_tokens,
-            total_cache_creation_tokens=total_cache_creation_tokens,
-            total_trajectory_file_size_bytes=total_trajectory_file_size_bytes,
-            total_chars=total_chars,
-            total_user_chars=total_user_chars,
-            total_model_chars=total_model_chars,
-            total_tool_chars=total_tool_chars,
-            total_cjk_chars=total_cjk_chars,
-            total_latin_chars=total_latin_chars,
-            total_other_chars=total_other_chars,
-            yield_ratio_tokens_mean=mean(token_yield_ratios) if token_yield_ratios else 0.0,
-            yield_ratio_tokens_median=median(token_yield_ratios) if token_yield_ratios else 0.0,
-            yield_ratio_tokens_p90=token_p90,
-            yield_ratio_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
-            yield_ratio_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
-            yield_ratio_chars_p90=chars_p90,
-            leverage_tokens_mean=mean(token_yield_ratios) if token_yield_ratios else 0.0,
-            leverage_tokens_median=median(token_yield_ratios) if token_yield_ratios else 0.0,
-            leverage_tokens_p90=token_p90,
-            leverage_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
-            leverage_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
-            leverage_chars_p90=chars_p90,
-            avg_tokens_per_second_mean=avg_tps_mean,
-            avg_tokens_per_second_median=avg_tps_median,
-            avg_tokens_per_second_p90=avg_tps_p90,
-            read_tokens_per_second_mean=read_tps_mean,
-            read_tokens_per_second_median=read_tps_median,
-            read_tokens_per_second_p90=read_tps_p90,
-            output_tokens_per_second_mean=out_tps_mean,
-            output_tokens_per_second_median=out_tps_median,
-            output_tokens_per_second_p90=out_tps_p90,
-            cache_tokens_per_second_mean=cache_tps_mean,
-            cache_tokens_per_second_median=cache_tps_median,
-            cache_tokens_per_second_p90=cache_tps_p90,
-            cache_read_tokens_per_second_mean=cache_read_tps_mean,
-            cache_read_tokens_per_second_median=cache_read_tps_median,
-            cache_read_tokens_per_second_p90=cache_read_tps_p90,
-            cache_creation_tokens_per_second_mean=cache_create_tps_mean,
-            cache_creation_tokens_per_second_median=cache_create_tps_median,
-            cache_creation_tokens_per_second_p90=cache_create_tps_p90,
-            avg_automation_ratio=mean(automation_values) if automation_values else 0.0,
-            avg_session_duration_seconds=mean(duration_values) if duration_values else 0.0,
-            model_time_seconds=model_time_seconds,
-            tool_time_seconds=tool_time_seconds,
-            user_time_seconds=user_time_seconds,
-            inactive_time_seconds=inactive_time_seconds,
-            day_model_time_seconds=day_model_time_seconds,
-            day_tool_time_seconds=day_tool_time_seconds,
-            day_user_time_seconds=day_user_time_seconds,
-            day_inactive_time_seconds=day_inactive_time_seconds,
-            night_model_time_seconds=night_model_time_seconds,
-            night_tool_time_seconds=night_tool_time_seconds,
-            night_user_time_seconds=night_user_time_seconds,
-            night_inactive_time_seconds=night_inactive_time_seconds,
-            coverage_total_window_seconds=float(coverage["coverage_total_window_seconds"]),
-            coverage_day_window_seconds=float(coverage["coverage_day_window_seconds"]),
-            coverage_night_window_seconds=float(coverage["coverage_night_window_seconds"]),
-            day_model_coverage_seconds=float(coverage["day_model_coverage_seconds"]),
-            day_tool_coverage_seconds=float(coverage["day_tool_coverage_seconds"]),
-            day_user_coverage_seconds=float(coverage["day_user_coverage_seconds"]),
-            night_model_coverage_seconds=float(coverage["night_model_coverage_seconds"]),
-            night_tool_coverage_seconds=float(coverage["night_tool_coverage_seconds"]),
-            night_user_coverage_seconds=float(coverage["night_user_coverage_seconds"]),
-            active_time_ratio=active_time_ratio,
-            model_timeout_count=model_timeout_count,
-            source_breakdown=source_breakdown,
-            role_source_breakdown=role_source_breakdown,
-            primary_bottleneck_key=primary_bottleneck.key if primary_bottleneck else None,
-            primary_bottleneck_label=primary_bottleneck.label if primary_bottleneck else None,
-            primary_bottleneck_source=(
-                primary_bottleneck.ecosystem if primary_bottleneck else None
+        return self._cache_response_and_return(
+            cache_key,
+            AnalyticsOverviewResponse(
+                start_date=start_date,
+                end_date=end_date,
+                total_sessions=total_sessions,
+                total_messages=total_messages,
+                total_tokens=total_tokens,
+                total_tool_calls=total_tool_calls,
+                total_input_tokens=total_input_tokens,
+                total_output_tokens=total_output_tokens,
+                total_tool_output_tokens=total_tool_output_tokens,
+                total_cache_read_tokens=total_cache_read_tokens,
+                total_cache_creation_tokens=total_cache_creation_tokens,
+                total_trajectory_file_size_bytes=total_trajectory_file_size_bytes,
+                total_chars=total_chars,
+                total_user_chars=total_user_chars,
+                total_model_chars=total_model_chars,
+                total_tool_chars=total_tool_chars,
+                total_cjk_chars=total_cjk_chars,
+                total_latin_chars=total_latin_chars,
+                total_other_chars=total_other_chars,
+                yield_ratio_tokens_mean=mean(token_yield_ratios) if token_yield_ratios else 0.0,
+                yield_ratio_tokens_median=median(token_yield_ratios) if token_yield_ratios else 0.0,
+                yield_ratio_tokens_p90=token_p90,
+                yield_ratio_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
+                yield_ratio_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
+                yield_ratio_chars_p90=chars_p90,
+                leverage_tokens_mean=mean(token_yield_ratios) if token_yield_ratios else 0.0,
+                leverage_tokens_median=median(token_yield_ratios) if token_yield_ratios else 0.0,
+                leverage_tokens_p90=token_p90,
+                leverage_chars_mean=mean(char_yield_ratios) if char_yield_ratios else 0.0,
+                leverage_chars_median=median(char_yield_ratios) if char_yield_ratios else 0.0,
+                leverage_chars_p90=chars_p90,
+                avg_tokens_per_second_mean=avg_tps_mean,
+                avg_tokens_per_second_median=avg_tps_median,
+                avg_tokens_per_second_p90=avg_tps_p90,
+                read_tokens_per_second_mean=read_tps_mean,
+                read_tokens_per_second_median=read_tps_median,
+                read_tokens_per_second_p90=read_tps_p90,
+                output_tokens_per_second_mean=out_tps_mean,
+                output_tokens_per_second_median=out_tps_median,
+                output_tokens_per_second_p90=out_tps_p90,
+                cache_tokens_per_second_mean=cache_tps_mean,
+                cache_tokens_per_second_median=cache_tps_median,
+                cache_tokens_per_second_p90=cache_tps_p90,
+                cache_read_tokens_per_second_mean=cache_read_tps_mean,
+                cache_read_tokens_per_second_median=cache_read_tps_median,
+                cache_read_tokens_per_second_p90=cache_read_tps_p90,
+                cache_creation_tokens_per_second_mean=cache_create_tps_mean,
+                cache_creation_tokens_per_second_median=cache_create_tps_median,
+                cache_creation_tokens_per_second_p90=cache_create_tps_p90,
+                avg_automation_ratio=mean(automation_values) if automation_values else 0.0,
+                avg_session_duration_seconds=mean(duration_values) if duration_values else 0.0,
+                model_time_seconds=model_time_seconds,
+                tool_time_seconds=tool_time_seconds,
+                user_time_seconds=user_time_seconds,
+                inactive_time_seconds=inactive_time_seconds,
+                day_model_time_seconds=day_model_time_seconds,
+                day_tool_time_seconds=day_tool_time_seconds,
+                day_user_time_seconds=day_user_time_seconds,
+                day_inactive_time_seconds=day_inactive_time_seconds,
+                night_model_time_seconds=night_model_time_seconds,
+                night_tool_time_seconds=night_tool_time_seconds,
+                night_user_time_seconds=night_user_time_seconds,
+                night_inactive_time_seconds=night_inactive_time_seconds,
+                coverage_total_window_seconds=float(coverage["coverage_total_window_seconds"]),
+                coverage_day_window_seconds=float(coverage["coverage_day_window_seconds"]),
+                coverage_night_window_seconds=float(coverage["coverage_night_window_seconds"]),
+                day_model_coverage_seconds=float(coverage["day_model_coverage_seconds"]),
+                day_tool_coverage_seconds=float(coverage["day_tool_coverage_seconds"]),
+                day_user_coverage_seconds=float(coverage["day_user_coverage_seconds"]),
+                night_model_coverage_seconds=float(coverage["night_model_coverage_seconds"]),
+                night_tool_coverage_seconds=float(coverage["night_tool_coverage_seconds"]),
+                night_user_coverage_seconds=float(coverage["night_user_coverage_seconds"]),
+                active_time_ratio=active_time_ratio,
+                model_timeout_count=model_timeout_count,
+                source_breakdown=source_breakdown,
+                role_source_breakdown=role_source_breakdown,
+                primary_bottleneck_key=primary_bottleneck.key if primary_bottleneck else None,
+                primary_bottleneck_label=primary_bottleneck.label if primary_bottleneck else None,
+                primary_bottleneck_source=(
+                    primary_bottleneck.ecosystem if primary_bottleneck else None
+                ),
+                primary_bottleneck_role=(primary_bottleneck.role if primary_bottleneck else None),
+                bottleneck_distribution=bottleneck_distribution,
+                top_projects=top_projects,
+                top_tools=top_tools,
+                control_plane=control_plane,
+                runtime_plane=runtime_plane,
             ),
-            primary_bottleneck_role=(primary_bottleneck.role if primary_bottleneck else None),
-            bottleneck_distribution=bottleneck_distribution,
-            top_projects=top_projects,
-            top_tools=top_tools,
-            control_plane=control_plane,
-            runtime_plane=runtime_plane,
         )
 
     async def get_analytics_distribution(
         self, dimension: str, start_date: str, end_date: str, ecosystem: str | None = None
     ) -> AnalyticsDistributionResponse:
         """Compute a distribution breakdown for one dimension."""
-        rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
+        cache_key = self._analytics_cache_key(
+            "distribution",
+            dimension=dimension,
+            start_date=start_date,
+            end_date=end_date,
+            ecosystem=ecosystem,
+        )
+        cached_response = self._get_cached_analytics_response(cache_key)
+        if cached_response is not None:
+            return cast(AnalyticsDistributionResponse, cached_response)
+
+        if dimension == "tool":
+            rows = self._get_analytics_rows_full(start_date, end_date, ecosystem=ecosystem)
+        else:
+            rows = self._get_analytics_rows_light(start_date, end_date, ecosystem=ecosystem)
         buckets: list[AnalyticsBucket] = []
         total_value = 0.0
 
@@ -1783,12 +1855,15 @@ class SessionService:
         if dimension in {"tool", "session_token_share"}:
             buckets = buckets[:20]
 
-        return AnalyticsDistributionResponse(
-            dimension=cast(AnalyticsDimension, dimension),
-            start_date=start_date,
-            end_date=end_date,
-            total=total_value,
-            buckets=buckets,
+        return self._cache_response_and_return(
+            cache_key,
+            AnalyticsDistributionResponse(
+                dimension=cast(AnalyticsDimension, dimension),
+                start_date=start_date,
+                end_date=end_date,
+                total=total_value,
+                buckets=buckets,
+            ),
         )
 
     async def get_analytics_timeseries(
@@ -1799,7 +1874,18 @@ class SessionService:
         ecosystem: str | None = None,
     ) -> AnalyticsTimeseriesResponse:
         """Compute time-series aggregates across sessions."""
-        rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
+        cache_key = self._analytics_cache_key(
+            "timeseries",
+            start_date=start_date,
+            end_date=end_date,
+            interval=interval,
+            ecosystem=ecosystem,
+        )
+        cached_response = self._get_cached_analytics_response(cache_key)
+        if cached_response is not None:
+            return cast(AnalyticsTimeseriesResponse, cached_response)
+
+        rows = self._get_analytics_rows_light(start_date, end_date, ecosystem=ecosystem)
         buckets: dict[str, dict[str, float]] = {}
 
         for row in rows:
@@ -1858,11 +1944,14 @@ class SessionService:
                 )
             )
 
-        return AnalyticsTimeseriesResponse(
-            interval=cast(AnalyticsInterval, interval),
-            start_date=start_date,
-            end_date=end_date,
-            points=points,
+        return self._cache_response_and_return(
+            cache_key,
+            AnalyticsTimeseriesResponse(
+                interval=cast(AnalyticsInterval, interval),
+                start_date=start_date,
+                end_date=end_date,
+                points=points,
+            ),
         )
 
     async def get_project_comparison(
@@ -1873,6 +1962,17 @@ class SessionService:
         ecosystem: str | None = None,
     ) -> ProjectComparisonResponse:
         """Return cross-project KPI comparison for the selected range."""
+        cache_key = self._analytics_cache_key(
+            "project_comparison",
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            ecosystem=ecosystem,
+        )
+        cached_response = self._get_cached_analytics_response(cache_key)
+        if cached_response is not None:
+            return cast(ProjectComparisonResponse, cached_response)
+
         rows = self._get_analytics_rows(start_date, end_date, ecosystem=ecosystem)
 
         def _coerce_float(value: Any) -> float | None:
@@ -1965,11 +2065,14 @@ class SessionService:
         if limit > 0:
             items = items[:limit]
 
-        return ProjectComparisonResponse(
-            start_date=start_date,
-            end_date=end_date,
-            total_projects=len(acc),
-            projects=items,
+        return self._cache_response_and_return(
+            cache_key,
+            ProjectComparisonResponse(
+                start_date=start_date,
+                end_date=end_date,
+                total_projects=len(acc),
+                projects=items,
+            ),
         )
 
     async def get_project_swimlane(
@@ -1981,6 +2084,18 @@ class SessionService:
         ecosystem: str | None = None,
     ) -> ProjectSwimlaneResponse:
         """Return project x time swimlane points for cross-session exploration."""
+        cache_key = self._analytics_cache_key(
+            "project_swimlane",
+            start_date=start_date,
+            end_date=end_date,
+            interval=interval,
+            project_limit=project_limit,
+            ecosystem=ecosystem,
+        )
+        cached_response = self._get_cached_analytics_response(cache_key)
+        if cached_response is not None:
+            return cast(ProjectSwimlaneResponse, cached_response)
+
         if interval not in {"day", "week"}:
             raise ValueError("interval must be one of: day, week")
 
@@ -2087,63 +2202,52 @@ class SessionService:
                     )
                 )
 
-        return ProjectSwimlaneResponse(
-            interval=cast(AnalyticsInterval, interval),
-            start_date=start_date,
-            end_date=end_date,
-            project_limit=project_limit,
-            truncated_project_count=truncated_project_count,
-            periods=sorted_periods,
-            projects=selected_projects,
-            points=points,
+        return self._cache_response_and_return(
+            cache_key,
+            ProjectSwimlaneResponse(
+                interval=cast(AnalyticsInterval, interval),
+                start_date=start_date,
+                end_date=end_date,
+                project_limit=project_limit,
+                truncated_project_count=truncated_project_count,
+                periods=sorted_periods,
+                projects=selected_projects,
+                points=points,
+            ),
         )
 
-    def _get_analytics_rows(
+    @staticmethod
+    def _normalize_db_analytics_rows(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for row in rows:
+            normalized.append(
+                {
+                    "session_id": row["session_id"],
+                    "physical_session_id": row["physical_session_id"] or row["session_id"],
+                    "logical_session_id": row["logical_session_id"] or row["session_id"],
+                    "ecosystem": row["ecosystem"] if "ecosystem" in row.keys() else "claude_code",
+                    "project_path": row["project_path"] or "",
+                    "git_branch": row["git_branch"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                    "total_messages": row["total_messages"] or 0,
+                    "total_tokens": row["total_tokens"] or 0,
+                    "total_tool_calls": row["total_tool_calls"] or 0,
+                    "duration_seconds": row["duration_seconds"],
+                    "bottleneck": row["bottleneck"],
+                    "automation_ratio": row["automation_ratio"],
+                }
+            )
+        return normalized
+
+    def _get_analytics_rows_memory(
         self,
+        *,
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        include_statistics: bool,
     ) -> list[dict[str, Any]]:
-        """Return normalized rows for cross-session analytics."""
-        if self._repo is not None and self._repo.count_sessions() > 0:
-            rows = self._repo.list_statistics_for_analytics(
-                start_date=start_date,
-                end_date=end_date,
-                ecosystem=ecosystem,
-            )
-            normalized: list[dict[str, Any]] = []
-            for row in rows:
-                stats = {}
-                raw_stats = row["statistics_json"]
-                if raw_stats:
-                    try:
-                        stats = json.loads(raw_stats)
-                    except json.JSONDecodeError:
-                        stats = {}
-                normalized.append(
-                    {
-                        "session_id": row["session_id"],
-                        "physical_session_id": row["physical_session_id"] or row["session_id"],
-                        "logical_session_id": row["logical_session_id"] or row["session_id"],
-                        "ecosystem": (
-                            row["ecosystem"] if "ecosystem" in row.keys() else "claude_code"
-                        ),
-                        "project_path": row["project_path"] or "",
-                        "git_branch": row["git_branch"],
-                        "created_at": row["created_at"],
-                        "updated_at": row["updated_at"],
-                        "total_messages": row["total_messages"] or 0,
-                        "total_tokens": row["total_tokens"] or 0,
-                        "total_tool_calls": row["total_tool_calls"] or 0,
-                        "duration_seconds": row["duration_seconds"],
-                        "bottleneck": row["bottleneck"],
-                        "automation_ratio": row["automation_ratio"],
-                        "statistics": stats,
-                    }
-                )
-            return self._dedupe_analytics_rows(normalized)
-
-        # In-memory fallback
         rows: list[dict[str, Any]] = []
         for session in self._sessions.values():
             created_at = session.metadata.created_at.isoformat()
@@ -2154,44 +2258,109 @@ class SessionService:
             )
             if ecosystem and session_ecosystem != ecosystem:
                 continue
-            rows.append(
-                {
-                    "session_id": session.metadata.session_id,
-                    "physical_session_id": (
-                        session.metadata.physical_session_id or session.metadata.session_id
-                    ),
-                    "logical_session_id": (
-                        session.metadata.logical_session_id or session.metadata.session_id
-                    ),
-                    "ecosystem": session_ecosystem,
-                    "project_path": session.metadata.project_path,
-                    "git_branch": session.metadata.git_branch,
-                    "created_at": created_at,
-                    "updated_at": (
-                        session.metadata.updated_at.isoformat()
-                        if session.metadata.updated_at
-                        else None
-                    ),
-                    "total_messages": session.metadata.total_messages,
-                    "total_tokens": session.metadata.total_tokens,
-                    "total_tool_calls": (
-                        session.statistics.total_tool_calls if session.statistics else 0
-                    ),
-                    "duration_seconds": (
-                        session.statistics.session_duration_seconds if session.statistics else None
-                    ),
-                    "bottleneck": (
-                        self._derive_bottleneck(session.statistics) if session.statistics else None
-                    ),
-                    "automation_ratio": (
-                        self._derive_automation_ratio(session.statistics)
-                        if session.statistics
-                        else None
-                    ),
-                    "statistics": (session.statistics.model_dump() if session.statistics else {}),
-                }
-            )
+
+            row: dict[str, Any] = {
+                "session_id": session.metadata.session_id,
+                "physical_session_id": session.metadata.physical_session_id
+                or session.metadata.session_id,
+                "logical_session_id": session.metadata.logical_session_id
+                or session.metadata.session_id,
+                "ecosystem": session_ecosystem,
+                "project_path": session.metadata.project_path,
+                "git_branch": session.metadata.git_branch,
+                "created_at": created_at,
+                "updated_at": (
+                    session.metadata.updated_at.isoformat() if session.metadata.updated_at else None
+                ),
+                "total_messages": session.metadata.total_messages,
+                "total_tokens": session.metadata.total_tokens,
+                "total_tool_calls": (
+                    session.statistics.total_tool_calls if session.statistics else 0
+                ),
+                "duration_seconds": (
+                    session.statistics.session_duration_seconds if session.statistics else None
+                ),
+                "bottleneck": (
+                    self._derive_bottleneck(session.statistics) if session.statistics else None
+                ),
+                "automation_ratio": (
+                    self._derive_automation_ratio(session.statistics)
+                    if session.statistics
+                    else None
+                ),
+            }
+
+            if include_statistics:
+                row["statistics"] = session.statistics.model_dump() if session.statistics else {}
+            rows.append(row)
+
         return self._dedupe_analytics_rows(rows)
+
+    def _get_analytics_rows_light(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        ecosystem: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return analytics rows without statistics_json decode for lightweight endpoints."""
+        if self._repo is not None and self._repo.count_sessions() > 0:
+            rows = self._repo.list_sessions_for_analytics(
+                start_date=start_date,
+                end_date=end_date,
+                ecosystem=ecosystem,
+            )
+            return self._dedupe_analytics_rows(self._normalize_db_analytics_rows(rows))
+
+        return self._get_analytics_rows_memory(
+            start_date=start_date,
+            end_date=end_date,
+            ecosystem=ecosystem,
+            include_statistics=False,
+        )
+
+    def _get_analytics_rows_full(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        ecosystem: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return analytics rows with parsed statistics payload for full aggregations."""
+        if self._repo is not None and self._repo.count_sessions() > 0:
+            rows = self._get_analytics_rows_light(
+                start_date=start_date,
+                end_date=end_date,
+                ecosystem=ecosystem,
+            )
+            session_ids = [str(row["session_id"]) for row in rows]
+            stats_map = self._repo.list_statistics_for_sessions(session_ids)
+
+            for row in rows:
+                stats: dict[str, Any] = {}
+                raw_stats = stats_map.get(str(row["session_id"]))
+                if raw_stats:
+                    try:
+                        stats = json.loads(raw_stats)
+                    except json.JSONDecodeError:
+                        stats = {}
+                row["statistics"] = stats
+
+            return rows
+
+        return self._get_analytics_rows_memory(
+            start_date=start_date,
+            end_date=end_date,
+            ecosystem=ecosystem,
+            include_statistics=True,
+        )
+
+    def _get_analytics_rows(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        ecosystem: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Backward-compatible alias for full analytics rows."""
+        return self._get_analytics_rows_full(start_date, end_date, ecosystem=ecosystem)
 
     @staticmethod
     def _dedupe_analytics_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

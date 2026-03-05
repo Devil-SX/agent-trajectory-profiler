@@ -366,6 +366,33 @@ class SessionRepository:
         )
         return cur.fetchall()
 
+    def list_statistics_for_sessions(self, session_ids: list[str]) -> dict[str, str]:
+        """
+        Return statistics JSON payloads keyed by session_id for selected sessions.
+
+        Args:
+            session_ids: Session identifiers to fetch from session_statistics.
+        """
+        if not session_ids:
+            return {}
+
+        placeholders = ",".join(["?"] * len(session_ids))
+        cur = self._conn.execute(
+            f"""\
+            SELECT session_id, statistics_json
+            FROM session_statistics
+            WHERE session_id IN ({placeholders})
+            """,
+            session_ids,
+        )
+
+        rows = cur.fetchall()
+        return {
+            str(row["session_id"]): str(row["statistics_json"])
+            for row in rows
+            if row["statistics_json"] is not None
+        }
+
     @staticmethod
     def _build_date_filter(
         start_date: str | None,

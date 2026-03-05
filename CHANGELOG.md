@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Analytics read-path regression tests for lightweight query routing and cache lifecycle behavior (`tests/test_api_integration.py`), plus repository coverage for selective statistics fetch (`tests/test_repository.py`).
 - Persistent backend performance framework with budgeted benchmark runner (`scripts/run_backend_perf.py` + `agent_vis/perf/*`), synthetic perf dataset generation, and structured JSON/Markdown artifacts under `output/perf/`.
 - New repository-tracked performance budget config and regression tests (`tests/perf/budgets.json`, `tests/test_perf_framework.py`, `tests/test_perf_runner.py`) covering soft-gate evaluation behavior and artifact generation.
 - New CI workflow for backend performance trend checks (`.github/workflows/backend-performance.yml`) with PR quick profile, nightly full profile, job summary publishing, and artifact upload.
@@ -29,6 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Analytics service now uses split data access paths: lightweight session-summary reads for `timeseries` and non-tool `distribution` dimensions, while statistics JSON is loaded on-demand for heavy aggregations.
+- Added short-TTL analytics response cache keyed by query parameters and automatic invalidation after sync completion to reduce repeated aggregation overhead.
+- Repository analytics helpers now support selective statistics fetch by session IDs (`SessionRepository.list_statistics_for_sessions`) to avoid full-table JSON decode work.
 - README (EN/ZH) development sections now include backend performance quick/full commands and cross-link to `docs/performance.md`.
 - Frontend API client contract imports now point to generated OpenAPI-derived types in `frontend/src/api/sessions.ts`, while frontend-only filter/view-model types remain in `frontend/src/types/session.ts`.
 - CI `frontend-static-checks` now installs backend deps via `uv` and runs `npm run typegen:check` to fail fast when generated API contracts are stale.

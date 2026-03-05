@@ -1176,6 +1176,153 @@ class TestSessionServiceIntegration:
         assert payload.control_plane.logical_sessions == 1
         assert payload.runtime_plane.total_tokens == 20
 
+    @pytest.mark.asyncio
+    async def test_analytics_timeseries_uses_lightweight_repo_path(self, tmp_path: Path) -> None:
+        service = SessionService(
+            session_path=tmp_path / "claude",
+            codex_session_path=tmp_path / "codex",
+        )
+
+        class _FakeRepo:
+            def __init__(self) -> None:
+                self.light_calls = 0
+                self.stats_calls = 0
+
+            def count_sessions(self) -> int:
+                return 1
+
+            def list_sessions_for_analytics(
+                self,
+                start_date: str | None = None,
+                end_date: str | None = None,
+                ecosystem: str | None = None,
+            ) -> list[dict[str, object]]:
+                _ = (start_date, end_date, ecosystem)
+                self.light_calls += 1
+                return [
+                    {
+                        "session_id": "row-1",
+                        "physical_session_id": "row-1",
+                        "logical_session_id": "row-1",
+                        "ecosystem": "claude_code",
+                        "project_path": "/tmp/project",
+                        "git_branch": "main",
+                        "created_at": "2026-02-03T10:00:00.000Z",
+                        "updated_at": "2026-02-03T10:05:00.000Z",
+                        "total_messages": 3,
+                        "total_tokens": 30,
+                        "total_tool_calls": 1,
+                        "duration_seconds": 300.0,
+                        "bottleneck": "Model",
+                        "automation_ratio": 1.0,
+                    }
+                ]
+
+            def list_statistics_for_sessions(self, session_ids: list[str]) -> dict[str, str]:
+                _ = session_ids
+                self.stats_calls += 1
+                return {}
+
+        fake_repo = _FakeRepo()
+        service._repo = fake_repo  # type: ignore[assignment]
+
+        response = await service.get_analytics_timeseries(
+            "2026-02-01", "2026-02-10", interval="day"
+        )
+        assert response.points
+        assert fake_repo.light_calls == 1
+        assert fake_repo.stats_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_analytics_cache_invalidates_after_sync(self, tmp_path: Path) -> None:
+        claude_path = tmp_path / "claude"
+        codex_path = tmp_path / "codex"
+        claude_path.mkdir(parents=True, exist_ok=True)
+        codex_path.mkdir(parents=True, exist_ok=True)
+
+        service = SessionService(
+            session_path=claude_path,
+            codex_session_path=codex_path,
+            db_path=tmp_path / "cache-sync.db",
+        )
+        await service.initialize()
+
+        calls = {"count": 0}
+
+        def _fake_full_rows(*args: object, **kwargs: object) -> list[dict[str, object]]:
+            _ = (args, kwargs)
+            calls["count"] += 1
+            return [
+                {
+                    "session_id": "cached-row",
+                    "physical_session_id": "cached-row",
+                    "logical_session_id": "cached-row",
+                    "ecosystem": "claude_code",
+                    "project_path": "/tmp/project-cache",
+                    "git_branch": "main",
+                    "created_at": "2026-02-03T10:00:00.000Z",
+                    "updated_at": "2026-02-03T10:10:00.000Z",
+                    "total_messages": 1,
+                    "total_tokens": 20,
+                    "total_tool_calls": 0,
+                    "duration_seconds": 600.0,
+                    "bottleneck": "Model",
+                    "automation_ratio": None,
+                    "statistics": {
+                        "total_input_tokens": 10,
+                        "total_output_tokens": 10,
+                        "tool_calls": [],
+                        "character_breakdown": {
+                            "total_chars": 20,
+                            "user_chars": 10,
+                            "model_chars": 10,
+                            "tool_chars": 0,
+                            "cjk_chars": 0,
+                            "latin_chars": 20,
+                            "other_chars": 0,
+                        },
+                        "time_breakdown": {
+                            "total_model_time_seconds": 300.0,
+                            "total_tool_time_seconds": 200.0,
+                            "total_user_time_seconds": 100.0,
+                            "total_inactive_time_seconds": 0.0,
+                            "model_timeout_count": 0,
+                        },
+                    },
+                }
+            ]
+
+        service._get_analytics_rows_full = _fake_full_rows  # type: ignore[method-assign]
+
+        _ = await service.get_analytics_overview("2026-02-01", "2026-02-10")
+        _ = await service.get_analytics_overview("2026-02-01", "2026-02-10")
+        assert calls["count"] == 1
+
+        await service.trigger_sync(force=False)
+        _ = await service.get_analytics_overview("2026-02-01", "2026-02-10")
+        assert calls["count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_analytics_cache_ttl_expiry_triggers_recompute(self, tmp_path: Path) -> None:
+        service = SessionService(
+            session_path=tmp_path / "claude",
+            codex_session_path=tmp_path / "codex",
+        )
+        service._analytics_cache_ttl_seconds = 0.0
+
+        calls = {"count": 0}
+
+        def _fake_full_rows(*args: object, **kwargs: object) -> list[dict[str, object]]:
+            _ = (args, kwargs)
+            calls["count"] += 1
+            return []
+
+        service._get_analytics_rows_full = _fake_full_rows  # type: ignore[method-assign]
+
+        _ = await service.get_analytics_overview("2026-02-01", "2026-02-10")
+        _ = await service.get_analytics_overview("2026-02-01", "2026-02-10")
+        assert calls["count"] == 2
+
 
 class TestAPIErrorHandling:
     """Tests for API error handling."""

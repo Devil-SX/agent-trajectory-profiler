@@ -215,6 +215,33 @@ class TestSessionStatistics:
         assert loaded.session_duration_seconds == 60.0
         assert loaded.average_tokens_per_message == 100.0
 
+    def test_list_statistics_for_sessions(self, repo: SessionRepository) -> None:
+        first = SessionStatistics(
+            message_count=2,
+            user_message_count=1,
+            assistant_message_count=1,
+            system_message_count=0,
+            total_tokens=20,
+            total_input_tokens=12,
+            total_output_tokens=8,
+        )
+        second = SessionStatistics(
+            message_count=3,
+            user_message_count=1,
+            assistant_message_count=2,
+            system_message_count=0,
+            total_tokens=30,
+            total_input_tokens=18,
+            total_output_tokens=12,
+        )
+        repo.upsert_statistics("stats-a", first)
+        repo.upsert_statistics("stats-b", second)
+
+        stats_map = repo.list_statistics_for_sessions(["stats-a", "stats-b", "stats-missing"])
+        assert set(stats_map.keys()) == {"stats-a", "stats-b"}
+        assert '"message_count":2' in stats_map["stats-a"]
+        assert '"message_count":3' in stats_map["stats-b"]
+
 
 class TestGetFilePath:
     def test_get_file_path_for_session(self, repo: SessionRepository) -> None:
