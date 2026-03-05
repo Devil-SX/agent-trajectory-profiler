@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- New `agent-vis dashboard` CLI command to launch backend uvicorn and frontend Vite dev servers together with shared startup output, frontend port option, and graceful dual-process shutdown (`agent_vis/cli/main.py`).
+- CLI regression coverage for dashboard startup, dependency failure paths, and Ctrl+C cleanup behavior (`tests/test_cli_dashboard_command.py`).
 - Parser/Sync regression tests for transaction rollback safety and character-classification edge cases (`tests/test_sync.py`, `tests/test_repository.py`, `tests/test_character_metrics.py`).
 - Analytics read-path regression tests for lightweight query routing and cache lifecycle behavior (`tests/test_api_integration.py`), plus repository coverage for selective statistics fetch (`tests/test_repository.py`).
 - Persistent backend performance framework with budgeted benchmark runner (`scripts/run_backend_perf.py` + `agent_vis/perf/*`), synthetic perf dataset generation, and structured JSON/Markdown artifacts under `output/perf/`.

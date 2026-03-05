@@ -225,10 +225,11 @@ The category with the largest share of active time is reported as the bottleneck
 ## Development
 
 ```bash
-# Backend with hot reload
-agent-vis serve --reload --log-level debug
+# Start backend + frontend together (recommended)
+agent-vis dashboard --reload --log-level debug
 
-# Frontend dev server (separate terminal)
+# Optional: run separately in two terminals
+agent-vis serve --reload --log-level debug
 cd frontend && npm run dev
 
 # Regenerate frontend API contract types from backend OpenAPI schema

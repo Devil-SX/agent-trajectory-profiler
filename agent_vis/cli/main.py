@@ -3,8 +3,10 @@
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -84,6 +86,25 @@ def check_and_build_frontend() -> bool:
     except subprocess.CalledProcessError as e:
         click.echo(f"Error building frontend: {e.stderr}", err=True)
         return False
+
+
+def _terminate_subprocess(
+    process: subprocess.Popen | None,
+    label: str,
+    timeout_seconds: float = 8.0,
+) -> None:
+    """Terminate subprocess gracefully, then force-kill if needed."""
+    if process is None or process.poll() is not None:
+        return
+
+    click.echo(f"Stopping {label}...")
+    process.terminate()
+    try:
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        click.echo(f"{label} did not stop in time. Killing it.", err=True)
+        process.kill()
+        process.wait(timeout=3.0)
 
 
 @click.group()
@@ -167,8 +188,6 @@ def serve(
         agent-vis serve --log-level debug
     """
     # Import here to avoid loading uvicorn when not needed
-    import os
-    import signal
     import socket
 
     import uvicorn
@@ -284,6 +303,175 @@ def serve(
     except Exception as e:
         click.echo(f"\nError starting server: {e}", err=True)
         sys.exit(1)
+
+
+@main.command()
+@click.option(
+    "--host",
+    default=None,
+    help="Backend host to bind to (default: 0.0.0.0)",
+)
+@click.option(
+    "--port",
+    default=None,
+    type=int,
+    help="Backend port to bind to (default: 8000)",
+)
+@click.option(
+    "--path",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Path to agent session directory (default: ~/.claude/projects/)",
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    default=False,
+    help="Enable backend auto-reload for development",
+)
+@click.option(
+    "--log-level",
+    default=None,
+    type=click.Choice(["debug", "info", "warning", "error", "critical"], case_sensitive=False),
+    help="Backend log level (default: info)",
+)
+@click.option(
+    "--frontend-port",
+    default=5173,
+    type=int,
+    help="Frontend dev server port (default: 5173)",
+)
+def dashboard(
+    host: str | None,
+    port: int | None,
+    path: Path | None,
+    reload: bool,
+    log_level: str | None,
+    frontend_port: int,
+) -> None:
+    """
+    Start backend and frontend development servers together.
+
+    Runs:
+    - backend: uvicorn agent_vis.api.app:app
+    - frontend: npm run dev (in frontend/)
+    """
+    from agent_vis.api.config import get_settings
+
+    project_root = get_project_root()
+    frontend_dir = project_root / "frontend"
+    if not frontend_dir.exists():
+        click.echo(
+            f"Error: frontend directory not found at {frontend_dir}. Cannot start dashboard.",
+            err=True,
+        )
+        sys.exit(1)
+
+    npm_path = shutil.which("npm")
+    if not npm_path:
+        click.echo("Error: npm not found. Please install Node.js and npm first.", err=True)
+        sys.exit(1)
+
+    settings = get_settings()
+    backend_host = host or settings.api_host
+    backend_port = port or settings.api_port
+    backend_reload = reload or settings.api_reload
+    backend_log_level = (log_level or settings.log_level).lower()
+    session_path = path.expanduser().resolve() if path is not None else settings.session_path
+
+    backend_env = os.environ.copy()
+    backend_env["AGENT_VIS_SESSION_PATH"] = str(session_path)
+    backend_env["AGENT_VIS_API_HOST"] = backend_host
+    backend_env["AGENT_VIS_API_PORT"] = str(backend_port)
+
+    backend_cmd = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "agent_vis.api.app:app",
+        "--host",
+        backend_host,
+        "--port",
+        str(backend_port),
+        "--log-level",
+        backend_log_level,
+    ]
+    if backend_reload:
+        backend_cmd.append("--reload")
+
+    frontend_cmd = [
+        npm_path,
+        "run",
+        "dev",
+        "--",
+        "--host",
+        backend_host,
+        "--port",
+        str(frontend_port),
+    ]
+
+    click.echo("=" * 60)
+    click.echo("Agent Trajectory Profiler Dashboard")
+    click.echo("=" * 60)
+    click.echo(f"Session Path:   {session_path}")
+    click.echo(f"Backend URL:    http://{backend_host}:{backend_port}")
+    click.echo(f"API Docs:       http://{backend_host}:{backend_port}/docs")
+    click.echo(f"Frontend URL:   http://{backend_host}:{frontend_port}")
+    click.echo(f"Backend Reload: {'Enabled' if backend_reload else 'Disabled'}")
+    click.echo(f"Log Level:      {backend_log_level.upper()}")
+    click.echo("=" * 60)
+    click.echo("Starting dashboard... (Press Ctrl+C to stop)\n")
+
+    backend_process: subprocess.Popen | None = None
+    frontend_process: subprocess.Popen | None = None
+    stop_requested = False
+
+    def request_shutdown(signum: int, frame: object) -> None:
+        """Set shutdown flag on termination signals."""
+        del signum, frame
+        nonlocal stop_requested
+        stop_requested = True
+
+    previous_sigint = signal.getsignal(signal.SIGINT)
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGINT, request_shutdown)
+    signal.signal(signal.SIGTERM, request_shutdown)
+
+    exit_code = 0
+    try:
+        backend_process = subprocess.Popen(backend_cmd, env=backend_env)
+        frontend_process = subprocess.Popen(frontend_cmd, cwd=frontend_dir)
+
+        while True:
+            if stop_requested:
+                break
+
+            backend_code = backend_process.poll()
+            frontend_code = frontend_process.poll()
+
+            if backend_code is not None or frontend_code is not None:
+                if backend_code is not None and backend_code != 0:
+                    click.echo(f"Backend server exited with code {backend_code}.", err=True)
+                if frontend_code is not None and frontend_code != 0:
+                    click.echo(f"Frontend server exited with code {frontend_code}.", err=True)
+
+                if backend_code is None or frontend_code is None:
+                    click.echo("One process exited. Stopping the remaining process...")
+                exit_code = backend_code or frontend_code or 0
+                break
+
+            time.sleep(0.2)
+
+    except KeyboardInterrupt:
+        stop_requested = True
+    finally:
+        _terminate_subprocess(frontend_process, "frontend dev server")
+        _terminate_subprocess(backend_process, "backend API server")
+        signal.signal(signal.SIGINT, previous_sigint)
+        signal.signal(signal.SIGTERM, previous_sigterm)
+
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 
 def _format_session_stats(stats: "SessionStatistics", session_id: str = "") -> str:
