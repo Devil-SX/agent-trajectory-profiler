@@ -6,8 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-03-06
+
+> **Code Stats** | Total: 82,284 lines | Delta: +16,520 (-2,795) = **+13,725 net** | Change: **+20.2%** vs v1.2.0
+
 ### Added
 
+- Real local sync profiling support with git-ignored private softlink inputs, per-stage sync breakdown artifacts, and a dedicated runner script (`agent_vis/perf/sync_profiler.py`, `scripts/profile_real_sync.py`).
+- Regression coverage for real/synthetic sync profiling payloads and private local smoke execution (`tests/test_sync_profiler.py`, `tests/test_sync_private_real_profile.py`).
 - New `agent-vis dashboard` CLI command to launch backend uvicorn and frontend Vite dev servers together with shared startup output, frontend port option, and graceful dual-process shutdown (`agent_vis/cli/main.py`).
 - CLI regression coverage for dashboard startup, dependency failure paths, and Ctrl+C cleanup behavior (`tests/test_cli_dashboard_command.py`).
 - Parser/Sync regression tests for transaction rollback safety and character-classification edge cases (`tests/test_sync.py`, `tests/test_repository.py`, `tests/test_character_metrics.py`).

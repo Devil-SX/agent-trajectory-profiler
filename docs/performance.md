@@ -42,6 +42,29 @@ Outputs are written to `output/perf/`:
 - `backend-perf-summary.md` (human-readable)
 - timestamped archive files for historical comparison
 
+## Real Local Sync Profiling
+
+For real-data bottleneck analysis, use a git-ignored private softlink under `tests/fixtures/private/` and run:
+
+```bash
+uv run python scripts/profile_real_sync.py
+```
+
+Default private paths:
+
+- Directory root: `tests/fixtures/private/claude_sync_root`
+- Optional env override: `AGENT_VIS_PRIVATE_SYNC_ROOT`
+
+Example setup:
+
+```bash
+mkdir -p tests/fixtures/private
+ln -s ~/.claude/projects tests/fixtures/private/claude_sync_root
+```
+
+Outputs are written to `output/private-perf/` and are ignored by git.
+
+
 ## Metric Semantics
 
 Budgets use two threshold levels:

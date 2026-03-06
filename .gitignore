@@ -55,6 +55,7 @@ output/
 
 # Session data (private)
 tests/fixtures/*.jsonl
+tests/fixtures/private/
 
 # Local generated artifacts
 .sisyphus/
