@@ -66,3 +66,7 @@ frontend/playwright-report/
 
 # Lockfile managed locally; not tracked in this repo
 uv.lock
+
+# Rust native extension
+Cargo.lock
+target/

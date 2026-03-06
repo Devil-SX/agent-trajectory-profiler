@@ -9,7 +9,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from agent_vis.models import CompactEvent, MessageRecord
+from agent_vis.models import (
+    ClaudeMessage,
+    CompactEvent,
+    MessageRecord,
+    MessageRole,
+    MessageType,
+    ThinkingMetadata,
+    TodoItem,
+    TokenUsage,
+)
+from agent_vis.parsers.decoders import decode_json_value
 
 _MAX_TOOL_RESULT_TEXT_CHARS = 12_000
 _MAX_TOOL_RESULT_JSON_BYTES = 24_000
@@ -212,8 +222,8 @@ def parse_json_if_possible(raw_output: Any) -> Any | None:
     if not stripped or stripped[0] not in {"{", "["}:
         return None
     try:
-        return json.loads(stripped)
-    except json.JSONDecodeError:
+        return decode_json_value(stripped)
+    except ValueError:
         return None
 
 
@@ -298,44 +308,73 @@ class NormalizedRecordIR(BaseModel):
     leaf_uuid: str | None = None
 
     def to_message_record(self) -> MessageRecord:
-        payload: dict[str, Any] = {
-            "sessionId": self.session_id,
-            "uuid": self.uuid,
-            "timestamp": self.timestamp,
-            "type": self.record_type,
-            "parentUuid": self.parent_uuid,
-            "userType": self.user_type,
-            "cwd": self.cwd,
-            "version": self.version,
-            "gitBranch": self.git_branch,
-            "isSidechain": self.is_sidechain,
-            "agentId": self.agent_id,
-            "isMeta": self.is_meta,
-            "isSnapshotUpdate": self.is_snapshot_update,
-            "thinkingMetadata": self.thinking_metadata,
-            "todos": self.todos,
-            "permissionMode": self.permission_mode,
-            "snapshot": self.snapshot,
-            "messageId": self.message_id,
-            "summary": self.summary,
-            "leafUuid": self.leaf_uuid,
-        }
+        usage = None
+        if self.message is not None and self.message.usage is not None:
+            usage = TokenUsage.model_construct(
+                input_tokens=self.message.usage.input_tokens,
+                output_tokens=self.message.usage.output_tokens,
+                cache_creation_input_tokens=self.message.usage.cache_creation_input_tokens,
+                cache_read_input_tokens=self.message.usage.cache_read_input_tokens,
+                service_tier=self.message.usage.service_tier,
+            )
 
+        message_model = None
         if self.message is not None:
-            message_payload: dict[str, Any] = {
-                "role": self.message.role,
-                "content": self.message.content,
-                "model": self.message.model,
-                "id": self.message.id,
-                "type": self.message.type,
-                "stop_reason": self.message.stop_reason,
-                "stop_sequence": self.message.stop_sequence,
-            }
-            if self.message.usage is not None:
-                message_payload["usage"] = self.message.usage.model_dump(exclude_none=True)
-            payload["message"] = message_payload
+            message_model = ClaudeMessage.model_construct(
+                role=MessageRole(self.message.role),
+                content=self.message.content,
+                model=self.message.model,
+                id=self.message.id,
+                type=self.message.type,
+                stop_reason=self.message.stop_reason,
+                stop_sequence=self.message.stop_sequence,
+                usage=usage,
+            )
 
-        return MessageRecord(**{k: v for k, v in payload.items() if v is not None})
+        thinking_model = None
+        if self.thinking_metadata is not None:
+            max_thinking_tokens = self.thinking_metadata.get("maxThinkingTokens")
+            if isinstance(max_thinking_tokens, int):
+                thinking_model = ThinkingMetadata.model_construct(
+                    maxThinkingTokens=max_thinking_tokens
+                )
+            else:
+                thinking_model = ThinkingMetadata.model_construct()
+
+        todos_model = None
+        if self.todos:
+            todos_model = [
+                TodoItem.model_construct(
+                    content=item["content"],
+                    status=item["status"],
+                    activeForm=item["activeForm"],
+                )
+                for item in self.todos
+            ]
+
+        return MessageRecord.model_construct(
+            sessionId=self.session_id,
+            uuid=self.uuid,
+            timestamp=self.timestamp,
+            type=MessageType(self.record_type),
+            parentUuid=self.parent_uuid,
+            userType=self.user_type,
+            cwd=self.cwd,
+            version=self.version,
+            gitBranch=self.git_branch,
+            isSidechain=self.is_sidechain,
+            agentId=self.agent_id,
+            message=message_model,
+            isMeta=self.is_meta,
+            isSnapshotUpdate=self.is_snapshot_update,
+            thinkingMetadata=thinking_model,
+            todos=todos_model,
+            permissionMode=self.permission_mode,
+            snapshot=self.snapshot,
+            messageId=self.message_id,
+            summary=self.summary,
+            leafUuid=self.leaf_uuid,
+        )
 
 
 def build_usage_ir(raw_usage: Any) -> NormalizedTokenUsageIR | None:
@@ -361,7 +400,7 @@ def build_usage_ir(raw_usage: Any) -> NormalizedTokenUsageIR | None:
         return None
 
     service_tier = raw_usage.get("service_tier")
-    return NormalizedTokenUsageIR(
+    return NormalizedTokenUsageIR.model_construct(
         input_tokens=_as_int(raw_usage.get("input_tokens")),
         output_tokens=_as_int(raw_usage.get("output_tokens")),
         cache_creation_input_tokens=_optional_int(raw_usage.get("cache_creation_input_tokens")),

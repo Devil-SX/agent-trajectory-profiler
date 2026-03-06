@@ -1,6 +1,6 @@
 [project]
 name = "agent-trajectory-profiler"
-version = "1.4.0"
+version = "1.5.0"
 description = "A web application to visualize and analyze local agent trajectories"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,11 +44,12 @@ dev = [
 agent-vis = "agent_vis.cli.main:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
 
-[tool.hatch.build.targets.wheel]
-packages = ["agent_vis"]
+[tool.maturin]
+module-name = "agent_vis._native"
+python-source = "."
 
 [tool.black]
 line-length = 100

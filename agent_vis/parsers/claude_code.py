@@ -39,6 +39,7 @@ from agent_vis.parsers.canonical import (
     TrajectoryEventAdapter,
     register_adapter,
 )
+from agent_vis.parsers.character_classifier import classify_characters
 from agent_vis.parsers.decoders import get_json_line_decoder
 from agent_vis.parsers.error_taxonomy import (
     ERROR_TAXONOMY_VERSION,
@@ -283,43 +284,8 @@ def _ensure_tool_stats_bucket(
 
 
 def _classify_characters(text: str) -> tuple[int, int, int, int, int]:
-    """Count text characters by script family."""
-    cjk_count = 0
-    latin_count = 0
-    digit_count = 0
-    whitespace_count = 0
-    other_count = 0
-
-    for char in text:
-        code_point = ord(char)
-
-        # ASCII fast path for the majority of tool/command outputs.
-        if code_point <= 0x7F:
-            if code_point in {9, 10, 11, 12, 13, 32}:
-                whitespace_count += 1
-            elif 48 <= code_point <= 57:
-                digit_count += 1
-            elif 65 <= code_point <= 90 or 97 <= code_point <= 122:
-                latin_count += 1
-            else:
-                other_count += 1
-            continue
-
-        if (
-            0x4E00 <= code_point <= 0x9FFF
-            or 0x3400 <= code_point <= 0x4DBF
-            or 0x3040 <= code_point <= 0x30FF
-            or 0xAC00 <= code_point <= 0xD7AF
-        ):
-            cjk_count += 1
-        elif char.isspace():
-            whitespace_count += 1
-        elif char.isdigit():
-            digit_count += 1
-        else:
-            other_count += 1
-
-    return cjk_count, latin_count, digit_count, whitespace_count, other_count
+    """Count text characters by script family via the required native extension."""
+    return classify_characters(text)
 
 
 def _build_todo_items(raw_todos: Any) -> list[TodoItem] | None:
@@ -401,7 +367,7 @@ def _normalize_claude_record(
     thinking_metadata = _normalize_thinking_metadata(raw.get("thinkingMetadata"))
     snapshot = raw.get("snapshot")
 
-    return NormalizedRecordIR(
+    return NormalizedRecordIR.model_construct(
         session_id=session_id,
         uuid=uuid,
         timestamp=resolved_timestamp,
@@ -496,10 +462,6 @@ def iter_claude_normalized_events(
                     continue
                 try:
                     data = decoder.decode(line)
-                except json.JSONDecodeError as exc:
-                    raise SessionParseError(
-                        f"Invalid JSON at {file_path}:{line_number}: {exc}"
-                    ) from exc
                 except ValueError as exc:
                     raise SessionParseError(
                         f"Invalid JSON at {file_path}:{line_number}: {exc}"
@@ -582,7 +544,7 @@ def _normalize_claude_message(
     stop_reason = raw_message.get("stop_reason")
     stop_sequence = raw_message.get("stop_sequence")
 
-    return NormalizedMessageIR(
+    return NormalizedMessageIR.model_construct(
         role=role,
         content=normalize_message_content(raw_message.get("content"), text_only=False),
         model=model if isinstance(model, str) else None,
@@ -1327,15 +1289,22 @@ def extract_compact_events(file_path: Path) -> list[CompactEvent]:
         List of CompactEvent objects sorted by timestamp.
     """
     events: list[CompactEvent] = []
+    decoder = get_json_line_decoder()
+    open_mode = "rb" if decoder.read_mode == "binary" else "r"
+    open_kwargs: dict[str, Any] = {} if open_mode == "rb" else {"encoding": "utf-8"}
+
     try:
-        with open(file_path, encoding="utf-8") as f:
+        with open(file_path, open_mode, **open_kwargs) as f:
             for line in f:
-                line = line.strip()
-                if not line or "compact_boundary" not in line:
+                stripped = line.strip()
+                compact_marker = (
+                    b"compact_boundary" if isinstance(stripped, bytes) else "compact_boundary"
+                )
+                if not stripped or compact_marker not in stripped:
                     continue
                 try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
+                    data = decoder.decode(stripped)
+                except ValueError:
                     continue
                 if data.get("subtype") != "compact_boundary":
                     continue

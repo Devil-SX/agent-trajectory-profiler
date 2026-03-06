@@ -1,4 +1,4 @@
-"""Pluggable JSONL line decoders for parser pipelines."""
+"""Pluggable JSON decode helpers for parser pipelines."""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ class StdlibJSONLineDecoder:
     name: str = "json"
     read_mode: Literal["text", "binary"] = "text"
 
-    def decode(self, line: str | bytes) -> Any:
-        if isinstance(line, bytes):
-            line = line.decode("utf-8")
-        return json.loads(line)
+    def decode(self, payload: str | bytes) -> Any:
+        if isinstance(payload, bytes):
+            payload = payload.decode("utf-8")
+        return json.loads(payload)
 
 
 @dataclass(frozen=True)
@@ -26,17 +26,25 @@ class OrjsonLineDecoder:
     name: str = "orjson"
     read_mode: Literal["text", "binary"] = "binary"
 
-    def decode(self, line: str | bytes) -> Any:
+    def decode(self, payload: str | bytes) -> Any:
         import orjson
 
-        if isinstance(line, str):
-            line = line.encode("utf-8")
-        return orjson.loads(line)
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        return orjson.loads(payload)
 
 
 def _resolve_decoder_name(name: str | None = None) -> str:
-    resolved = name if name is not None else (os.getenv(_JSON_DECODER_ENV) or "json")
+    resolved = name if name is not None else (os.getenv(_JSON_DECODER_ENV) or "orjson")
     return resolved.strip().lower()
+
+
+def _has_orjson() -> bool:
+    try:
+        import orjson  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 JSONLineDecoder: TypeAlias = StdlibJSONLineDecoder | OrjsonLineDecoder
@@ -44,35 +52,46 @@ JSONLineDecoder: TypeAlias = StdlibJSONLineDecoder | OrjsonLineDecoder
 
 def available_json_line_decoders() -> list[str]:
     decoders = ["json"]
-    try:
-        import orjson  # noqa: F401
-    except ImportError:
-        return decoders
-    return decoders + ["orjson"]
+    if _has_orjson():
+        decoders.append("orjson")
+    return decoders
 
 
 def get_json_line_decoder(name: str | None = None) -> JSONLineDecoder:
-    """Return the configured JSONL decoder implementation."""
+    """Return the configured JSON decoder implementation."""
     resolved = _resolve_decoder_name(name)
-    if resolved in {"", "json", "stdlib"}:
-        return StdlibJSONLineDecoder()
-    if resolved == "orjson":
-        try:
-            import orjson  # noqa: F401
-        except ImportError as exc:
+    env_override = os.getenv(_JSON_DECODER_ENV)
+    explicit_orjson_request = resolved == "orjson" and (
+        name is not None or env_override is not None
+    )
+
+    if resolved in {"", "orjson"}:
+        if _has_orjson():
+            return OrjsonLineDecoder()
+        if explicit_orjson_request:
             raise RuntimeError(
                 "The 'orjson' decoder was requested but orjson is not installed. "
                 "Install project dependencies with the optional fast decoder support."
-            ) from exc
-        return OrjsonLineDecoder()
+            )
+        return StdlibJSONLineDecoder()
+
+    if resolved in {"json", "stdlib"}:
+        return StdlibJSONLineDecoder()
+
     raise ValueError(
         f"Unsupported JSON decoder '{resolved}'. Available decoders: "
         f"{', '.join(available_json_line_decoders())}"
     )
 
 
+def decode_json_value(payload: str | bytes, name: str | None = None) -> Any:
+    """Decode an inline JSON payload through the shared decoder selection path."""
+    return get_json_line_decoder(name).decode(payload)
+
+
 __all__ = [
     "JSONLineDecoder",
     "available_json_line_decoders",
+    "decode_json_value",
     "get_json_line_decoder",
 ]

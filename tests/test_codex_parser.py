@@ -25,6 +25,47 @@ class TestCodexParser:
         assert any(msg.is_user_message for msg in messages)
         assert any(msg.is_assistant_message for msg in messages)
 
+    def test_parse_codex_jsonl_file_decodes_inline_tool_json_with_shared_decoder(
+        self, tmp_path: Path
+    ) -> None:
+        session_id = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
+        rollout = tmp_path / f"rollout-2026-03-06T09-00-00-{session_id}.jsonl"
+        events = [
+            {
+                "timestamp": "2026-03-06T09:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-inline-json",
+                    "cli_version": "0.108.0",
+                    "source": "cli",
+                },
+            },
+            {
+                "timestamp": "2026-03-06T09:00:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "Read",
+                    "arguments": '{"path":"README.md","options":["summary",1]}',
+                    "call_id": "call-inline-1",
+                },
+            },
+        ]
+        with rollout.open("w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+        messages = parse_codex_jsonl_file(rollout)
+
+        assert len(messages) == 2
+        tool_message = messages[1]
+        assert tool_message.message is not None
+        assert isinstance(tool_message.message.content, list)
+        tool_block = tool_message.message.content[0]
+        assert tool_block["type"] == "tool_use"
+        assert tool_block["input"] == {"path": "README.md", "options": ["summary", 1]}
+
     def test_parse_codex_session_file_statistics(self, sample_codex_rollout_file: Path) -> None:
         session = parse_codex_session_file(sample_codex_rollout_file)
 

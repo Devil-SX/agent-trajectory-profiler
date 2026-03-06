@@ -7,7 +7,6 @@ internal ``MessageRecord`` model.
 
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agent_vis.exceptions import SessionParseError
 from agent_vis.models import MessageRecord
+from agent_vis.parsers.decoders import get_json_line_decoder
 
 
 class CanonicalEvent(BaseModel):
@@ -136,16 +136,20 @@ def parse_jsonl_to_canonical_with_diagnostics(
     events: list[CanonicalEvent] = []
     diagnostics = CanonicalParseDiagnostics()
 
+    decoder = get_json_line_decoder()
+    open_mode = "rb" if decoder.read_mode == "binary" else "r"
+    open_kwargs: dict[str, Any] = {} if open_mode == "rb" else {"encoding": "utf-8"}
+
     try:
-        with open(file_path, encoding="utf-8") as f:
+        with open(file_path, open_mode, **open_kwargs) as f:
             for line_num, line in enumerate(f, 1):
                 stripped = line.strip()
                 if not stripped:
                     continue
 
                 try:
-                    data = json.loads(stripped)
-                except json.JSONDecodeError as e:
+                    data = decoder.decode(stripped)
+                except ValueError as e:
                     raise SessionParseError(f"Invalid JSON at {file_path}:{line_num}: {e}") from e
 
                 if not isinstance(data, dict):

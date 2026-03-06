@@ -16,6 +16,7 @@ from agent_vis.api.service import SessionService
 from agent_vis.db.connection import get_connection
 from agent_vis.db.repository import SessionRepository
 from agent_vis.db.sync import SyncEngine
+from agent_vis.parsers.character_classifier import character_classifier_backend
 from agent_vis.parsers.claude_code import (
     ClaudeCodeParser,
     calculate_session_statistics,
@@ -319,6 +320,7 @@ def run_backend_performance(
             "api_iterations": profile.api_iterations,
             "stats_iterations": profile.stats_iterations,
         },
+        "runtime": {"character_classifier": character_classifier_backend()},
         "metrics": measured_metrics,
         "samples": {
             "parser_statistics_ms": statistics_samples_ms,

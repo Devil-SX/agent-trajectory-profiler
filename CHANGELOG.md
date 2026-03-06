@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-03-06
+
+> **Code Stats** | Total: 83,179 lines | Delta: +240 (-136) = **+104 net** | Change: **+0.1%** vs v1.4.0
+
+### Added
+
+- Required Rust native character-classifier extension with mixed Python/Rust packaging, runtime wrapper import checks, and parity coverage against the Python reference implementation (`Cargo.toml`, `src/lib.rs`, `agent_vis/parsers/character_classifier.py`, `tests/test_character_classifier_native.py`).
+
+### Changed
+
+- Session statistics now compute character breakdowns through the native Rust classifier, cutting real-data sync statistics cost to sub-second levels while preserving exact bucket semantics (`agent_vis/parsers/claude_code.py`, `agent_vis/perf/backend_runner.py`, `tests/test_perf_runner.py`).
+- Parser JSON decode paths now consistently use the shared decoder abstraction with `orjson` as the default fast path when available across Claude/Codex/canonical normalization flows, with updated docs for decoder/runtime expectations (`agent_vis/parsers/decoders.py`, `agent_vis/parsers/canonical.py`, `agent_vis/parsers/codex.py`, `agent_vis/parsers/normalization.py`, `docs/agents/claude_code.md`, `docs/performance.md`, `README.md`).
+
 ## [1.4.0] - 2026-03-06
 
 > **Code Stats** | Total: 83,070 lines | Delta: +1,086 (-286) = **+800 net** | Change: **+1.0%** vs v1.3.0

@@ -8,14 +8,27 @@ from agent_vis.parsers.claude_code import (
     normalize_claude_event,
     parse_jsonl_file_with_compact_events,
 )
-from agent_vis.parsers.decoders import available_json_line_decoders, get_json_line_decoder
+from agent_vis.parsers.decoders import (
+    available_json_line_decoders,
+    decode_json_value,
+    get_json_line_decoder,
+)
 
 
 def test_decoder_registry_supports_json_and_orjson() -> None:
     assert "json" in available_json_line_decoders()
     assert "orjson" in available_json_line_decoders()
+    assert get_json_line_decoder().name == "orjson"
     assert get_json_line_decoder("json").read_mode == "text"
     assert get_json_line_decoder("orjson").read_mode == "binary"
+
+
+def test_decode_json_value_respects_decoder_selection(monkeypatch) -> None:
+    assert decode_json_value('{"kind":"default"}') == {"kind": "default"}
+
+    monkeypatch.setenv("AGENT_VIS_JSON_DECODER", "json")
+    assert get_json_line_decoder().name == "json"
+    assert decode_json_value('{"kind":"env-json"}') == {"kind": "env-json"}
 
 
 def test_normalize_claude_event_materializes_record_and_compact_ir() -> None:

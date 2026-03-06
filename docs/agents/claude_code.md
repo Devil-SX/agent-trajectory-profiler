@@ -55,8 +55,9 @@ The Claude parser now uses a staged internal pipeline:
 
 ### Decoder Selection
 
-- Default decoder: stdlib `json`
-- Optional faster decoder: `orjson`
+- Default decoder: `orjson` when installed, otherwise stdlib `json`
+- Character metrics are computed through the required native Rust classifier exposed by `agent_vis._native`
+- Optional decoder override: `orjson`
 - Override path: `AGENT_VIS_JSON_DECODER=json|orjson`
 
 ### CanonicalEvent -> MessageRecord

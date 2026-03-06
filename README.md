@@ -39,6 +39,7 @@ graph LR
 - Python 3.10+
 - [UV](https://github.com/astral-sh/uv) package manager
 - Node.js 18+ (only needed for web dashboard)
+- Rust toolchain when building from source (the package now includes a required native character-classifier extension)
 
 ### Install globally
 

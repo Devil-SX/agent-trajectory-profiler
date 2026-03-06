@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from datetime import datetime
@@ -28,6 +27,7 @@ from agent_vis.parsers.canonical import (
     register_adapter,
 )
 from agent_vis.parsers.claude_code import calculate_session_statistics, extract_session_metadata
+from agent_vis.parsers.decoders import get_json_line_decoder
 from agent_vis.parsers.normalization import (
     NormalizedMessageIR,
     NormalizedRecordIR,
@@ -237,15 +237,19 @@ def _resolve_codex_lineage(file_path: Path, session_id: str) -> tuple[str, str |
     parent_session_id: str | None = None
     root_session_id: str | None = None
 
+    decoder = get_json_line_decoder()
+    open_mode = "rb" if decoder.read_mode == "binary" else "r"
+    open_kwargs: dict[str, Any] = {} if open_mode == "rb" else {"encoding": "utf-8"}
+
     try:
-        with open(file_path, encoding="utf-8") as handle:
+        with open(file_path, open_mode, **open_kwargs) as handle:
             for line in handle:
                 stripped = line.strip()
                 if not stripped:
                     continue
                 try:
-                    raw = json.loads(stripped)
-                except json.JSONDecodeError:
+                    raw = decoder.decode(stripped)
+                except ValueError:
                     continue
                 if raw.get("type") != "session_meta":
                     continue
@@ -628,15 +632,19 @@ def _detect_web_search_error(payload_dict: dict[str, Any]) -> bool | None:
 
 
 def _extract_session_id_from_file(file_path: Path) -> str | None:
+    decoder = get_json_line_decoder()
+    open_mode = "rb" if decoder.read_mode == "binary" else "r"
+    open_kwargs: dict[str, Any] = {} if open_mode == "rb" else {"encoding": "utf-8"}
+
     try:
-        with open(file_path, encoding="utf-8") as handle:
+        with open(file_path, open_mode, **open_kwargs) as handle:
             for line in handle:
                 stripped = line.strip()
                 if not stripped:
                     continue
                 try:
-                    raw = json.loads(stripped)
-                except json.JSONDecodeError:
+                    raw = decoder.decode(stripped)
+                except ValueError:
                     continue
                 if raw.get("type") != "session_meta":
                     continue
@@ -665,7 +673,7 @@ def _build_message_record(
     user_type: str | None = None,
 ) -> MessageRecord:
     normalized_usage = build_usage_ir(usage)
-    normalized_record = NormalizedRecordIR(
+    normalized_record = NormalizedRecordIR.model_construct(
         session_id=session_id,
         uuid=uuid,
         timestamp=timestamp,
@@ -675,7 +683,7 @@ def _build_message_record(
         git_branch=git_branch,
         user_type=user_type,
         is_sidechain=False,
-        message=NormalizedMessageIR(
+        message=NormalizedMessageIR.model_construct(
             role=role,
             content=content,
             usage=normalized_usage,
@@ -833,9 +841,8 @@ class CodexEventAdapter(TrajectoryEventAdapter):
             if item_type == "function_call":
                 input_data = payload_dict.get("arguments")
             if isinstance(input_data, str):
-                try:
-                    parsed = json.loads(input_data)
-                except json.JSONDecodeError:
+                parsed = _parse_json_if_possible(input_data)
+                if parsed is None:
                     parsed = {"raw": input_data}
                 input_data = parsed
             if not isinstance(input_data, dict):
