@@ -110,3 +110,75 @@ def test_parse_pipeline_supports_decoder_selection(tmp_path: Path) -> None:
     assert len(json_compacts) == len(orjson_compacts) == 1
     assert len(normalized_events) == 3
     assert normalized_events[1].compact_event is not None
+
+
+def test_flattened_parse_pipeline_matches_staged_events(tmp_path: Path) -> None:
+    file_path = tmp_path / "flattened-session.jsonl"
+    rows = [
+        {
+            "type": "user",
+            "sessionId": "session-flat",
+            "uuid": "u-1",
+            "timestamp": "2026-03-06T10:00:00.000Z",
+            "parentUuid": "root",
+            "userType": "external",
+            "cwd": "/tmp/project",
+            "version": "1.0.0",
+            "gitBranch": "main",
+            "isSidechain": False,
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool-1",
+                        "content": [{"type": "text", "text": "x" * 13000}],
+                    }
+                ],
+            },
+            "thinkingMetadata": {"maxThinkingTokens": 2048},
+            "todos": [
+                {
+                    "content": "ship it",
+                    "status": "in_progress",
+                    "activeForm": "shipping it",
+                }
+            ],
+        },
+        {
+            "type": "system",
+            "subtype": "compact_boundary",
+            "timestamp": "2026-03-06T10:00:01.000Z",
+            "compactMetadata": {"trigger": "manual", "preTokens": 512},
+        },
+        {
+            "type": "assistant",
+            "sessionId": "session-flat",
+            "uuid": "a-1",
+            "timestamp": "2026-03-06T10:00:02.000Z",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "hello"}],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        },
+    ]
+    with file_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+
+    messages, compact_events = parse_jsonl_file_with_compact_events(file_path)
+    staged_events = iter_claude_normalized_events(file_path)
+    staged_messages = [
+        event.to_message_record().model_dump(mode="json")
+        for event in staged_events
+        if event.to_message_record() is not None
+    ]
+    staged_compacts = [
+        event.compact_event.to_compact_event().model_dump(mode="json")
+        for event in staged_events
+        if event.compact_event is not None
+    ]
+
+    assert [message.model_dump(mode="json") for message in messages] == staged_messages
+    assert [event.model_dump(mode="json") for event in compact_events] == staged_compacts

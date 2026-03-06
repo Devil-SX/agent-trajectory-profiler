@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Claude JSONL parsing now uses a flattened single-pass hot path for message and compact-event materialization, removing the staged `NormalizedEventIR -> NormalizedRecordIR -> MessageRecord` conversion from the main sync parse path while keeping canonical/staged helpers available for compatibility.
+
+### Added
+
+- Parser architecture regression coverage that compares the flattened Claude parse pipeline against staged normalized-event materialization for large `tool_result`, `thinkingMetadata`, `todos`, and `compact_boundary` cases.
+
 ## [1.5.0] - 2026-03-06
 
 > **Code Stats** | Total: 83,179 lines | Delta: +240 (-136) = **+104 net** | Change: **+0.1%** vs v1.4.0

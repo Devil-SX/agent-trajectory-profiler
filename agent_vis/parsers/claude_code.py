@@ -18,17 +18,22 @@ from agent_vis.models import (
     BashBreakdown,
     BashCommandStats,
     CharacterBreakdown,
+    ClaudeMessage,
     CompactEvent,
     MessageRecord,
+    MessageRole,
+    MessageType,
     ParsedSessionData,
     Session,
     SessionMetadata,
     SessionStatistics,
     SubagentSession,
     SubagentType,
+    ThinkingMetadata,
     TimeBreakdown,
     TodoItem,
     TokenBreakdown,
+    TokenUsage,
     ToolCallStatistics,
     ToolErrorRecord,
     ToolGroupStatistics,
@@ -442,6 +447,120 @@ def _claude_raw_event_to_message(
     return normalized.to_message_record()
 
 
+def _compact_event_from_raw(raw: dict[str, Any], *, timestamp: str) -> CompactEvent | None:
+    if raw.get("subtype") != "compact_boundary":
+        return None
+    compact_metadata = raw.get("compactMetadata", {})
+    return CompactEvent(
+        timestamp=timestamp,
+        trigger=(
+            compact_metadata.get("trigger", "unknown")
+            if isinstance(compact_metadata, dict)
+            else "unknown"
+        ),
+        pre_tokens=(
+            compact_metadata.get("preTokens", 0) if isinstance(compact_metadata, dict) else 0
+        ),
+    )
+
+
+def _claude_raw_event_to_message_fast(
+    raw: dict[str, Any],
+    *,
+    line_number: int,
+    timestamp: str | None = None,
+) -> MessageRecord | None:
+    session_id = raw.get("sessionId")
+    uuid = raw.get("uuid")
+    resolved_timestamp = timestamp or coerce_timestamp(raw.get("timestamp"), line_number)
+    if not isinstance(session_id, str) or not isinstance(uuid, str) or not resolved_timestamp:
+        return None
+
+    message_payload = raw.get("message")
+    raw_type = raw.get("type")
+    raw_role = message_payload.get("role") if isinstance(message_payload, dict) else None
+    role = _coerce_claude_role(raw_role, raw_type)
+    record_type = _coerce_claude_record_type(raw_type, role)
+
+    usage_model = None
+    message_model = None
+    if isinstance(message_payload, dict):
+        usage_ir = build_usage_ir(message_payload.get("usage"))
+        if usage_ir is not None:
+            usage_model = TokenUsage.model_construct(
+                input_tokens=usage_ir.input_tokens,
+                output_tokens=usage_ir.output_tokens,
+                cache_creation_input_tokens=usage_ir.cache_creation_input_tokens,
+                cache_read_input_tokens=usage_ir.cache_read_input_tokens,
+                service_tier=usage_ir.service_tier,
+            )
+        model = message_payload.get("model")
+        msg_id = message_payload.get("id")
+        msg_type = message_payload.get("type")
+        stop_reason = message_payload.get("stop_reason")
+        stop_sequence = message_payload.get("stop_sequence")
+        message_model = ClaudeMessage.model_construct(
+            role=MessageRole(role),
+            content=normalize_message_content(message_payload.get("content"), text_only=False),
+            model=model if isinstance(model, str) else None,
+            id=msg_id if isinstance(msg_id, str) else None,
+            type=msg_type if isinstance(msg_type, str) else None,
+            stop_reason=stop_reason if isinstance(stop_reason, str) else None,
+            stop_sequence=stop_sequence if isinstance(stop_sequence, str) else None,
+            usage=usage_model,
+        )
+
+    thinking_model = None
+    thinking_metadata = _normalize_thinking_metadata(raw.get("thinkingMetadata"))
+    if thinking_metadata is not None:
+        max_thinking_tokens = thinking_metadata.get("maxThinkingTokens")
+        if isinstance(max_thinking_tokens, int):
+            thinking_model = ThinkingMetadata.model_construct(maxThinkingTokens=max_thinking_tokens)
+        else:
+            thinking_model = ThinkingMetadata.model_construct()
+
+    todos_model = None
+    todos = _normalize_todos(raw.get("todos"))
+    if todos:
+        todos_model = [
+            TodoItem.model_construct(
+                content=item["content"],
+                status=item["status"],
+                activeForm=item["activeForm"],
+            )
+            for item in todos
+        ]
+
+    snapshot = raw.get("snapshot")
+    return MessageRecord.model_construct(
+        sessionId=session_id,
+        uuid=uuid,
+        timestamp=resolved_timestamp,
+        type=MessageType(record_type),
+        parentUuid=raw.get("parentUuid") if isinstance(raw.get("parentUuid"), str) else None,
+        userType=raw.get("userType") if isinstance(raw.get("userType"), str) else None,
+        cwd=raw.get("cwd") if isinstance(raw.get("cwd"), str) else None,
+        version=raw.get("version") if isinstance(raw.get("version"), str) else None,
+        gitBranch=raw.get("gitBranch") if isinstance(raw.get("gitBranch"), str) else None,
+        isSidechain=(raw.get("isSidechain") if isinstance(raw.get("isSidechain"), bool) else None),
+        agentId=raw.get("agentId") if isinstance(raw.get("agentId"), str) else None,
+        message=message_model,
+        isMeta=raw.get("isMeta") if isinstance(raw.get("isMeta"), bool) else None,
+        isSnapshotUpdate=(
+            raw.get("isSnapshotUpdate") if isinstance(raw.get("isSnapshotUpdate"), bool) else None
+        ),
+        thinkingMetadata=thinking_model,
+        todos=todos_model,
+        permissionMode=(
+            raw.get("permissionMode") if isinstance(raw.get("permissionMode"), str) else None
+        ),
+        snapshot=snapshot if isinstance(snapshot, dict) else None,
+        messageId=raw.get("messageId") if isinstance(raw.get("messageId"), str) else None,
+        summary=raw.get("summary") if isinstance(raw.get("summary"), str) else None,
+        leafUuid=raw.get("leafUuid") if isinstance(raw.get("leafUuid"), str) else None,
+    )
+
+
 def iter_claude_normalized_events(
     file_path: Path,
     *,
@@ -486,16 +605,46 @@ def parse_jsonl_file_with_compact_events(
     *,
     decoder_name: str | None = None,
 ) -> tuple[list[MessageRecord], list[CompactEvent]]:
-    """Parse one JSONL file into messages and compact events via staged parser passes."""
+    """Parse one JSONL file into messages and compact events via a flattened hot path."""
+    decoder = get_json_line_decoder(decoder_name)
     messages: list[MessageRecord] = []
     compact_events: list[CompactEvent] = []
 
-    for event in iter_claude_normalized_events(file_path, decoder_name=decoder_name):
-        if event.compact_event is not None:
-            compact_events.append(event.compact_event.to_compact_event())
-        message = event.to_message_record()
-        if message is not None:
-            messages.append(message)
+    try:
+        open_kwargs: dict[str, Any] = {}
+        mode = "rb" if decoder.read_mode == "binary" else "r"
+        if decoder.read_mode == "text":
+            open_kwargs["encoding"] = "utf-8"
+        with open(file_path, mode, **open_kwargs) as handle:
+            for line_number, line in enumerate(handle, 1):
+                if not line or line.isspace():
+                    continue
+                try:
+                    data = decoder.decode(line)
+                except ValueError as exc:
+                    raise SessionParseError(
+                        f"Invalid JSON at {file_path}:{line_number}: {exc}"
+                    ) from exc
+
+                if not isinstance(data, dict):
+                    continue
+
+                timestamp = coerce_timestamp(data.get("timestamp"), line_number)
+                compact_event = _compact_event_from_raw(data, timestamp=timestamp)
+                if compact_event is not None:
+                    compact_events.append(compact_event)
+
+                message = _claude_raw_event_to_message_fast(
+                    data,
+                    line_number=line_number,
+                    timestamp=timestamp,
+                )
+                if message is not None:
+                    messages.append(message)
+    except FileNotFoundError as exc:
+        raise SessionParseError(f"Session file not found: {file_path}") from exc
+    except OSError as exc:
+        raise SessionParseError(f"Error reading file {file_path}: {exc}") from exc
 
     return messages, compact_events
 
