@@ -10,9 +10,10 @@ This document defines how backend performance is measured, persisted, and review
 
 ## Scope
 
-Current benchmark scope includes three backend paths:
+Current benchmark scope includes four backend paths:
 
 - Sync ingestion path (`SyncEngine.sync`)
+- Claude parse decoder benchmark (`parse_jsonl_file_with_compact_events` via staged decoder pipeline)
 - Parser statistics hotspot (`calculate_session_statistics`)
 - Cross-session analytics APIs (`get_analytics_overview`, `get_analytics_timeseries`)
 
@@ -20,7 +21,8 @@ Current benchmark scope includes three backend paths:
 
 - Budget configuration: `tests/perf/budgets.json`
 - Runner implementation: `agent_vis/perf/backend_runner.py`
-- CLI entry: `scripts/run_backend_perf.py`
+- Parser benchmark runner: `agent_vis/perf/parser_benchmark.py`
+- CLI entries: `scripts/run_backend_perf.py`, `scripts/run_parser_bench.py`
 
 ## Run Locally
 

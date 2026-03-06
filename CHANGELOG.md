@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-06
+
+> **Code Stats** | Total: 83,070 lines | Delta: +1,086 (-286) = **+800 net** | Change: **+1.0%** vs v1.3.0
+
+### Added
+
+- Pluggable Claude JSON decoder abstraction with staged decode/normalize/materialize parser internals, optional `orjson` backend selection, and normalized event IR reuse across parse and canonical conversion paths (`agent_vis/parsers/decoders.py`, `agent_vis/parsers/claude_code.py`, `agent_vis/parsers/normalization.py`).
+- Repository-owned parser decoder benchmark runner and CLI (`agent_vis/perf/parser_benchmark.py`, `scripts/run_parser_bench.py`) with JSON/Markdown artifacts for repeatable decoder comparisons.
+- Parser architecture regression coverage for decoder selection, normalized Claude IR materialization, and benchmark artifact generation (`tests/test_claude_parse_architecture.py`, `tests/test_parser_decoder_benchmark.py`).
+
+### Changed
+
+- Backend performance workflow now publishes parser benchmark summaries alongside existing backend performance artifacts, and Claude ecosystem documentation/performance docs now describe the staged parser pipeline and decoder override path (`.github/workflows/backend-performance.yml`, `docs/performance.md`, `docs/agents/claude_code.md`).
+- Claude sync/profile internals now reuse the staged parse pipeline for compact-event extraction and precomputed subagent-aware statistics calculation, eliminating the extra compact-event file scan from sync profiling (`agent_vis/perf/sync_profiler.py`, `tests/test_statistics.py`).
+
 ## [1.3.0] - 2026-03-06
 
 > **Code Stats** | Total: 82,284 lines | Delta: +16,520 (-2,795) = **+13,725 net** | Change: **+20.2%** vs v1.2.0

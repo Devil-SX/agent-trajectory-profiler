@@ -27,6 +27,7 @@ from agent_vis.models import (
     SubagentSession,
     SubagentType,
     TimeBreakdown,
+    TodoItem,
     TokenBreakdown,
     ToolCallStatistics,
     ToolErrorRecord,
@@ -36,16 +37,16 @@ from agent_vis.parsers.base import TrajectoryParser
 from agent_vis.parsers.canonical import (
     CanonicalEvent,
     TrajectoryEventAdapter,
-    canonical_to_messages,
-    get_adapter,
-    parse_jsonl_to_canonical,
     register_adapter,
 )
+from agent_vis.parsers.decoders import get_json_line_decoder
 from agent_vis.parsers.error_taxonomy import (
     ERROR_TAXONOMY_VERSION,
     classify_tool_error,
 )
 from agent_vis.parsers.normalization import (
+    NormalizedCompactEventIR,
+    NormalizedEventIR,
     NormalizedMessageIR,
     NormalizedRecordIR,
     build_usage_ir,
@@ -281,7 +282,7 @@ def _ensure_tool_stats_bucket(
     return tool_stats[tool_name]
 
 
-def _classify_characters(text: str) -> dict[str, int]:
+def _classify_characters(text: str) -> tuple[int, int, int, int, int]:
     """Count text characters by script family."""
     cjk_count = 0
     latin_count = 0
@@ -318,13 +319,223 @@ def _classify_characters(text: str) -> dict[str, int]:
         else:
             other_count += 1
 
-    return {
-        "cjk": cjk_count,
-        "latin": latin_count,
-        "digit": digit_count,
-        "whitespace": whitespace_count,
-        "other": other_count,
-    }
+    return cjk_count, latin_count, digit_count, whitespace_count, other_count
+
+
+def _build_todo_items(raw_todos: Any) -> list[TodoItem] | None:
+    normalized = _normalize_todos(raw_todos)
+    if normalized is None:
+        return None
+
+    todos: list[TodoItem] = []
+    for item in normalized:
+        todos.append(
+            TodoItem.model_construct(
+                content=item["content"],
+                status=item["status"],
+                activeForm=item["activeForm"],
+            )
+        )
+    return todos or None
+
+
+def _normalize_todos(raw_todos: Any) -> list[dict[str, str]] | None:
+    if not isinstance(raw_todos, list):
+        return None
+
+    todos: list[dict[str, str]] = []
+    for item in raw_todos:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        status = item.get("status")
+        active_form = item.get("activeForm")
+        if (
+            not isinstance(content, str)
+            or status
+            not in {
+                "pending",
+                "in_progress",
+                "completed",
+            }
+            or not isinstance(active_form, str)
+        ):
+            continue
+        todos.append(
+            {
+                "content": content,
+                "status": status,
+                "activeForm": active_form,
+            }
+        )
+    return todos or None
+
+
+def _normalize_thinking_metadata(raw_metadata: Any) -> dict[str, Any] | None:
+    if not isinstance(raw_metadata, dict):
+        return None
+    max_thinking_tokens = raw_metadata.get("maxThinkingTokens")
+    if isinstance(max_thinking_tokens, int):
+        return {"maxThinkingTokens": max_thinking_tokens}
+    return {}
+
+
+def _normalize_claude_record(
+    raw: dict[str, Any],
+    *,
+    line_number: int,
+    timestamp: str | None = None,
+) -> NormalizedRecordIR | None:
+    message_payload = raw.get("message")
+    raw_type = raw.get("type")
+    raw_role = message_payload.get("role") if isinstance(message_payload, dict) else None
+    role = _coerce_claude_role(raw_role, raw_type)
+    record_type = _coerce_claude_record_type(raw_type, role)
+
+    session_id = raw.get("sessionId")
+    uuid = raw.get("uuid")
+    resolved_timestamp = timestamp or coerce_timestamp(raw.get("timestamp"), line_number)
+    if not isinstance(session_id, str) or not isinstance(uuid, str) or not resolved_timestamp:
+        return None
+
+    thinking_metadata = _normalize_thinking_metadata(raw.get("thinkingMetadata"))
+    snapshot = raw.get("snapshot")
+
+    return NormalizedRecordIR(
+        session_id=session_id,
+        uuid=uuid,
+        timestamp=resolved_timestamp,
+        record_type=record_type,
+        parent_uuid=raw.get("parentUuid") if isinstance(raw.get("parentUuid"), str) else None,
+        user_type=raw.get("userType") if isinstance(raw.get("userType"), str) else None,
+        cwd=raw.get("cwd") if isinstance(raw.get("cwd"), str) else None,
+        version=raw.get("version") if isinstance(raw.get("version"), str) else None,
+        git_branch=raw.get("gitBranch") if isinstance(raw.get("gitBranch"), str) else None,
+        is_sidechain=(raw.get("isSidechain") if isinstance(raw.get("isSidechain"), bool) else None),
+        agent_id=raw.get("agentId") if isinstance(raw.get("agentId"), str) else None,
+        message=_normalize_claude_message(message_payload, role),
+        is_meta=raw.get("isMeta") if isinstance(raw.get("isMeta"), bool) else None,
+        is_snapshot_update=(
+            raw.get("isSnapshotUpdate") if isinstance(raw.get("isSnapshotUpdate"), bool) else None
+        ),
+        thinking_metadata=thinking_metadata,
+        todos=_normalize_todos(raw.get("todos")),
+        permission_mode=(
+            raw.get("permissionMode") if isinstance(raw.get("permissionMode"), str) else None
+        ),
+        snapshot=snapshot if isinstance(snapshot, dict) else None,
+        message_id=raw.get("messageId") if isinstance(raw.get("messageId"), str) else None,
+        summary=raw.get("summary") if isinstance(raw.get("summary"), str) else None,
+        leaf_uuid=raw.get("leafUuid") if isinstance(raw.get("leafUuid"), str) else None,
+    )
+
+
+def normalize_claude_event(raw: dict[str, Any], *, line_number: int) -> NormalizedEventIR | None:
+    raw_type = raw.get("type")
+    event_kind = str(raw_type or "message")
+    actor = raw_type if isinstance(raw_type, str) else None
+    timestamp = coerce_timestamp(raw.get("timestamp"), line_number)
+
+    compact_event = None
+    if raw.get("subtype") == "compact_boundary":
+        compact_metadata = raw.get("compactMetadata", {})
+        compact_event = NormalizedCompactEventIR(
+            timestamp=timestamp,
+            trigger=(
+                compact_metadata.get("trigger", "unknown")
+                if isinstance(compact_metadata, dict)
+                else "unknown"
+            ),
+            pre_tokens=(
+                compact_metadata.get("preTokens", 0) if isinstance(compact_metadata, dict) else 0
+            ),
+        )
+
+    record = _normalize_claude_record(raw, line_number=line_number, timestamp=timestamp)
+    if record is None and compact_event is None:
+        return None
+
+    return NormalizedEventIR(
+        event_kind=event_kind,
+        timestamp=timestamp,
+        actor=actor,
+        record=record,
+        compact_event=compact_event,
+    )
+
+
+def _claude_raw_event_to_message(
+    raw: dict[str, Any],
+    *,
+    line_number: int,
+    timestamp: str | None = None,
+) -> MessageRecord | None:
+    normalized = _normalize_claude_record(raw, line_number=line_number, timestamp=timestamp)
+    if normalized is None:
+        return None
+    return normalized.to_message_record()
+
+
+def iter_claude_normalized_events(
+    file_path: Path,
+    *,
+    decoder_name: str | None = None,
+) -> list[NormalizedEventIR]:
+    """Read one Claude JSONL file into staged normalized events."""
+    decoder = get_json_line_decoder(decoder_name)
+    normalized_events: list[NormalizedEventIR] = []
+
+    try:
+        open_kwargs: dict[str, Any] = {}
+        mode = "rb" if decoder.read_mode == "binary" else "r"
+        if decoder.read_mode == "text":
+            open_kwargs["encoding"] = "utf-8"
+        with open(file_path, mode, **open_kwargs) as handle:
+            for line_number, line in enumerate(handle, 1):
+                if not line or line.isspace():
+                    continue
+                try:
+                    data = decoder.decode(line)
+                except json.JSONDecodeError as exc:
+                    raise SessionParseError(
+                        f"Invalid JSON at {file_path}:{line_number}: {exc}"
+                    ) from exc
+                except ValueError as exc:
+                    raise SessionParseError(
+                        f"Invalid JSON at {file_path}:{line_number}: {exc}"
+                    ) from exc
+
+                if not isinstance(data, dict):
+                    continue
+
+                normalized_event = normalize_claude_event(data, line_number=line_number)
+                if normalized_event is not None:
+                    normalized_events.append(normalized_event)
+    except FileNotFoundError as exc:
+        raise SessionParseError(f"Session file not found: {file_path}") from exc
+    except OSError as exc:
+        raise SessionParseError(f"Error reading file {file_path}: {exc}") from exc
+
+    return normalized_events
+
+
+def parse_jsonl_file_with_compact_events(
+    file_path: Path,
+    *,
+    decoder_name: str | None = None,
+) -> tuple[list[MessageRecord], list[CompactEvent]]:
+    """Parse one JSONL file into messages and compact events via staged parser passes."""
+    messages: list[MessageRecord] = []
+    compact_events: list[CompactEvent] = []
+
+    for event in iter_claude_normalized_events(file_path, decoder_name=decoder_name):
+        if event.compact_event is not None:
+            compact_events.append(event.compact_event.to_compact_event())
+        message = event.to_message_record()
+        if message is not None:
+            messages.append(message)
+
+    return messages, compact_events
 
 
 _CLAUDE_RECORD_TYPES = {"user", "assistant", "file-history-snapshot", "summary"}
@@ -397,70 +608,38 @@ class ClaudeCodeEventAdapter(TrajectoryEventAdapter):
     def to_canonical_event(
         self, raw_event: dict[str, Any], *, source_path: Path, line_number: int
     ) -> CanonicalEvent | None:
-        event_type = raw_event.get("type")
+        normalized = normalize_claude_event(raw_event, line_number=line_number)
+        timestamp = (
+            normalized.timestamp
+            if normalized is not None
+            else coerce_timestamp(raw_event.get("timestamp"), line_number)
+        )
+        event_kind = (
+            normalized.event_kind
+            if normalized is not None
+            else str(raw_event.get("type") or "message")
+        )
+        actor = (
+            normalized.actor
+            if normalized is not None
+            else (raw_event.get("type") if isinstance(raw_event.get("type"), str) else None)
+        )
 
         return CanonicalEvent(
             ecosystem=self.ecosystem_name,
             source_path=str(source_path),
             line_number=line_number,
-            event_kind=str(event_type or "message"),
-            timestamp=coerce_timestamp(raw_event.get("timestamp"), line_number),
-            actor=event_type if isinstance(event_type, str) else None,
+            event_kind=event_kind,
+            timestamp=timestamp,
+            actor=actor,
             payload=raw_event,
         )
 
     def canonical_to_message(self, event: CanonicalEvent) -> MessageRecord | None:
-        raw = event.payload
-        message_payload = raw.get("message")
-        raw_type = raw.get("type")
-        raw_role = message_payload.get("role") if isinstance(message_payload, dict) else None
-        role = _coerce_claude_role(raw_role, raw_type)
-        record_type = _coerce_claude_record_type(raw_type, role)
-
-        parent_uuid = raw.get("parentUuid")
-        user_type = raw.get("userType")
-        cwd = raw.get("cwd")
-        version = raw.get("version")
-        git_branch = raw.get("gitBranch")
-        agent_id = raw.get("agentId")
-        permission_mode = raw.get("permissionMode")
-        message_id = raw.get("messageId")
-        summary = raw.get("summary")
-        leaf_uuid = raw.get("leafUuid")
-        thinking_metadata = raw.get("thinkingMetadata")
-        todos = raw.get("todos")
-        snapshot = raw.get("snapshot")
-
-        normalized_record = NormalizedRecordIR(
-            session_id=raw.get("sessionId"),
-            uuid=raw.get("uuid"),
-            timestamp=event.timestamp or coerce_timestamp(raw.get("timestamp"), event.line_number),
-            record_type=record_type,
-            parent_uuid=parent_uuid if isinstance(parent_uuid, str) else None,
-            user_type=user_type if isinstance(user_type, str) else None,
-            cwd=cwd if isinstance(cwd, str) else None,
-            version=version if isinstance(version, str) else None,
-            git_branch=git_branch if isinstance(git_branch, str) else None,
-            is_sidechain=(
-                raw.get("isSidechain") if isinstance(raw.get("isSidechain"), bool) else None
-            ),
-            agent_id=agent_id if isinstance(agent_id, str) else None,
-            message=_normalize_claude_message(message_payload, role),
-            is_meta=raw.get("isMeta") if isinstance(raw.get("isMeta"), bool) else None,
-            is_snapshot_update=(
-                raw.get("isSnapshotUpdate")
-                if isinstance(raw.get("isSnapshotUpdate"), bool)
-                else None
-            ),
-            thinking_metadata=thinking_metadata if isinstance(thinking_metadata, dict) else None,
-            todos=todos if isinstance(todos, list) else None,
-            permission_mode=permission_mode if isinstance(permission_mode, str) else None,
-            snapshot=snapshot if isinstance(snapshot, dict) else None,
-            message_id=message_id if isinstance(message_id, str) else None,
-            summary=summary if isinstance(summary, str) else None,
-            leaf_uuid=leaf_uuid if isinstance(leaf_uuid, str) else None,
-        )
-        return normalized_record.to_message_record()
+        normalized = normalize_claude_event(event.payload, line_number=event.line_number)
+        if normalized is None:
+            return None
+        return normalized.to_message_record()
 
 
 def parse_jsonl_file(file_path: Path) -> list[MessageRecord]:
@@ -476,9 +655,8 @@ def parse_jsonl_file(file_path: Path) -> list[MessageRecord]:
     Raises:
         SessionParseError: If the file cannot be parsed
     """
-    adapter = get_adapter("claude_code")
-    canonical_session = parse_jsonl_to_canonical(file_path, adapter)
-    return canonical_to_messages(canonical_session, adapter)
+    messages, _ = parse_jsonl_file_with_compact_events(file_path)
+    return messages
 
 
 def extract_session_metadata(
@@ -584,6 +762,7 @@ def calculate_session_statistics(
     inactivity_threshold: float = 1800.0,
     model_timeout_threshold: float = 600.0,
     trajectory_file_size_bytes: int = 0,
+    precomputed_subagent_sessions: list[SubagentSession] | None = None,
 ) -> SessionStatistics:
     """
     Calculate comprehensive statistics for a session.
@@ -620,8 +799,6 @@ def calculate_session_statistics(
     # Track results that have no preceding tool_use block in the stream.
     implicit_tool_result_keys: set[str] = set()
     implicit_tool_result_counter = 0
-    # Track subagent sessions by agent_id to deduplicate
-    subagent_sessions_map: dict[str, str] = {}
     tool_error_records: list[ToolErrorRecord] = []
     tool_error_category_counts: Counter[str] = Counter()
 
@@ -657,47 +834,22 @@ def calculate_session_statistics(
     other_chars = 0
 
     for msg in messages:
-        # Count message types
-        if msg.is_user_message:
-            user_count += 1
-            # Count genuine user interactions (not tool_result messages)
-            if not _has_tool_result_content(msg):
-                user_interaction_count += 1
-        elif msg.is_assistant_message:
-            assistant_count += 1
-        else:
-            system_count += 1
+        message = msg.message
+        content = message.content if message is not None else None
+        usage = message.usage if message is not None else None
+        is_user_message = msg.is_user_message
+        is_assistant_message = msg.is_assistant_message
+        timestamp = msg.parsed_timestamp
+        has_tool_result_content = False
 
         # Track timestamps
-        timestamp = msg.parsed_timestamp
         if first_time is None or timestamp < first_time:
             first_time = timestamp
         if last_time is None or timestamp > last_time:
             last_time = timestamp
 
-        # Time attribution: compute gap from previous message
-        if prev_timestamp is not None:
-            gap = (timestamp - prev_timestamp).total_seconds()
-            if gap >= 0:
-                if gap > inactivity_threshold:
-                    # Gap exceeds threshold -> inactive (app closed, sleeping, AFK)
-                    total_inactive_time += gap
-                elif msg.is_assistant_message:
-                    # Gap before assistant message -> model inference time
-                    total_model_time += gap
-                    if gap > model_timeout_threshold:
-                        model_timeout_count += 1
-                elif msg.is_user_message and _has_tool_result_content(msg):
-                    # Gap before user message with tool_result -> tool execution time
-                    total_tool_time += gap
-                elif msg.is_user_message:
-                    # Gap before user message without tool_result -> user idle time
-                    total_user_time += gap
-        prev_timestamp = timestamp
-
         # Count tokens
-        if msg.message and msg.message.usage:
-            usage = msg.message.usage
+        if usage is not None:
             total_input_tokens += usage.input_tokens
             total_output_tokens += usage.output_tokens
             total_tokens += usage.total_tokens
@@ -707,168 +859,211 @@ def calculate_session_statistics(
             if usage.cache_creation_input_tokens:
                 cache_creation_tokens += usage.cache_creation_input_tokens
 
-        # Process message content for tool calls and results
-        if msg.message and msg.message.content:
-            if isinstance(msg.message.content, list):
-                for content_block in msg.message.content:
-                    if isinstance(content_block, dict):
-                        block_type = content_block.get("type")
+        # Process message content for tool calls, results, and character counts.
+        if isinstance(content, list):
+            for content_block in content:
+                if not isinstance(content_block, dict):
+                    continue
 
-                        # Track tool_use blocks
-                        if block_type == "tool_use":
-                            tool_name = str(content_block.get("name", "unknown"))
-                            raw_tool_id = content_block.get("id", "")
-                            tool_id = str(raw_tool_id) if raw_tool_id is not None else ""
+                block_type = content_block.get("type")
 
-                            bucket = _ensure_tool_stats_bucket(tool_stats, tool_name)
-                            bucket["count"] += 1
-                            tool_use_map[tool_id] = (tool_name, timestamp)
+                # Track tool_use blocks
+                if block_type == "tool_use":
+                    tool_name = str(content_block.get("name", "unknown"))
+                    raw_tool_id = content_block.get("id", "")
+                    tool_id = str(raw_tool_id) if raw_tool_id is not None else ""
 
-                            # Bash breakdown: extract sub-commands
-                            if tool_name == "Bash":
-                                cmd_str = content_block.get("input", {}).get("command", "")
-                                sub_cmds = _parse_bash_sub_commands(cmd_str)
-                                bash_commands_per_call.append(len(sub_cmds))
-                                for cmd in sub_cmds:
-                                    bash_command_counts[cmd] += 1
-                                if sub_cmds:
-                                    bash_sub_cmds_map[tool_id] = sub_cmds
+                    bucket = _ensure_tool_stats_bucket(tool_stats, tool_name)
+                    bucket["count"] += 1
+                    tool_use_map[tool_id] = (tool_name, timestamp)
 
-                            # Add token cost for this tool call (if available)
-                            if msg.message.usage:
-                                bucket["tokens"] += msg.message.usage.total_tokens
+                    # Bash breakdown: extract sub-commands
+                    if tool_name == "Bash":
+                        cmd_str = content_block.get("input", {}).get("command", "")
+                        sub_cmds = _parse_bash_sub_commands(cmd_str)
+                        bash_commands_per_call.append(len(sub_cmds))
+                        for cmd in sub_cmds:
+                            bash_command_counts[cmd] += 1
+                        if sub_cmds:
+                            bash_sub_cmds_map[tool_id] = sub_cmds
 
-                        # Track tool_result blocks for success/error counting and latency
-                        elif block_type == "tool_result":
-                            raw_tool_use_id = content_block.get("tool_use_id", "")
-                            tool_use_id = (
-                                str(raw_tool_use_id) if raw_tool_use_id is not None else ""
+                    # Add token cost for this tool call (if available)
+                    if usage is not None:
+                        bucket["tokens"] += usage.total_tokens
+
+                # Track tool_result blocks for success/error counting and latency
+                elif block_type == "tool_result":
+                    has_tool_result_content = True
+                    raw_tool_use_id = content_block.get("tool_use_id", "")
+                    tool_use_id = str(raw_tool_use_id) if raw_tool_use_id is not None else ""
+                    is_error = _normalize_tool_result_error_flag(
+                        content_block.get("is_error", False)
+                    )
+                    result_text = _extract_tool_result_text(content_block.get("content", ""))
+
+                    use_timestamp: datetime | None = None
+                    if tool_use_id in tool_use_map:
+                        tool_name, use_timestamp = tool_use_map[tool_use_id]
+                    else:
+                        raw_tool_name = content_block.get("tool_name")
+                        if isinstance(raw_tool_name, str) and raw_tool_name.strip():
+                            tool_name = raw_tool_name.strip()
+                        else:
+                            tool_name = "unknown"
+                        implicit_key = (
+                            tool_use_id or f"anon:{msg.uuid}:{implicit_tool_result_counter}"
+                        )
+                        implicit_tool_result_counter += 1
+                        dedupe_key = f"{tool_name}:{implicit_key}"
+                        if dedupe_key not in implicit_tool_result_keys:
+                            implicit_tool_result_keys.add(dedupe_key)
+                            _ensure_tool_stats_bucket(tool_stats, tool_name)["count"] += 1
+
+                    bucket = _ensure_tool_stats_bucket(tool_stats, tool_name)
+                    if is_error is True:
+                        bucket["error"] += 1
+                        classification = classify_tool_error(result_text)
+                        tool_error_category_counts[classification.category] += 1
+                        summary = _tool_error_summary(result_text)
+                        detail_snippet = _tool_error_detail_snippet(result_text)
+                        tool_error_records.append(
+                            ToolErrorRecord(
+                                timestamp=timestamp.isoformat(),
+                                tool_name=tool_name,
+                                tool_call_id=tool_use_id or None,
+                                category=classification.category,
+                                matched_rule=classification.rule_id,
+                                summary=summary,
+                                preview=summary,
+                                detail_snippet=detail_snippet,
+                                detail=result_text,
                             )
-                            is_error = _normalize_tool_result_error_flag(
-                                content_block.get("is_error", False)
-                            )
-                            result_text = _extract_tool_result_text(
-                                content_block.get("content", "")
-                            )
+                        )
+                    elif is_error is False:
+                        bucket["success"] += 1
 
-                            use_timestamp: datetime | None = None
-                            if tool_use_id in tool_use_map:
-                                tool_name, use_timestamp = tool_use_map[tool_use_id]
-                            else:
-                                raw_tool_name = content_block.get("tool_name")
-                                if isinstance(raw_tool_name, str) and raw_tool_name.strip():
-                                    tool_name = raw_tool_name.strip()
-                                else:
-                                    tool_name = "unknown"
-                                implicit_key = tool_use_id or (
-                                    f"anon:{msg.uuid}:{implicit_tool_result_counter}"
-                                )
-                                implicit_tool_result_counter += 1
-                                dedupe_key = f"{tool_name}:{implicit_key}"
-                                if dedupe_key not in implicit_tool_result_keys:
-                                    implicit_tool_result_keys.add(dedupe_key)
-                                    _ensure_tool_stats_bucket(tool_stats, tool_name)["count"] += 1
+                    if result_text:
+                        (
+                            cjk_delta,
+                            latin_delta,
+                            digit_delta,
+                            whitespace_delta,
+                            other_delta,
+                        ) = _classify_characters(result_text)
+                        tool_chars += len(result_text)
+                        cjk_chars += cjk_delta
+                        latin_chars += latin_delta
+                        digit_chars += digit_delta
+                        whitespace_chars += whitespace_delta
+                        other_chars += other_delta
 
-                            bucket = _ensure_tool_stats_bucket(tool_stats, tool_name)
-                            if is_error is True:
-                                bucket["error"] += 1
-                                classification = classify_tool_error(result_text)
-                                tool_error_category_counts[classification.category] += 1
-                                summary = _tool_error_summary(result_text)
-                                detail_snippet = _tool_error_detail_snippet(result_text)
-                                tool_error_records.append(
-                                    ToolErrorRecord(
-                                        timestamp=timestamp.isoformat(),
-                                        tool_name=tool_name,
-                                        tool_call_id=tool_use_id or None,
-                                        category=classification.category,
-                                        matched_rule=classification.rule_id,
-                                        summary=summary,
-                                        preview=summary,
-                                        detail_snippet=detail_snippet,
-                                        detail=result_text,
-                                    )
-                                )
-                            elif is_error is False:
-                                bucket["success"] += 1
+                    if use_timestamp is not None:
+                        # Compute per-tool latency when matching tool_use exists.
+                        latency = (timestamp - use_timestamp).total_seconds()
+                        if latency >= 0:
+                            bucket["total_latency"] += latency
+                            bucket["latency_count"] += 1
 
-                            if result_text:
-                                counts = _classify_characters(result_text)
-                                tool_chars += len(result_text)
-                                cjk_chars += counts["cjk"]
-                                latin_chars += counts["latin"]
-                                digit_chars += counts["digit"]
-                                whitespace_chars += counts["whitespace"]
-                                other_chars += counts["other"]
-
-                            if use_timestamp is not None:
-                                # Compute per-tool latency when matching tool_use exists.
-                                latency = (timestamp - use_timestamp).total_seconds()
-                                if latency >= 0:
-                                    bucket["total_latency"] += latency
-                                    bucket["latency_count"] += 1
-
-                                    # Distribute Bash latency equally among sub-commands.
-                                    if tool_name == "Bash" and tool_use_id in bash_sub_cmds_map:
-                                        sub_cmds = bash_sub_cmds_map[tool_use_id]
-                                        if sub_cmds:
-                                            per_cmd = latency / len(sub_cmds)
-                                            for cmd in sub_cmds:
-                                                bash_command_latency[cmd] += per_cmd
-
-                            # Distribute Bash result output chars among sub-commands.
+                            # Distribute Bash latency equally among sub-commands.
                             if tool_name == "Bash" and tool_use_id in bash_sub_cmds_map:
                                 sub_cmds = bash_sub_cmds_map[tool_use_id]
                                 if sub_cmds:
-                                    result_content = content_block.get("content", "")
-                                    if isinstance(result_content, str):
-                                        result_chars = len(result_content)
-                                    elif isinstance(result_content, list):
-                                        result_chars = sum(
-                                            (
-                                                len(b.get("text", ""))
-                                                if isinstance(b, dict)
-                                                else len(str(b))
-                                            )
-                                            for b in result_content
-                                        )
-                                    else:
-                                        result_chars = 0
-                                    per_cmd_chars = result_chars // len(sub_cmds)
+                                    per_cmd = latency / len(sub_cmds)
                                     for cmd in sub_cmds:
-                                        bash_command_output_chars[cmd] += per_cmd_chars
+                                        bash_command_latency[cmd] += per_cmd
 
-                        elif block_type in ("text", "thinking"):
-                            text_value = content_block.get("text")
-                            if block_type == "thinking":
-                                text_value = content_block.get("thinking")
-                            if isinstance(text_value, str) and text_value:
-                                counts = _classify_characters(text_value)
-                                if msg.is_assistant_message:
-                                    model_chars += len(text_value)
-                                elif msg.is_user_message:
-                                    user_chars += len(text_value)
-                                cjk_chars += counts["cjk"]
-                                latin_chars += counts["latin"]
-                                digit_chars += counts["digit"]
-                                whitespace_chars += counts["whitespace"]
-                                other_chars += counts["other"]
-            elif isinstance(msg.message.content, str) and msg.message.content:
-                text_value = msg.message.content
-                counts = _classify_characters(text_value)
-                if msg.is_assistant_message:
-                    model_chars += len(text_value)
-                elif msg.is_user_message:
-                    user_chars += len(text_value)
-                cjk_chars += counts["cjk"]
-                latin_chars += counts["latin"]
-                digit_chars += counts["digit"]
-                whitespace_chars += counts["whitespace"]
-                other_chars += counts["other"]
+                    # Distribute Bash result output chars among sub-commands.
+                    if tool_name == "Bash" and tool_use_id in bash_sub_cmds_map:
+                        sub_cmds = bash_sub_cmds_map[tool_use_id]
+                        if sub_cmds:
+                            result_content = content_block.get("content", "")
+                            if isinstance(result_content, str):
+                                result_chars = len(result_content)
+                            elif isinstance(result_content, list):
+                                result_chars = sum(
+                                    (
+                                        len(block.get("text", ""))
+                                        if isinstance(block, dict)
+                                        else len(str(block))
+                                    )
+                                    for block in result_content
+                                )
+                            else:
+                                result_chars = 0
+                            per_cmd_chars = result_chars // len(sub_cmds)
+                            for cmd in sub_cmds:
+                                bash_command_output_chars[cmd] += per_cmd_chars
 
-        # Track subagent sessions
-        if msg.is_subagent_message and msg.agentId:
-            subagent_sessions_map[msg.agentId] = msg.agentId
+                elif block_type in ("text", "thinking"):
+                    text_value = (
+                        content_block.get("thinking")
+                        if block_type == "thinking"
+                        else content_block.get("text")
+                    )
+                    if isinstance(text_value, str) and text_value:
+                        (
+                            cjk_delta,
+                            latin_delta,
+                            digit_delta,
+                            whitespace_delta,
+                            other_delta,
+                        ) = _classify_characters(text_value)
+                        if is_assistant_message:
+                            model_chars += len(text_value)
+                        elif is_user_message:
+                            user_chars += len(text_value)
+                        cjk_chars += cjk_delta
+                        latin_chars += latin_delta
+                        digit_chars += digit_delta
+                        whitespace_chars += whitespace_delta
+                        other_chars += other_delta
+        elif isinstance(content, str) and content:
+            (
+                cjk_delta,
+                latin_delta,
+                digit_delta,
+                whitespace_delta,
+                other_delta,
+            ) = _classify_characters(content)
+            if is_assistant_message:
+                model_chars += len(content)
+            elif is_user_message:
+                user_chars += len(content)
+            cjk_chars += cjk_delta
+            latin_chars += latin_delta
+            digit_chars += digit_delta
+            whitespace_chars += whitespace_delta
+            other_chars += other_delta
+
+        # Count message types
+        if is_user_message:
+            user_count += 1
+            if not has_tool_result_content:
+                user_interaction_count += 1
+        elif is_assistant_message:
+            assistant_count += 1
+        else:
+            system_count += 1
+
+        # Time attribution: compute gap from previous message
+        if prev_timestamp is not None:
+            gap = (timestamp - prev_timestamp).total_seconds()
+            if gap >= 0:
+                if gap > inactivity_threshold:
+                    # Gap exceeds threshold -> inactive (app closed, sleeping, AFK)
+                    total_inactive_time += gap
+                elif is_assistant_message:
+                    # Gap before assistant message -> model inference time
+                    total_model_time += gap
+                    if gap > model_timeout_threshold:
+                        model_timeout_count += 1
+                elif is_user_message and has_tool_result_content:
+                    # Gap before user message with tool_result -> tool execution time
+                    total_tool_time += gap
+                elif is_user_message:
+                    # Gap before user message without tool_result -> user idle time
+                    total_user_time += gap
+        prev_timestamp = timestamp
 
     # Convert tool stats to ToolCallStatistics objects
     tool_call_list = []
@@ -895,9 +1090,9 @@ def calculate_session_statistics(
     # Build tool group statistics by aggregating tools that share a group
     group_agg: dict[str, dict] = {}
     for tc in tool_call_list:
-        g = tc.tool_group
-        if g not in group_agg:
-            group_agg[g] = {
+        group_name = tc.tool_group
+        if group_name not in group_agg:
+            group_agg[group_name] = {
                 "count": 0,
                 "tokens": 0,
                 "success": 0,
@@ -906,7 +1101,7 @@ def calculate_session_statistics(
                 "latency_count": 0,
                 "tools": [],
             }
-        ga = group_agg[g]
+        ga = group_agg[group_name]
         ga["count"] += tc.count
         ga["tokens"] += tc.total_tokens
         ga["success"] += tc.success_count
@@ -935,7 +1130,11 @@ def calculate_session_statistics(
     tool_group_list.sort(key=lambda x: x.count, reverse=True)
 
     # Extract subagent sessions and count by type
-    subagent_sessions_list = extract_subagent_sessions(messages)
+    subagent_sessions_list = (
+        precomputed_subagent_sessions
+        if precomputed_subagent_sessions is not None
+        else extract_subagent_sessions(messages)
+    )
     subagent_type_counts: dict[str, int] = {}
 
     for subagent in subagent_sessions_list:
@@ -1042,7 +1241,7 @@ def calculate_session_statistics(
             command_stats=sorted_cmds,
         )
 
-    tool_token_total = sum(int(tool_stats[name]["tokens"]) for name in tool_stats)
+    tool_token_total = sum(int(stats["tokens"]) for stats in tool_stats.values())
     user_yield_ratio_tokens = None
     if total_input_tokens > 0:
         user_yield_ratio_tokens = (total_output_tokens + tool_token_total) / total_input_tokens
@@ -1097,7 +1296,7 @@ def calculate_session_statistics(
         cache_creation_tokens_per_second=cache_creation_tokens_per_second,
         tool_calls=tool_call_list,
         tool_groups=tool_group_list,
-        total_tool_calls=sum(int(tool_stats[t]["count"]) for t in tool_stats),
+        total_tool_calls=sum(int(stats["count"]) for stats in tool_stats.values()),
         tool_error_records=tool_error_records,
         tool_error_category_counts=dict(tool_error_category_counts),
         error_taxonomy_version=ERROR_TAXONOMY_VERSION,
@@ -1176,8 +1375,8 @@ def parse_session_file(
     # Extract session ID from filename (remove .jsonl extension)
     session_id = file_path.stem
 
-    # Parse messages
-    messages = parse_jsonl_file(file_path)
+    # Parse messages and compact events in one scan.
+    messages, compact_events = parse_jsonl_file_with_compact_events(file_path)
 
     if not messages:
         raise SessionParseError(f"No valid messages found in {file_path}")
@@ -1199,10 +1398,10 @@ def parse_session_file(
         inactivity_threshold=inactivity_threshold,
         model_timeout_threshold=model_timeout_threshold,
         trajectory_file_size_bytes=trajectory_file_size_bytes,
+        precomputed_subagent_sessions=subagent_sessions,
     )
 
-    # Extract compact events from raw JSONL (these aren't in MessageRecord)
-    compact_events = extract_compact_events(file_path)
+    # Compact events were collected during the initial file scan.
     statistics.compact_count = len(compact_events)
     statistics.compact_events = compact_events
 

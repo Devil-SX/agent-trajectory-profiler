@@ -35,18 +35,35 @@ Only records that validate as `MessageRecord` are materialized into analytics in
 
 ## 4. Mapping to Canonical and Unified Model
 
+The Claude parser now uses a staged internal pipeline:
+
+1. `decode`
+2. `normalize` into `NormalizedEventIR` / `NormalizedRecordIR`
+3. `materialize` into `MessageRecord` / `CompactEvent`
+
 ### Raw -> CanonicalEvent
 
-- `event_kind = raw_event["type"]` (default `message` if missing)
-- `timestamp = raw_event["timestamp"]` if string, else `null`
+- `event_kind` and `timestamp` are derived from the normalized event stage
 - `actor = raw_event["type"]` if string
 - `payload = raw_event` (preserved)
 
+### NormalizedEventIR -> MessageRecord
+
+- Message-bearing events normalize into `NormalizedRecordIR`
+- `NormalizedRecordIR.to_message_record()` materializes the public `MessageRecord`
+- Compact-boundary events are normalized as side-channel `NormalizedCompactEventIR` instances
+
+### Decoder Selection
+
+- Default decoder: stdlib `json`
+- Optional faster decoder: `orjson`
+- Override path: `AGENT_VIS_JSON_DECODER=json|orjson`
+
 ### CanonicalEvent -> MessageRecord
 
-- Adapter path is direct: `MessageRecord(**event.payload)`
-- Invalid payloads are skipped by model validation
-- Downstream metadata/statistics are computed from resulting message stream
+- Adapter path reuses the same normalization stage as the parser
+- Invalid payloads are skipped when normalization cannot build a `NormalizedRecordIR`
+- Downstream metadata/statistics are computed from the resulting message stream
 
 ## 5. Fallback and Error Handling
 

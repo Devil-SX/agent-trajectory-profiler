@@ -12,6 +12,7 @@ import pytest
 
 from agent_vis.models import SessionStatistics, ToolCallStatistics
 from agent_vis.parsers import parse_session_file
+from agent_vis.parsers.claude_code import parse_jsonl_file_with_compact_events
 from agent_vis.parsers.error_taxonomy import (
     ERROR_TAXONOMY_VERSION,
     UNCATEGORIZED_ERROR,
@@ -895,6 +896,63 @@ class TestIntegrationWithParseSessionFile:
         assert len(session.subagent_sessions) == 2
         assert session.statistics is not None
         assert session.statistics.subagent_count == 2
+
+    def test_calculate_statistics_reuses_precomputed_subagents(
+        self, temp_session_dir: Path, sample_messages_with_subagents: list[dict[str, object]]
+    ) -> None:
+        """Test precomputed subagent sessions produce the same statistics."""
+        file_path = temp_session_dir / "precomputed-subagents.jsonl"
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in sample_messages_with_subagents:
+                f.write(json.dumps(data) + "\n")
+
+        messages = parse_jsonl_file(file_path)
+        precomputed = extract_subagent_sessions(messages)
+
+        baseline = calculate_session_statistics(messages)
+        optimized = calculate_session_statistics(
+            messages,
+            precomputed_subagent_sessions=precomputed,
+        )
+
+        assert optimized.subagent_count == baseline.subagent_count
+        assert optimized.subagent_sessions == baseline.subagent_sessions
+        assert optimized.total_tool_calls == baseline.total_tool_calls
+        assert optimized.character_breakdown == baseline.character_breakdown
+
+    def test_parse_session_file_collects_compact_events_in_single_scan(
+        self, temp_session_dir: Path, sample_messages_with_tools: list[dict[str, object]]
+    ) -> None:
+        """Test compact events are retained without a second parser pass."""
+        file_path = temp_session_dir / "compact-session.jsonl"
+        compact_event = {
+            "type": "system",
+            "subtype": "compact_boundary",
+            "sessionId": "test-session-tools",
+            "uuid": "compact-1",
+            "timestamp": "2026-02-03T13:15:20.900Z",
+            "compactMetadata": {
+                "trigger": "token_limit",
+                "preTokens": 4096,
+            },
+        }
+        with open(file_path, "w", encoding="utf-8") as f:
+            for data in sample_messages_with_tools[:4]:
+                f.write(json.dumps(data) + "\n")
+            f.write(json.dumps(compact_event) + "\n")
+            for data in sample_messages_with_tools[4:]:
+                f.write(json.dumps(data) + "\n")
+
+        messages, compact_events = parse_jsonl_file_with_compact_events(file_path)
+        session = parse_session_file(file_path)
+
+        assert len(messages) == len(sample_messages_with_tools) + 1
+        assert len(compact_events) == 1
+        assert compact_events[0].trigger == "token_limit"
+        assert session.statistics is not None
+        assert session.statistics.compact_count == 1
+        assert len(session.statistics.compact_events) == 1
+        assert session.statistics.compact_events[0].pre_tokens == 4096
 
 
 class TestConfigurableThresholds:

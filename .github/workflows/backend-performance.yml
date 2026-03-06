@@ -36,8 +36,14 @@ jobs:
       - name: Run backend perf quick profile (soft gate)
         run: uv run python scripts/run_backend_perf.py --mode quick --output-dir perf-artifacts
 
+      - name: Run parser benchmark quick profile
+        run: uv run python scripts/run_parser_bench.py --mode quick --output-dir perf-artifacts
+
       - name: Publish benchmark summary
-        run: cat perf-artifacts/backend-perf-summary.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          cat perf-artifacts/backend-perf-summary.md >> "$GITHUB_STEP_SUMMARY"
+          printf "\n" >> "$GITHUB_STEP_SUMMARY"
+          cat perf-artifacts/parser-benchmark-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload backend perf artifacts
         uses: actions/upload-artifact@v4
@@ -64,8 +70,14 @@ jobs:
       - name: Run backend perf full profile (soft gate)
         run: uv run python scripts/run_backend_perf.py --mode full --output-dir perf-artifacts
 
+      - name: Run parser benchmark full profile
+        run: uv run python scripts/run_parser_bench.py --mode full --output-dir perf-artifacts
+
       - name: Publish benchmark summary
-        run: cat perf-artifacts/backend-perf-summary.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          cat perf-artifacts/backend-perf-summary.md >> "$GITHUB_STEP_SUMMARY"
+          printf "\n" >> "$GITHUB_STEP_SUMMARY"
+          cat perf-artifacts/parser-benchmark-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload backend perf artifacts
         uses: actions/upload-artifact@v4

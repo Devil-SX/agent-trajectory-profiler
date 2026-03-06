@@ -18,10 +18,9 @@ from agent_vis.parsers.capabilities import get_capability_warnings
 from agent_vis.parsers.claude_code import (
     ClaudeCodeParser,
     calculate_session_statistics,
-    extract_compact_events,
     extract_session_metadata,
     extract_subagent_sessions,
-    parse_jsonl_file,
+    parse_jsonl_file_with_compact_events,
 )
 
 PRIVATE_SYNC_ROOT_ENV = "AGENT_VIS_PRIVATE_SYNC_ROOT"
@@ -102,7 +101,8 @@ def profile_session_file(
         stage_timings["file_stat_ms"] = stat_ms
         file_size_bytes = stat_result.st_size
 
-    messages, parse_ms = _measure(parse_jsonl_file, file_path)
+    parsed_payload, parse_ms = _measure(parse_jsonl_file_with_compact_events, file_path)
+    messages, compact_events = parsed_payload
     stage_timings["parse_jsonl_file_ms"] = parse_ms
     if not messages:
         raise SessionParseError(f"No valid messages found in {file_path}")
@@ -120,11 +120,11 @@ def profile_session_file(
         inactivity_threshold=parser.inactivity_threshold,
         model_timeout_threshold=parser.model_timeout_threshold,
         trajectory_file_size_bytes=file_size_bytes,
+        precomputed_subagent_sessions=subagent_sessions,
     )
     stage_timings["calculate_session_statistics_ms"] = stats_ms
 
-    compact_events, compact_ms = _measure(extract_compact_events, file_path)
-    stage_timings["extract_compact_events_ms"] = compact_ms
+    stage_timings["extract_compact_events_ms"] = 0.0
     statistics.compact_count = len(compact_events)
     statistics.compact_events = compact_events
 

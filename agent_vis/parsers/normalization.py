@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from agent_vis.models import MessageRecord
+from agent_vis.models import CompactEvent, MessageRecord
 
 _MAX_TOOL_RESULT_TEXT_CHARS = 12_000
 _MAX_TOOL_RESULT_JSON_BYTES = 24_000
@@ -237,6 +238,38 @@ class NormalizedMessageIR(BaseModel):
     stop_reason: str | None = None
     stop_sequence: str | None = None
     usage: NormalizedTokenUsageIR | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedCompactEventIR:
+    """Compact-boundary event normalized into a lightweight IR."""
+
+    timestamp: str
+    trigger: str
+    pre_tokens: int
+
+    def to_compact_event(self) -> CompactEvent:
+        return CompactEvent(
+            timestamp=self.timestamp,
+            trigger=self.trigger,
+            pre_tokens=self.pre_tokens,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedEventIR:
+    """Normalized per-line event used by staged parser pipelines."""
+
+    event_kind: str
+    timestamp: str
+    actor: str | None = None
+    record: NormalizedRecordIR | None = None
+    compact_event: NormalizedCompactEventIR | None = None
+
+    def to_message_record(self) -> MessageRecord | None:
+        if self.record is None:
+            return None
+        return self.record.to_message_record()
 
 
 class NormalizedRecordIR(BaseModel):

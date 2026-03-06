@@ -9,6 +9,11 @@ from .framework import (
     render_markdown_summary,
     serialize_report,
 )
+from .parser_benchmark import (
+    render_parser_benchmark_markdown,
+    run_parser_decoder_benchmarks,
+    write_parser_benchmark_artifacts,
+)
 from .sync_profiler import (
     PRIVATE_SYNC_FILE_ENV,
     PRIVATE_SYNC_ROOT_ENV,
@@ -21,6 +26,9 @@ from .sync_profiler import (
 )
 
 __all__ = [
+    "render_parser_benchmark_markdown",
+    "run_parser_decoder_benchmarks",
+    "write_parser_benchmark_artifacts",
     "PRIVATE_SYNC_FILE_ENV",
     "PRIVATE_SYNC_ROOT_ENV",
     "profile_session_file",
