@@ -171,14 +171,19 @@ def _echo_json_payload(payload: Any) -> None:
     click.echo(json.dumps(data, indent=2))
 
 
-def _run_analytics_command(
+def _run_readonly_service_command(
     db_path: Path | None,
-    operation: Callable[[Any], Awaitable[Any]],
+    operation: Callable[[Any], Any],
 ) -> None:
-    """Execute an async analytics service call and print its JSON response."""
+    """Execute a read-only service call and print its JSON response."""
     service = _build_readonly_session_service(db_path)
     try:
-        payload = asyncio.run(operation(service))
+        payload_or_awaitable = operation(service)
+        payload = (
+            asyncio.run(payload_or_awaitable)
+            if asyncio.iscoroutine(payload_or_awaitable)
+            else payload_or_awaitable
+        )
     except ValueError as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
@@ -187,6 +192,26 @@ def _run_analytics_command(
             service._conn.close()
 
     _echo_json_payload(payload)
+
+
+def _run_analytics_command(
+    db_path: Path | None,
+    operation: Callable[[Any], Awaitable[Any]],
+) -> None:
+    """Execute an async analytics service call and print its JSON response."""
+    _run_readonly_service_command(db_path, operation)
+
+
+def _validate_numeric_range(
+    minimum: int | float | None,
+    maximum: int | float | None,
+    *,
+    min_label: str,
+    max_label: str,
+) -> None:
+    """Validate a min/max CLI range pair."""
+    if minimum is not None and maximum is not None and minimum > maximum:
+        raise ValueError(f"{min_label} must be <= {max_label}")
 
 
 @click.group()
@@ -878,6 +903,13 @@ def sync(
     default=None,
     help="Filter sessions created on or before this date (YYYY-MM-DD)",
 )
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Return API-shaped JSON for a single session statistics query",
+)
 def stats(
     session_id: str | None,
     level: str,
@@ -886,6 +918,7 @@ def stats(
     db_path: Path | None,
     start_date: str | None,
     end_date: str | None,
+    json_output: bool,
 ) -> None:
     """
     Query session statistics from the database.
@@ -935,6 +968,11 @@ def stats(
     repo = SessionRepository(conn)
     output_level = OutputLevel(int(level))
 
+    if json_output and not session_id:
+        click.echo("Error: --json requires --session-id.", err=True)
+        conn.close()
+        sys.exit(1)
+
     if session_id:
         statistics = repo.get_statistics(session_id)
         if statistics is None:
@@ -942,7 +980,14 @@ def stats(
             click.echo("Run 'agent-vis sync' first to populate the database.", err=True)
             conn.close()
             sys.exit(1)
-        click.echo(format_session_stats(statistics, session_id, level=output_level))
+        if json_output:
+            from agent_vis.api.models import SessionStatisticsResponse
+
+            _echo_json_payload(
+                SessionStatisticsResponse(session_id=session_id, statistics=statistics)
+            )
+        else:
+            click.echo(format_session_stats(statistics, session_id, level=output_level))
     else:
         rows = repo.list_sessions(
             sort_by=sort_by,
@@ -1109,6 +1154,233 @@ def analyze(
     # 6. Write report
     output.write_text(report, encoding="utf-8")
     click.echo(f"Analysis report written to: {output}", err=True)
+
+
+@main.group()
+def sessions() -> None:
+    """Read-only session queries mirroring the REST API."""
+    pass
+
+
+@sessions.command("list")
+@click.option("--page", type=click.IntRange(min=1), default=1, show_default=True)
+@click.option(
+    "--page-size",
+    type=click.IntRange(min=1, max=200),
+    default=50,
+    show_default=True,
+)
+@click.option("--start-date", default=None, help="Filter sessions on/after this date (YYYY-MM-DD)")
+@click.option("--end-date", default=None, help="Filter sessions on/before this date (YYYY-MM-DD)")
+@click.option("--ecosystem", default=None, help="Filter by ecosystem (e.g. claude_code, codex)")
+@click.option(
+    "--bottleneck",
+    type=click.Choice(["model", "tool", "user"], case_sensitive=False),
+    default=None,
+    help="Filter by bottleneck category.",
+)
+@click.option(
+    "--sort-by",
+    type=click.Choice(
+        ["updated", "created", "tokens", "duration", "automation", "messages"], case_sensitive=False
+    ),
+    default="updated",
+    show_default=True,
+    help="Sort key for session list.",
+)
+@click.option(
+    "--sort-direction",
+    type=click.Choice(["asc", "desc"], case_sensitive=False),
+    default="desc",
+    show_default=True,
+    help="Sort direction.",
+)
+@click.option("--min-tokens", type=click.IntRange(min=0), default=None)
+@click.option("--max-tokens", type=click.IntRange(min=0), default=None)
+@click.option("--min-messages", type=click.IntRange(min=0), default=None)
+@click.option("--max-messages", type=click.IntRange(min=0), default=None)
+@click.option("--min-automation", type=float, default=None)
+@click.option("--max-automation", type=float, default=None)
+@click.option(
+    "--view",
+    type=click.Choice(["logical", "physical"], case_sensitive=False),
+    default="logical",
+    show_default=True,
+    help="Session view mode.",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def sessions_list(
+    page: int,
+    page_size: int,
+    start_date: str | None,
+    end_date: str | None,
+    ecosystem: str | None,
+    bottleneck: str | None,
+    sort_by: str,
+    sort_direction: str,
+    min_tokens: int | None,
+    max_tokens: int | None,
+    min_messages: int | None,
+    max_messages: int | None,
+    min_automation: float | None,
+    max_automation: float | None,
+    view: str,
+    db_path: Path | None,
+) -> None:
+    """Return session list data as API-shaped JSON."""
+    from agent_vis.api.models import SessionListResponse
+
+    try:
+        start_date, end_date = _normalize_cli_date_range(start_date, end_date)
+        _validate_numeric_range(
+            min_tokens,
+            max_tokens,
+            min_label="min_tokens",
+            max_label="max_tokens",
+        )
+        _validate_numeric_range(
+            min_messages,
+            max_messages,
+            min_label="min_messages",
+            max_label="max_messages",
+        )
+        _validate_numeric_range(
+            min_automation,
+            max_automation,
+            min_label="min_automation",
+            max_label="max_automation",
+        )
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    ecosystem_filter = None if ecosystem in (None, "", "all") else ecosystem
+
+    async def _operation(service: Any) -> Any:
+        sessions_payload, total_count = await service.list_sessions(
+            page,
+            page_size,
+            sort_by=sort_by,
+            sort_order=sort_direction.upper(),
+            start_date=start_date,
+            end_date=end_date,
+            ecosystem=ecosystem_filter,
+            bottleneck=bottleneck,
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            min_messages=min_messages,
+            max_messages=max_messages,
+            min_automation=min_automation,
+            max_automation=max_automation,
+            view_mode=view,
+        )
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+        return SessionListResponse(
+            sessions=sessions_payload,
+            count=total_count,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+
+    _run_readonly_service_command(db_path, _operation)
+
+
+@sessions.command("get")
+@click.argument("session_id")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def sessions_get(session_id: str, db_path: Path | None) -> None:
+    """Return session detail as API-shaped JSON."""
+    from agent_vis.api.models import SessionDetailResponse
+
+    async def _operation(service: Any) -> Any:
+        session = await service.get_session(session_id)
+        if session is None:
+            raise ValueError(f"Session '{session_id}' not found.")
+        return SessionDetailResponse(session=session)
+
+    _run_readonly_service_command(db_path, _operation)
+
+
+@sessions.command("statistics")
+@click.argument("session_id")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def sessions_statistics(session_id: str, db_path: Path | None) -> None:
+    """Return session statistics as API-shaped JSON."""
+    from agent_vis.api.models import SessionStatisticsResponse
+
+    async def _operation(service: Any) -> Any:
+        statistics = await service.get_session_statistics(session_id)
+        if statistics is None:
+            raise ValueError(f"Session '{session_id}' not found.")
+        return SessionStatisticsResponse(session_id=session_id, statistics=statistics)
+
+    _run_readonly_service_command(db_path, _operation)
+
+
+@main.command("sync-status")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def sync_status(db_path: Path | None) -> None:
+    """Return sync status as API-shaped JSON."""
+    from agent_vis.api.models import SyncStatusResponse
+
+    def _operation(service: Any) -> Any:
+        return SyncStatusResponse(**service.get_sync_status())
+
+    _run_readonly_service_command(db_path, _operation)
+
+
+@main.command()
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def capabilities(db_path: Path | None) -> None:
+    """Return registered capability manifests as JSON."""
+    from agent_vis.api.models import CapabilityListResponse
+
+    def _operation(service: Any) -> Any:
+        return CapabilityListResponse(capabilities=service.get_capabilities())
+
+    _run_readonly_service_command(db_path, _operation)
+
+
+@main.command("frontend-preferences")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def frontend_preferences(db_path: Path | None) -> None:
+    """Return persisted frontend preferences as JSON."""
+
+    def _operation(service: Any) -> Any:
+        return service.get_frontend_preferences()
+
+    _run_readonly_service_command(db_path, _operation)
 
 
 @main.group()

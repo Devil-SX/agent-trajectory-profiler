@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - CLI parity for analytics GET endpoints via `agent-vis analytics overview|distributions|timeseries|project-comparison|project-swimlane`, including API-aligned default 7-day date normalization, read-only DB-backed service wiring, README examples, and regression coverage (`agent_vis/cli/main.py`, `tests/test_cli_analytics_command.py`, `README.md`, `README.zh.md`).
+- Read-only CLI parity for session listing/detail/statistics JSON, sync status, capability manifests, and frontend preference inspection via `agent-vis sessions *`, `agent-vis sync-status`, `agent-vis capabilities`, `agent-vis frontend-preferences`, plus `agent-vis stats --json` for `/api/sessions/{id}/statistics` parity, with regression coverage and README examples (`agent_vis/cli/main.py`, `tests/test_cli_readonly_command.py`, `README.md`, `README.zh.md`).
 - Parser architecture regression coverage that compares the flattened Claude parse pipeline against staged normalized-event materialization for large `tool_result`, `thinkingMetadata`, `todos`, and `compact_boundary` cases.
 
 ## [1.5.0] - 2026-03-06

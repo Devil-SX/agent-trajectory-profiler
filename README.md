@@ -156,7 +156,23 @@ agent-vis stats --session-id abc123 --level 3        # full detail for one sessi
 agent-vis stats --sort-by total_tokens --limit 10    # top 10 by token usage
 ```
 
-### Mode 5: Cross-Session Analytics (`analytics`)
+### Mode 5: Read-Only API Parity (`sessions`, `sync-status`, `capabilities`, `frontend-preferences`)
+
+Inspect the same structured read models used by the REST API without starting the web server. These commands are read-only and do not trigger `sync` or `dashboard`.
+
+```bash
+agent-vis sessions list --page 1 --page-size 20 --view logical
+agent-vis sessions get abc123
+agent-vis sessions statistics abc123
+agent-vis stats --session-id abc123 --json
+agent-vis sync-status
+agent-vis capabilities
+agent-vis frontend-preferences
+```
+
+Use `agent-vis sessions list` when you want API-shaped pagination/filter output. Keep `agent-vis stats` for human-readable terminal summaries, or add `--json` for exact `/api/sessions/{id}/statistics` parity.
+
+### Mode 6: Cross-Session Analytics (`analytics`)
 
 Query the same aggregated cross-session analytics payloads exposed by the REST API, directly from the terminal as machine-readable JSON.
 
@@ -170,7 +186,7 @@ agent-vis analytics project-swimlane --interval week --project-limit 8
 
 All analytics subcommands align with the API's default `last 7 days` behavior when no date range is supplied, and they accept `--db-path` for querying a non-default SQLite database.
 
-### Mode 6: AI Analysis (`analyze`)
+### Mode 7: AI Analysis (`analyze`)
 
 Invoke Claude to read the raw trajectory and produce an actionable Markdown report with bottleneck analysis, automation degree rating, and improvement recommendations.
 
