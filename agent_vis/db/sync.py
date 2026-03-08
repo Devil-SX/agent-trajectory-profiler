@@ -10,11 +10,15 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from agent_vis.db.repository import SessionRepository
 from agent_vis.exceptions import SessionParseError
 from agent_vis.parsers.base import TrajectoryParser
 from agent_vis.parsers.capabilities import get_capability_warnings
+
+if TYPE_CHECKING:
+    from agent_vis.session_summaries import SessionSummaryCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,9 @@ class SyncResult:
     parsed: int = 0
     skipped: int = 0
     errors: list[str] = field(default_factory=list)
+    summaries_generated: int = 0
+    summaries_skipped: int = 0
+    summaries_failed: int = 0
 
     @property
     def total(self) -> int:
@@ -42,9 +49,15 @@ class SyncEngine:
         result = engine.sync(Path("~/.claude/projects"))
     """
 
-    def __init__(self, repo: SessionRepository, parser: TrajectoryParser) -> None:
+    def __init__(
+        self,
+        repo: SessionRepository,
+        parser: TrajectoryParser,
+        summary_coordinator: SessionSummaryCoordinator | None = None,
+    ) -> None:
         self._repo = repo
         self._parser = parser
+        self._summary_coordinator = summary_coordinator
 
     def sync(self, directory: Path, *, force: bool = False) -> SyncResult:
         """
@@ -64,6 +77,8 @@ class SyncEngine:
         except SessionParseError as exc:
             result.errors.append(str(exc))
             return result
+
+        parsed_sessions = []
 
         with self._repo.transaction():
             for file_path in files:
@@ -184,7 +199,17 @@ class SyncEngine:
                 if stats:
                     self._repo.upsert_statistics(meta.session_id, stats)
 
+                parsed_sessions.append(session)
                 result.parsed += 1
                 logger.debug("Parsed %s -> session %s", file_path.name, meta.session_id)
+
+        if self._summary_coordinator is not None and parsed_sessions:
+            summary_result = self._summary_coordinator.generate_for_sessions(
+                parsed_sessions,
+                ecosystem=self._parser.ecosystem_name,
+            )
+            result.summaries_generated = summary_result.generated
+            result.summaries_skipped = summary_result.skipped
+            result.summaries_failed = summary_result.failed
 
         return result

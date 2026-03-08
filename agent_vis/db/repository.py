@@ -520,6 +520,57 @@ class SessionRepository:
         )
         self._commit_if_needed()
 
+    def upsert_session_summary(
+        self,
+        *,
+        session_id: str,
+        synopsis_hash: str,
+        prompt_version: str,
+        model_id: str,
+        generation_status: str,
+        summary_text: str | None,
+        summary_chars: int | None,
+        generated_at: str | None,
+        error_message: str | None,
+    ) -> None:
+        """Insert or update a persisted session summary row."""
+        self._conn.execute(
+            """            INSERT INTO session_summaries (
+                session_id, synopsis_hash, prompt_version, model_id,
+                generation_status, summary_text, summary_chars, generated_at, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                synopsis_hash = excluded.synopsis_hash,
+                prompt_version = excluded.prompt_version,
+                model_id = excluded.model_id,
+                generation_status = excluded.generation_status,
+                summary_text = excluded.summary_text,
+                summary_chars = excluded.summary_chars,
+                generated_at = excluded.generated_at,
+                error_message = excluded.error_message
+            """,
+            (
+                session_id,
+                synopsis_hash,
+                prompt_version,
+                model_id,
+                generation_status,
+                summary_text,
+                summary_chars,
+                generated_at,
+                error_message,
+            ),
+        )
+        self._commit_if_needed()
+
+    def get_session_summary(self, session_id: str) -> sqlite3.Row | None:
+        """Return persisted session summary row or None."""
+        cur = self._conn.execute(
+            "SELECT * FROM session_summaries WHERE session_id = ?",
+            (session_id,),
+        )
+        return cur.fetchone()
+
     def get_statistics(self, session_id: str) -> SessionStatistics | None:
         """Load and deserialize statistics for a session."""
         cur = self._conn.execute(

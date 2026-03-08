@@ -794,6 +794,30 @@ def parse(
     default=None,
     help="Seconds of model inference gap to count as timeout (default: 600)",
 )
+@click.option(
+    "--summaries/--no-summaries",
+    default=False,
+    help="Generate bounded plain-text session summaries via Codex after sync",
+)
+@click.option(
+    "--summary-model",
+    default=None,
+    help="Codex model override for session summaries (default: use Codex CLI default)",
+)
+@click.option(
+    "--summary-workers",
+    type=click.IntRange(min=1),
+    default=4,
+    show_default=True,
+    help="Maximum concurrent summary workers when --summaries is enabled",
+)
+@click.option(
+    "--summary-max-chars",
+    type=click.IntRange(min=120, max=2000),
+    default=480,
+    show_default=True,
+    help="Maximum characters allowed in each generated summary",
+)
 def sync(
     path: Path | None,
     ecosystem: str,
@@ -801,6 +825,10 @@ def sync(
     db_path: Path | None,
     inactivity_threshold: float | None,
     model_timeout: float | None,
+    summaries: bool,
+    summary_model: str | None,
+    summary_workers: int,
+    summary_max_chars: int,
 ) -> None:
     """
     Incrementally scan and parse agent trajectory files into the database.
@@ -825,6 +853,11 @@ def sync(
     from agent_vis.db.repository import SessionRepository
     from agent_vis.db.sync import SyncEngine
     from agent_vis.parsers.registry import get_parser
+    from agent_vis.session_summaries import (
+        CodexSessionSummaryRunner,
+        SessionSummaryCoordinator,
+        SummaryGenerationConfig,
+    )
 
     default_path = Path.home() / ".claude" / "projects"
     if ecosystem == "codex":
@@ -845,7 +878,20 @@ def sync(
 
     conn = get_connection(db_path)
     repo = SessionRepository(conn)
-    engine = SyncEngine(repo, parser)
+    summary_coordinator = None
+    if summaries:
+        summary_config = SummaryGenerationConfig(
+            enabled=True,
+            model=summary_model,
+            max_workers=summary_workers,
+            max_chars=summary_max_chars,
+        )
+        summary_coordinator = SessionSummaryCoordinator(
+            repo,
+            CodexSessionSummaryRunner(),
+            summary_config,
+        )
+    engine = SyncEngine(repo, parser, summary_coordinator=summary_coordinator)
 
     click.echo(f"Scanning: {scan_path}", err=True)
     result = engine.sync(scan_path, force=force)
@@ -856,6 +902,14 @@ def sync(
         f"{len(result.errors)} errors",
         err=True,
     )
+    if summaries:
+        click.echo(
+            "Summary stage: "
+            f"{result.summaries_generated} generated, "
+            f"{result.summaries_skipped} skipped, "
+            f"{result.summaries_failed} failed",
+            err=True,
+        )
     for err in result.errors[:10]:
         click.echo(f"  - {err}", err=True)
 

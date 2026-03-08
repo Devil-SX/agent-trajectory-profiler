@@ -144,7 +144,10 @@ Scan session directories, detect new/changed files by mtime + size, parse them, 
 agent-vis sync                                        # scan default directory
 agent-vis sync --path ~/.claude/projects/my-proj/     # specific directory
 agent-vis sync --force                                # re-parse everything
+agent-vis sync --summaries --summary-workers 4        # generate bounded plain-text summaries via Codex
 ```
+
+When `--summaries` is enabled, sync runs a post-parse worker pool that builds a provider-agnostic `SessionSynopsis`, calls `codex exec --ephemeral` headlessly, truncates the plain-text output to the repository budget, and stores summary metadata in SQLite for incremental reuse. This stage is failure-isolated from parse/statistics persistence.
 
 ### Mode 4: Database Stats (`stats`)
 

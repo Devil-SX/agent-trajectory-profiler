@@ -41,6 +41,21 @@ CREATE TABLE IF NOT EXISTS session_statistics (
     computed_at     TEXT NOT NULL
 );
 
+
+CREATE TABLE IF NOT EXISTS session_summaries (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+    synopsis_hash TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    generation_status TEXT NOT NULL,
+    summary_text TEXT,
+    summary_chars INTEGER,
+    generated_at TEXT,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_summaries_status ON session_summaries(generation_status);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_created_at  ON sessions(created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at  ON sessions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_parsed_at   ON sessions(parsed_at);
