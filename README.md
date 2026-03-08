@@ -8,7 +8,7 @@ Parses `.jsonl` session files from `~/.claude/projects/`, computes analytics (me
 
 ## Features
 
-- **Multi-mode CLI** — `serve` / `parse` / `sync` / `stats` / `analyze`
+- **Multi-mode CLI** — `serve` / `parse` / `sync` / `stats` / `analytics` / `analyze`
 - **Three output detail levels** — L1 one-liner, L2 standard, L3 full detail
 - **Time attribution** — model inference / tool execution / user idle / inactive
 - **Bottleneck detection** — identifies dominant time category
@@ -29,6 +29,7 @@ graph LR
     B --> D["CLI Output"]
     C --> E["Web Dashboard"]
     C --> F["stats Command"]
+    C --> H["analytics Commands"]
     B --> G["AI Analysis"]
 ```
 
@@ -155,7 +156,21 @@ agent-vis stats --session-id abc123 --level 3        # full detail for one sessi
 agent-vis stats --sort-by total_tokens --limit 10    # top 10 by token usage
 ```
 
-### Mode 5: AI Analysis (`analyze`)
+### Mode 5: Cross-Session Analytics (`analytics`)
+
+Query the same aggregated cross-session analytics payloads exposed by the REST API, directly from the terminal as machine-readable JSON.
+
+```bash
+agent-vis analytics overview
+agent-vis analytics distributions --dimension tool --ecosystem codex
+agent-vis analytics timeseries --interval week --start-date 2026-03-01 --end-date 2026-03-07
+agent-vis analytics project-comparison --limit 15
+agent-vis analytics project-swimlane --interval week --project-limit 8
+```
+
+All analytics subcommands align with the API's default `last 7 days` behavior when no date range is supplied, and they accept `--db-path` for querying a non-default SQLite database.
+
+### Mode 6: AI Analysis (`analyze`)
 
 Invoke Claude to read the raw trajectory and produce an actionable Markdown report with bottleneck analysis, automation degree rating, and improvement recommendations.
 
@@ -189,6 +204,11 @@ When running in `serve` mode:
 | `GET /api/sessions/{id}` | Session detail with messages and subagents |
 | `GET /api/sessions/{id}/statistics` | Computed analytics for a session |
 | `GET /api/sync/status` | Sync database status |
+| `GET /api/analytics/overview` | Cross-session overview metrics |
+| `GET /api/analytics/distributions` | Bottleneck/project/tool distribution metrics |
+| `GET /api/analytics/timeseries` | Day/week activity trends |
+| `GET /api/analytics/project-comparison` | Project-level KPI comparison |
+| `GET /api/analytics/project-swimlane` | Project swimlane visualization data |
 | `GET /health` | Health check |
 | `GET /docs` | Interactive Swagger UI |
 

@@ -1,14 +1,18 @@
 """Main CLI entry point for Agent Trajectory Profiler."""
 
+import asyncio
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
 import sys
 import time
+from collections.abc import Awaitable, Callable
+from datetime import date, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -105,6 +109,84 @@ def _terminate_subprocess(
         click.echo(f"{label} did not stop in time. Killing it.", err=True)
         process.kill()
         process.wait(timeout=3.0)
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _normalize_cli_date_range(
+    start_date: str | None,
+    end_date: str | None,
+    *,
+    default_last_days: int | None = None,
+) -> tuple[str | None, str | None]:
+    """Validate CLI date options and apply API-matching defaults."""
+    if default_last_days is not None and not start_date and not end_date:
+        end = date.today()
+        start = end - timedelta(days=max(default_last_days - 1, 0))
+        start_date = start.isoformat()
+        end_date = end.isoformat()
+
+    if start_date is not None and not _DATE_RE.match(start_date):
+        raise ValueError(f"Invalid --start-date format: '{start_date}'. Expected YYYY-MM-DD.")
+    if end_date is not None and not _DATE_RE.match(end_date):
+        raise ValueError(f"Invalid --end-date format: '{end_date}'. Expected YYYY-MM-DD.")
+    if start_date and end_date and start_date > end_date:
+        raise ValueError("--start-date must be on or before --end-date.")
+
+    return start_date, end_date
+
+
+def _build_readonly_session_service(db_path: Path | None):
+    """Create a SessionService wired to the current DB without startup sync side effects."""
+    from agent_vis.api.config import get_settings
+    from agent_vis.api.service import SessionService
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+
+    settings = get_settings()
+    resolved_db_path = (db_path or settings.db_path).expanduser().resolve()
+    service = SessionService(
+        settings.session_path,
+        codex_session_path=settings.codex_session_path,
+        single_session=settings.single_session,
+        db_path=resolved_db_path,
+        inactivity_threshold=settings.inactivity_threshold,
+        model_timeout_threshold=settings.model_timeout_threshold,
+    )
+
+    try:
+        conn = get_connection(resolved_db_path, create=False)
+    except Exception:
+        return service
+
+    service._conn = conn
+    service._repo = SessionRepository(conn)
+    return service
+
+
+def _echo_json_payload(payload: Any) -> None:
+    """Render a CLI payload as pretty JSON."""
+    data = payload.model_dump(mode="json") if hasattr(payload, "model_dump") else payload
+    click.echo(json.dumps(data, indent=2))
+
+
+def _run_analytics_command(
+    db_path: Path | None,
+    operation: Callable[[Any], Awaitable[Any]],
+) -> None:
+    """Execute an async analytics service call and print its JSON response."""
+    service = _build_readonly_session_service(db_path)
+    try:
+        payload = asyncio.run(operation(service))
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    finally:
+        if getattr(service, "_conn", None) is not None:
+            service._conn.close()
+
+    _echo_json_payload(payload)
 
 
 @click.group()
@@ -1027,6 +1109,288 @@ def analyze(
     # 6. Write report
     output.write_text(report, encoding="utf-8")
     click.echo(f"Analysis report written to: {output}", err=True)
+
+
+@main.group()
+def analytics() -> None:
+    """Read-only analytics queries mirroring the REST API."""
+    pass
+
+
+@analytics.command("overview")
+@click.option(
+    "--start-date",
+    default=None,
+    help="Range start date (YYYY-MM-DD)",
+)
+@click.option(
+    "--end-date",
+    default=None,
+    help="Range end date (YYYY-MM-DD)",
+)
+@click.option(
+    "--ecosystem",
+    default=None,
+    help="Optional source filter (e.g. claude_code, codex)",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def analytics_overview(
+    start_date: str | None,
+    end_date: str | None,
+    ecosystem: str | None,
+    db_path: Path | None,
+) -> None:
+    """Return cross-session overview metrics as JSON."""
+    try:
+        start_date, end_date = _normalize_cli_date_range(start_date, end_date, default_last_days=7)
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    async def _operation(service: Any) -> Any:
+        return await service.get_analytics_overview(start_date, end_date, ecosystem=ecosystem)
+
+    _run_analytics_command(db_path, _operation)
+
+
+@analytics.command("distributions")
+@click.option(
+    "--dimension",
+    type=click.Choice(
+        [
+            "bottleneck",
+            "project",
+            "branch",
+            "automation_band",
+            "tool",
+            "session_token_share",
+        ],
+        case_sensitive=False,
+    ),
+    default="bottleneck",
+    show_default=True,
+    help="Distribution dimension to aggregate.",
+)
+@click.option(
+    "--start-date",
+    default=None,
+    help="Range start date (YYYY-MM-DD)",
+)
+@click.option(
+    "--end-date",
+    default=None,
+    help="Range end date (YYYY-MM-DD)",
+)
+@click.option(
+    "--ecosystem",
+    default=None,
+    help="Optional source filter (e.g. claude_code, codex)",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def analytics_distributions(
+    dimension: str,
+    start_date: str | None,
+    end_date: str | None,
+    ecosystem: str | None,
+    db_path: Path | None,
+) -> None:
+    """Return analytics distributions as JSON."""
+    try:
+        start_date, end_date = _normalize_cli_date_range(start_date, end_date, default_last_days=7)
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    async def _operation(service: Any) -> Any:
+        return await service.get_analytics_distribution(
+            dimension,
+            start_date,
+            end_date,
+            ecosystem=ecosystem,
+        )
+
+    _run_analytics_command(db_path, _operation)
+
+
+@analytics.command("timeseries")
+@click.option(
+    "--interval",
+    type=click.Choice(["day", "week"], case_sensitive=False),
+    default="day",
+    show_default=True,
+    help="Aggregation interval.",
+)
+@click.option(
+    "--start-date",
+    default=None,
+    help="Range start date (YYYY-MM-DD)",
+)
+@click.option(
+    "--end-date",
+    default=None,
+    help="Range end date (YYYY-MM-DD)",
+)
+@click.option(
+    "--ecosystem",
+    default=None,
+    help="Optional source filter (e.g. claude_code, codex)",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def analytics_timeseries(
+    interval: str,
+    start_date: str | None,
+    end_date: str | None,
+    ecosystem: str | None,
+    db_path: Path | None,
+) -> None:
+    """Return analytics time-series aggregates as JSON."""
+    try:
+        start_date, end_date = _normalize_cli_date_range(start_date, end_date, default_last_days=7)
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    async def _operation(service: Any) -> Any:
+        return await service.get_analytics_timeseries(
+            start_date,
+            end_date,
+            interval,
+            ecosystem=ecosystem,
+        )
+
+    _run_analytics_command(db_path, _operation)
+
+
+@analytics.command("project-comparison")
+@click.option(
+    "--start-date",
+    default=None,
+    help="Range start date (YYYY-MM-DD)",
+)
+@click.option(
+    "--end-date",
+    default=None,
+    help="Range end date (YYYY-MM-DD)",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1, max=50),
+    default=10,
+    show_default=True,
+    help="Maximum projects to return.",
+)
+@click.option(
+    "--ecosystem",
+    default=None,
+    help="Optional source filter (e.g. claude_code, codex)",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def analytics_project_comparison(
+    start_date: str | None,
+    end_date: str | None,
+    limit: int,
+    ecosystem: str | None,
+    db_path: Path | None,
+) -> None:
+    """Return project-level comparison metrics as JSON."""
+    try:
+        start_date, end_date = _normalize_cli_date_range(start_date, end_date, default_last_days=7)
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    async def _operation(service: Any) -> Any:
+        return await service.get_project_comparison(
+            start_date,
+            end_date,
+            limit,
+            ecosystem=ecosystem,
+        )
+
+    _run_analytics_command(db_path, _operation)
+
+
+@analytics.command("project-swimlane")
+@click.option(
+    "--interval",
+    type=click.Choice(["day", "week"], case_sensitive=False),
+    default="day",
+    show_default=True,
+    help="Aggregation interval.",
+)
+@click.option(
+    "--start-date",
+    default=None,
+    help="Range start date (YYYY-MM-DD)",
+)
+@click.option(
+    "--end-date",
+    default=None,
+    help="Range end date (YYYY-MM-DD)",
+)
+@click.option(
+    "--project-limit",
+    type=click.IntRange(min=1, max=50),
+    default=12,
+    show_default=True,
+    help="Maximum projects to include in the swimlane.",
+)
+@click.option(
+    "--ecosystem",
+    default=None,
+    help="Optional source filter (e.g. claude_code, codex)",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def analytics_project_swimlane(
+    interval: str,
+    start_date: str | None,
+    end_date: str | None,
+    project_limit: int,
+    ecosystem: str | None,
+    db_path: Path | None,
+) -> None:
+    """Return project swimlane points as JSON."""
+    try:
+        start_date, end_date = _normalize_cli_date_range(start_date, end_date, default_last_days=7)
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    async def _operation(service: Any) -> Any:
+        return await service.get_project_swimlane(
+            start_date,
+            end_date,
+            interval,
+            project_limit,
+            ecosystem=ecosystem,
+        )
+
+    _run_analytics_command(db_path, _operation)
 
 
 @main.group()
