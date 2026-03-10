@@ -167,6 +167,16 @@ Embedding request controls:
 - `--embedding-max-retries`: retries for transient `429`, `5xx`, and network failures
 - `--embedding-workers`: concurrent embedding workers
 
+Cluster the persisted embeddings offline with a deterministic cosine-threshold heuristic:
+
+```bash
+agent-vis clusters run                                 # cluster latest persisted embeddings
+agent-vis clusters run --similarity-threshold 0.95     # tighten cluster joining threshold
+agent-vis clusters list                                # inspect the latest clustering snapshot
+```
+
+`agent-vis clusters run` does not reparse sessions or regenerate embeddings. It reads completed rows from `session_summary_embeddings` for one embedding model, sorts sessions by `session_id`, and applies a repeatable greedy cosine-similarity threshold rule to produce cluster assignments. The latest clustering snapshot is persisted in SQLite and can be inspected with `agent-vis clusters list`.
+
 ### Mode 4: Database Stats (`stats`)
 
 Query the SQLite database to view session statistics without re-parsing.
@@ -192,6 +202,15 @@ agent-vis frontend-preferences
 ```
 
 Use `agent-vis sessions list` when you want API-shaped pagination/filter output. Keep `agent-vis stats` for human-readable terminal summaries, or add `--json` for exact `/api/sessions/{id}/statistics` parity.
+
+### Mode 6: Derived Semantic Classes (`clusters`)
+
+Inspect the latest repository-owned clustering snapshot built from persisted session-summary embeddings.
+
+```bash
+agent-vis clusters run --embedding-model openai/text-embedding-3-small
+agent-vis clusters list
+```
 
 ### Mode 6: Cross-Session Analytics (`analytics`)
 

@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from agent_vis.models import SessionStatistics
+
+if TYPE_CHECKING:
+    from agent_vis.session_clustering import SessionClusterMembership
 
 SessionViewMode = Literal["logical", "physical"]
 
@@ -644,6 +648,106 @@ class SessionRepository:
             (session_id,),
         )
         return cur.fetchone()
+
+    def list_completed_session_summary_embeddings(
+        self,
+        *,
+        model_id: str,
+    ) -> list[sqlite3.Row]:
+        """Return completed persisted embeddings for one embedding model."""
+        cur = self._conn.execute(
+            """\
+            SELECT session_id, model_id, embedding_dimension, vector_json, generated_at
+            FROM session_summary_embeddings
+            WHERE generation_status = 'completed'
+              AND model_id = ?
+              AND vector_json IS NOT NULL
+              AND TRIM(vector_json) != ''
+            ORDER BY session_id
+            """,
+            (model_id,),
+        )
+        return cur.fetchall()
+
+    @staticmethod
+    def parse_embedding_vector(vector_json: str | None) -> list[float]:
+        """Deserialize a persisted embedding vector payload."""
+        if not vector_json:
+            return []
+        raw = json.loads(vector_json)
+        if not isinstance(raw, list):
+            return []
+        return [float(value) for value in raw]
+
+    def replace_session_clusters(
+        self,
+        *,
+        run_id: str,
+        generated_at: str,
+        algorithm: str,
+        algorithm_version: str,
+        source_model_id: str,
+        similarity_threshold: float,
+        session_count: int,
+        cluster_count: int,
+        memberships: list[SessionClusterMembership],
+    ) -> None:
+        """Replace the latest clustering snapshot with a new run and memberships."""
+        with self.transaction():
+            self._conn.execute("DELETE FROM session_cluster_memberships")
+            self._conn.execute("DELETE FROM session_cluster_runs")
+            self._conn.execute(
+                """\
+                INSERT INTO session_cluster_runs (
+                    run_id, generated_at, algorithm, algorithm_version,
+                    source_model_id, similarity_threshold, session_count, cluster_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    generated_at,
+                    algorithm,
+                    algorithm_version,
+                    source_model_id,
+                    similarity_threshold,
+                    session_count,
+                    cluster_count,
+                ),
+            )
+            if memberships:
+                self._conn.executemany(
+                    """\
+                    INSERT INTO session_cluster_memberships (run_id, cluster_id, session_id)
+                    VALUES (?, ?, ?)
+                    """,
+                    [(run_id, item.cluster_id, item.session_id) for item in memberships],
+                )
+
+    def get_latest_session_cluster_run(self) -> sqlite3.Row | None:
+        """Return the latest clustering run metadata, if any."""
+        cur = self._conn.execute("""\
+            SELECT *
+            FROM session_cluster_runs
+            ORDER BY generated_at DESC
+            LIMIT 1
+            """)
+        return cur.fetchone()
+
+    def list_latest_session_cluster_memberships(self) -> list[sqlite3.Row]:
+        """Return memberships for the latest clustering snapshot."""
+        run = self.get_latest_session_cluster_run()
+        if run is None:
+            return []
+        cur = self._conn.execute(
+            """\
+            SELECT scm.run_id, scm.cluster_id, scm.session_id
+            FROM session_cluster_memberships scm
+            WHERE scm.run_id = ?
+            ORDER BY scm.cluster_id, scm.session_id
+            """,
+            (run["run_id"],),
+        )
+        return cur.fetchall()
 
     def get_statistics(self, session_id: str) -> SessionStatistics | None:
         """Load and deserialize statistics for a session."""

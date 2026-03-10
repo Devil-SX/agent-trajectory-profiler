@@ -73,6 +73,27 @@ CREATE INDEX IF NOT EXISTS idx_session_summary_embeddings_status
 CREATE INDEX IF NOT EXISTS idx_session_summary_embeddings_model
     ON session_summary_embeddings(model_id);
 
+CREATE TABLE IF NOT EXISTS session_cluster_runs (
+    run_id TEXT PRIMARY KEY,
+    generated_at TEXT NOT NULL,
+    algorithm TEXT NOT NULL,
+    algorithm_version TEXT NOT NULL,
+    source_model_id TEXT NOT NULL,
+    similarity_threshold REAL NOT NULL,
+    session_count INTEGER NOT NULL,
+    cluster_count INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_cluster_memberships (
+    run_id TEXT NOT NULL REFERENCES session_cluster_runs(run_id) ON DELETE CASCADE,
+    cluster_id TEXT NOT NULL,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    PRIMARY KEY (run_id, session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_cluster_memberships_cluster
+    ON session_cluster_memberships(cluster_id);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_created_at  ON sessions(created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at  ON sessions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_parsed_at   ON sessions(parsed_at);

@@ -166,6 +166,16 @@ Embedding 请求控制：
 - `--embedding-max-retries`：对瞬时 `429`、`5xx` 和网络错误的重试次数
 - `--embedding-workers`：并发 embedding worker 数量
 
+对已持久化 embedding 做离线聚类：
+
+```bash
+agent-vis clusters run                                 # 对最新持久化 embedding 做聚类
+agent-vis clusters run --similarity-threshold 0.95     # 提高聚类合并阈值
+agent-vis clusters list                                # 查看最新聚类快照
+```
+
+`agent-vis clusters run` 不会重新解析 session，也不会重新生成 embedding。它会读取 `session_summary_embeddings` 中某个 embedding 模型的完成记录，按 `session_id` 排序后应用可重复的 greedy cosine-threshold 规则生成 cluster assignment，并把最新聚类快照持久化到 SQLite；随后可用 `agent-vis clusters list` 直接检查结果。
+
 ### 模式四：数据库统计 (`stats`)
 
 从 SQLite 数据库查询会话统计信息，无需重新解析。
@@ -191,6 +201,15 @@ agent-vis frontend-preferences
 ```
 
 需要 API 形状的分页/过滤结果时，使用 `agent-vis sessions list`；需要人类可读摘要时继续使用 `agent-vis stats`，若要与 `/api/sessions/{id}/statistics` 完全对齐，则加上 `--json`。
+
+### 模式六：派生语义类别（`clusters`）
+
+查看基于 session summary embedding 生成的最新仓库内聚类快照。
+
+```bash
+agent-vis clusters run --embedding-model openai/text-embedding-3-small
+agent-vis clusters list
+```
 
 ### 模式六：跨会话分析 (`analytics`)
 

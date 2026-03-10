@@ -983,6 +983,85 @@ def sync(
         click.echo(f"  - {err}", err=True)
 
 
+@main.group()
+def clusters() -> None:
+    """Inspect persisted embedding clusters."""
+    pass
+
+
+@clusters.command("run")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+@click.option(
+    "--embedding-model",
+    default="openai/text-embedding-3-small",
+    show_default=True,
+    help="Embedding model ID to cluster",
+)
+@click.option(
+    "--similarity-threshold",
+    type=click.FloatRange(min=0.0, max=1.0),
+    default=0.92,
+    show_default=True,
+    help="Minimum cosine similarity required to join an existing cluster",
+)
+def clusters_run(
+    db_path: Path | None,
+    embedding_model: str,
+    similarity_threshold: float,
+) -> None:
+    """Cluster persisted session-summary embeddings into deterministic classes."""
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+    from agent_vis.session_clustering import SessionClusterConfig, SessionClusteringCoordinator
+
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    try:
+        result = SessionClusteringCoordinator(
+            repo,
+            SessionClusterConfig(
+                model_id=embedding_model,
+                similarity_threshold=similarity_threshold,
+            ),
+        ).run()
+    finally:
+        conn.close()
+
+    _echo_json_payload(result.to_dict())
+
+
+@clusters.command("list")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+def clusters_list(db_path: Path | None) -> None:
+    """List the latest persisted clustering snapshot."""
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    try:
+        run = repo.get_latest_session_cluster_run()
+        memberships = repo.list_latest_session_cluster_memberships()
+    finally:
+        conn.close()
+
+    payload = {
+        "run": dict(run) if run is not None else None,
+        "memberships": [dict(row) for row in memberships],
+    }
+    _echo_json_payload(payload)
+
+
 @main.command()
 @click.option(
     "--session-id",

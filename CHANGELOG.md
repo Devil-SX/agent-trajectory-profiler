@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-03-10
+
+> **Code Stats** | Total: 87,426 lines | Delta: +247 (-1) = **+246 net** | Change: **+0.7%** vs v1.6.0
+
+### Added
+
+- Offline deterministic clustering for persisted session-summary embeddings via `agent-vis clusters run|list`, backed by repository-owned cluster snapshot tables, repeatable cosine-threshold grouping, latest-run inspection output, and regression coverage for grouping, persistence, rerun replacement, and empty/small datasets (`agent_vis/session_clustering.py`, `agent_vis/db/*`, `agent_vis/cli/main.py`, `tests/test_session_clustering.py`, `README.md`, `README.zh.md`).
+
 ## [1.6.0] - 2026-03-10
 
 > **Code Stats** | Total: 86,788 lines | Delta: +2,698 (-15) = **+2,683 net** | Change: **+4.5%** vs v1.5.0
