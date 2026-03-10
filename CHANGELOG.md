@@ -6,16 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
+## [1.6.0] - 2026-03-10
 
-- Claude JSONL parsing now uses a flattened single-pass hot path for message and compact-event materialization, removing the staged `NormalizedEventIR -> NormalizedRecordIR -> MessageRecord` conversion from the main sync parse path while keeping canonical/staged helpers available for compatibility.
+> **Code Stats** | Total: 86,788 lines | Delta: +2,698 (-15) = **+2,683 net** | Change: **+4.5%** vs v1.5.0
 
 ### Added
 
 - CLI parity for analytics GET endpoints via `agent-vis analytics overview|distributions|timeseries|project-comparison|project-swimlane`, including API-aligned default 7-day date normalization, read-only DB-backed service wiring, README examples, and regression coverage (`agent_vis/cli/main.py`, `tests/test_cli_analytics_command.py`, `README.md`, `README.zh.md`).
 - Read-only CLI parity for session listing/detail/statistics JSON, sync status, capability manifests, and frontend preference inspection via `agent-vis sessions *`, `agent-vis sync-status`, `agent-vis capabilities`, `agent-vis frontend-preferences`, plus `agent-vis stats --json` for `/api/sessions/{id}/statistics` parity, with regression coverage and README examples (`agent_vis/cli/main.py`, `tests/test_cli_readonly_command.py`, `README.md`, `README.zh.md`).
 - Optional sync-time plain-text session summary generation via Codex headless, backed by provider-agnostic `SessionSynopsis` inputs, bounded summary-length enforcement, concurrent worker fan-out, SQLite `session_summaries` persistence, incremental fingerprint skipping, and regression coverage for success/skip/failure paths (`agent_vis/session_summaries.py`, `agent_vis/prompts/session_summary.py`, `agent_vis/db/*`, `tests/test_session_summaries.py`, `README.md`, `README.zh.md`).
+- Optional sync-time OpenRouter embedding generation from persisted plain-text session summaries, backed by repository-owned `session_summary_embeddings` storage, summary-hash incremental skipping, timeout/retry controls, and regression coverage for payload construction, persistence, skip logic, and failure isolation (`agent_vis/session_embeddings.py`, `agent_vis/db/*`, `agent_vis/cli/main.py`, `tests/test_session_embeddings.py`, `README.md`, `README.zh.md`).
 - Parser architecture regression coverage that compares the flattened Claude parse pipeline against staged normalized-event materialization for large `tool_result`, `thinkingMetadata`, `todos`, and `compact_boundary` cases.
+
+### Changed
+
+- Claude JSONL parsing now uses a flattened single-pass hot path for message and compact-event materialization, removing the staged `NormalizedEventIR -> NormalizedRecordIR -> MessageRecord` conversion from the main sync parse path while keeping canonical/staged helpers available for compatibility.
 
 ## [1.5.0] - 2026-03-06
 

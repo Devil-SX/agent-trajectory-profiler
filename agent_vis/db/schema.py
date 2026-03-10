@@ -56,6 +56,23 @@ CREATE TABLE IF NOT EXISTS session_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_session_summaries_status ON session_summaries(generation_status);
 
+CREATE TABLE IF NOT EXISTS session_summary_embeddings (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+    summary_hash TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    generation_status TEXT NOT NULL,
+    embedding_dimension INTEGER,
+    vector_json TEXT,
+    generated_at TEXT,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_summary_embeddings_status
+    ON session_summary_embeddings(generation_status);
+CREATE INDEX IF NOT EXISTS idx_session_summary_embeddings_model
+    ON session_summary_embeddings(model_id);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_created_at  ON sessions(created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at  ON sessions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_parsed_at   ON sessions(parsed_at);

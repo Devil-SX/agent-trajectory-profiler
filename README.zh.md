@@ -144,9 +144,27 @@ agent-vis sync                                        # 扫描默认目录
 agent-vis sync --path ~/.claude/projects/my-proj/     # 指定目录
 agent-vis sync --force                                # 强制全量重新解析
 agent-vis sync --summaries --summary-workers 4        # 通过 Codex 生成受限长度的纯文本摘要
+agent-vis sync --embeddings                           # 通过 OpenRouter 对已持久化摘要做向量化
+agent-vis sync --summaries --embeddings               # 同一次 sync 内先生成摘要，再生成 embedding
 ```
 
 开启 `--summaries` 后，sync 会在 parse 之后启动独立 worker 池，先构建 provider-agnostic 的 `SessionSynopsis`，再用 `codex exec --ephemeral` 做无交互摘要生成，并将受仓库预算限制的纯文本摘要及元数据持久化到 SQLite，供后续增量复用。该阶段失败不会回滚 parse/statistics 持久化结果。
+
+开启 `--embeddings` 后，sync 会读取 `session_summaries` 中已完成的摘要，只把受限长度的纯文本 `summary_text` 发送给 OpenRouter embedding API，并将向量与元数据持久化到 SQLite，供后续相似度分析或聚类复用。原始 session payload 不会发给 embedding provider。当摘要指纹和 embedding 模型都未变化时会自动跳过重算；embedding 阶段失败也不会回滚 parse/statistics/summary 的结果。
+
+OpenRouter 配置约定：
+
+- `OPENROUTER_API_KEY`（必需）：embedding 请求使用的 bearer token
+- `OPENROUTER_BASE_URL`（可选）：覆盖默认地址 `https://openrouter.ai/api/v1`
+- `OPENROUTER_HTTP_REFERER`（可选）：透传为 `HTTP-Referer`
+- `OPENROUTER_X_TITLE`（可选）：透传为 `X-Title`
+
+Embedding 请求控制：
+
+- `--embedding-model`：模型 ID，默认 `openai/text-embedding-3-small`
+- `--embedding-timeout`：单次请求超时时间（秒）
+- `--embedding-max-retries`：对瞬时 `429`、`5xx` 和网络错误的重试次数
+- `--embedding-workers`：并发 embedding worker 数量
 
 ### 模式四：数据库统计 (`stats`)
 

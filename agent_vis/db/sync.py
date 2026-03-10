@@ -18,6 +18,7 @@ from agent_vis.parsers.base import TrajectoryParser
 from agent_vis.parsers.capabilities import get_capability_warnings
 
 if TYPE_CHECKING:
+    from agent_vis.session_embeddings import SessionEmbeddingCoordinator
     from agent_vis.session_summaries import SessionSummaryCoordinator
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,9 @@ class SyncResult:
     summaries_generated: int = 0
     summaries_skipped: int = 0
     summaries_failed: int = 0
+    embeddings_generated: int = 0
+    embeddings_skipped: int = 0
+    embeddings_failed: int = 0
 
     @property
     def total(self) -> int:
@@ -54,10 +58,12 @@ class SyncEngine:
         repo: SessionRepository,
         parser: TrajectoryParser,
         summary_coordinator: SessionSummaryCoordinator | None = None,
+        embedding_coordinator: SessionEmbeddingCoordinator | None = None,
     ) -> None:
         self._repo = repo
         self._parser = parser
         self._summary_coordinator = summary_coordinator
+        self._embedding_coordinator = embedding_coordinator
 
     def sync(self, directory: Path, *, force: bool = False) -> SyncResult:
         """
@@ -211,5 +217,16 @@ class SyncEngine:
             result.summaries_generated = summary_result.generated
             result.summaries_skipped = summary_result.skipped
             result.summaries_failed = summary_result.failed
+
+        if self._embedding_coordinator is not None:
+            target_session_ids = [
+                session.metadata.session_id for session in parsed_sessions
+            ] or None
+            embedding_result = self._embedding_coordinator.generate_for_completed_summaries(
+                session_ids=target_session_ids
+            )
+            result.embeddings_generated = embedding_result.generated
+            result.embeddings_skipped = embedding_result.skipped
+            result.embeddings_failed = embedding_result.failed
 
         return result

@@ -145,9 +145,27 @@ agent-vis sync                                        # scan default directory
 agent-vis sync --path ~/.claude/projects/my-proj/     # specific directory
 agent-vis sync --force                                # re-parse everything
 agent-vis sync --summaries --summary-workers 4        # generate bounded plain-text summaries via Codex
+agent-vis sync --embeddings                           # embed persisted summaries via OpenRouter
+agent-vis sync --summaries --embeddings               # generate summaries, then embed them in the same run
 ```
 
 When `--summaries` is enabled, sync runs a post-parse worker pool that builds a provider-agnostic `SessionSynopsis`, calls `codex exec --ephemeral` headlessly, truncates the plain-text output to the repository budget, and stores summary metadata in SQLite for incremental reuse. This stage is failure-isolated from parse/statistics persistence.
+
+When `--embeddings` is enabled, sync reads completed rows from `session_summaries`, sends the bounded plain-text `summary_text` to OpenRouter's embeddings API, and stores vector metadata in SQLite for later similarity analysis. Raw session payloads are never sent to the embedding provider. Re-embedding is skipped when both the persisted summary fingerprint and embedding model are unchanged, and embedding failures do not roll back parse/statistics/summary writes.
+
+OpenRouter configuration contract:
+
+- `OPENROUTER_API_KEY` (required): bearer token used for embedding requests
+- `OPENROUTER_BASE_URL` (optional): override the default `https://openrouter.ai/api/v1`
+- `OPENROUTER_HTTP_REFERER` (optional): forwarded as `HTTP-Referer`
+- `OPENROUTER_X_TITLE` (optional): forwarded as `X-Title`
+
+Embedding request controls:
+
+- `--embedding-model`: model ID, defaults to `openai/text-embedding-3-small`
+- `--embedding-timeout`: per-request timeout in seconds
+- `--embedding-max-retries`: retries for transient `429`, `5xx`, and network failures
+- `--embedding-workers`: concurrent embedding workers
 
 ### Mode 4: Database Stats (`stats`)
 

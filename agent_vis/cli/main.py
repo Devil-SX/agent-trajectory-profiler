@@ -818,6 +818,38 @@ def parse(
     show_default=True,
     help="Maximum characters allowed in each generated summary",
 )
+@click.option(
+    "--embeddings/--no-embeddings",
+    default=False,
+    help="Generate OpenRouter embeddings from persisted summary text after sync",
+)
+@click.option(
+    "--embedding-model",
+    default="openai/text-embedding-3-small",
+    show_default=True,
+    help="OpenRouter embedding model ID used for persisted session summaries",
+)
+@click.option(
+    "--embedding-workers",
+    type=click.IntRange(min=1),
+    default=4,
+    show_default=True,
+    help="Maximum concurrent embedding workers when --embeddings is enabled",
+)
+@click.option(
+    "--embedding-timeout",
+    type=click.FloatRange(min=1.0),
+    default=30.0,
+    show_default=True,
+    help="Per-request timeout in seconds for OpenRouter embedding calls",
+)
+@click.option(
+    "--embedding-max-retries",
+    type=click.IntRange(min=0, max=5),
+    default=2,
+    show_default=True,
+    help="Retry count for transient OpenRouter embedding failures (429/5xx/network)",
+)
 def sync(
     path: Path | None,
     ecosystem: str,
@@ -829,6 +861,11 @@ def sync(
     summary_model: str | None,
     summary_workers: int,
     summary_max_chars: int,
+    embeddings: bool,
+    embedding_model: str,
+    embedding_workers: int,
+    embedding_timeout: float,
+    embedding_max_retries: int,
 ) -> None:
     """
     Incrementally scan and parse agent trajectory files into the database.
@@ -853,6 +890,11 @@ def sync(
     from agent_vis.db.repository import SessionRepository
     from agent_vis.db.sync import SyncEngine
     from agent_vis.parsers.registry import get_parser
+    from agent_vis.session_embeddings import (
+        EmbeddingGenerationConfig,
+        OpenRouterSessionEmbeddingClient,
+        SessionEmbeddingCoordinator,
+    )
     from agent_vis.session_summaries import (
         CodexSessionSummaryRunner,
         SessionSummaryCoordinator,
@@ -879,6 +921,7 @@ def sync(
     conn = get_connection(db_path)
     repo = SessionRepository(conn)
     summary_coordinator = None
+    embedding_coordinator = None
     if summaries:
         summary_config = SummaryGenerationConfig(
             enabled=True,
@@ -891,7 +934,25 @@ def sync(
             CodexSessionSummaryRunner(),
             summary_config,
         )
-    engine = SyncEngine(repo, parser, summary_coordinator=summary_coordinator)
+    if embeddings:
+        embedding_config = EmbeddingGenerationConfig(
+            enabled=True,
+            model=embedding_model,
+            max_workers=embedding_workers,
+            timeout_seconds=embedding_timeout,
+            max_retries=embedding_max_retries,
+        )
+        embedding_coordinator = SessionEmbeddingCoordinator(
+            repo,
+            OpenRouterSessionEmbeddingClient(),
+            embedding_config,
+        )
+    engine = SyncEngine(
+        repo,
+        parser,
+        summary_coordinator=summary_coordinator,
+        embedding_coordinator=embedding_coordinator,
+    )
 
     click.echo(f"Scanning: {scan_path}", err=True)
     result = engine.sync(scan_path, force=force)
@@ -908,6 +969,14 @@ def sync(
             f"{result.summaries_generated} generated, "
             f"{result.summaries_skipped} skipped, "
             f"{result.summaries_failed} failed",
+            err=True,
+        )
+    if embeddings:
+        click.echo(
+            "Embedding stage: "
+            f"{result.embeddings_generated} generated, "
+            f"{result.embeddings_skipped} skipped, "
+            f"{result.embeddings_failed} failed",
             err=True,
         )
     for err in result.errors[:10]:

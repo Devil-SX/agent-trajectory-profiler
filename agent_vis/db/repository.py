@@ -571,6 +571,80 @@ class SessionRepository:
         )
         return cur.fetchone()
 
+    def list_session_summaries_for_embedding(
+        self,
+        *,
+        session_ids: list[str] | None = None,
+    ) -> list[sqlite3.Row]:
+        """Return completed persisted summaries eligible for embedding generation."""
+        params: list[object] = ["completed"]
+        sql = """\
+            SELECT session_id, summary_text, synopsis_hash, prompt_version, model_id
+            FROM session_summaries
+            WHERE generation_status = ?
+              AND summary_text IS NOT NULL
+              AND TRIM(summary_text) != ''
+        """
+        if session_ids:
+            placeholders = ",".join(["?"] * len(session_ids))
+            sql += f" AND session_id IN ({placeholders})"
+            params.extend(session_ids)
+        sql += " ORDER BY session_id"
+        cur = self._conn.execute(sql, params)
+        return cur.fetchall()
+
+    def upsert_session_summary_embedding(
+        self,
+        *,
+        session_id: str,
+        summary_hash: str,
+        model_id: str,
+        provider_name: str,
+        generation_status: str,
+        embedding_dimension: int | None,
+        vector_json: str | None,
+        generated_at: str | None,
+        error_message: str | None,
+    ) -> None:
+        """Insert or update a persisted session-summary embedding row."""
+        self._conn.execute(
+            """\
+            INSERT INTO session_summary_embeddings (
+                session_id, summary_hash, model_id, provider_name,
+                generation_status, embedding_dimension, vector_json, generated_at, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                summary_hash = excluded.summary_hash,
+                model_id = excluded.model_id,
+                provider_name = excluded.provider_name,
+                generation_status = excluded.generation_status,
+                embedding_dimension = excluded.embedding_dimension,
+                vector_json = excluded.vector_json,
+                generated_at = excluded.generated_at,
+                error_message = excluded.error_message
+            """,
+            (
+                session_id,
+                summary_hash,
+                model_id,
+                provider_name,
+                generation_status,
+                embedding_dimension,
+                vector_json,
+                generated_at,
+                error_message,
+            ),
+        )
+        self._commit_if_needed()
+
+    def get_session_summary_embedding(self, session_id: str) -> sqlite3.Row | None:
+        """Return persisted session-summary embedding row or None."""
+        cur = self._conn.execute(
+            "SELECT * FROM session_summary_embeddings WHERE session_id = ?",
+            (session_id,),
+        )
+        return cur.fetchone()
+
     def get_statistics(self, session_id: str) -> SessionStatistics | None:
         """Load and deserialize statistics for a session."""
         cur = self._conn.execute(

@@ -1,6 +1,6 @@
 [project]
 name = "agent-trajectory-profiler"
-version = "1.5.0"
+version = "1.6.0"
 description = "A web application to visualize and analyze local agent trajectories"
 readme = "README.md"
 requires-python = ">=3.10"
