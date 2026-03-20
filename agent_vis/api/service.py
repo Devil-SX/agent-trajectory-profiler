@@ -34,6 +34,7 @@ from agent_vis.api.models import (
     EcosystemCapabilityResponse,
     FrontendPreferences,
     FrontendPreferencesUpdate,
+    PersistedSessionSummary,
     ProjectAggregate,
     ProjectComparisonItem,
     ProjectComparisonResponse,
@@ -41,7 +42,9 @@ from agent_vis.api.models import (
     ProjectSwimlaneResponse,
     RoleSourceAggregate,
     RuntimePlaneOverview,
+    SessionSectionDetail,
     SessionSummary,
+    StructuredSectionSummary,
     ToolAggregate,
 )
 from agent_vis.db.connection import get_connection
@@ -50,6 +53,7 @@ from agent_vis.db.sync import SyncEngine
 from agent_vis.models import Session, SessionStatistics
 from agent_vis.parsers import SessionParseError, get_parser
 from agent_vis.parsers.capabilities import list_capability_manifests
+from agent_vis.session_sections import derive_session_sections
 
 AnalyticsDimension = Literal[
     "bottleneck",
@@ -78,6 +82,7 @@ class SessionService:
         single_session: str | None = None,
         db_path: Path | None = None,
         inactivity_threshold: float = 1800.0,
+        codex_state_db_path: Path | None = None,
         model_timeout_threshold: float = 600.0,
     ) -> None:
         self.session_path = session_path
@@ -90,6 +95,7 @@ class SessionService:
         self._db_path = db_path
         self._inactivity_threshold = inactivity_threshold
         self._model_timeout_threshold = model_timeout_threshold
+        self._codex_state_db_path = codex_state_db_path
         self._conn: sqlite3.Connection | None = None
         self._repo: SessionRepository | None = None
         self._sessions: dict[str, Session] = {}
@@ -145,6 +151,7 @@ class SessionService:
             "session_aggregation_mode": "logical",
             "session_browser_filters": {
                 "search_query": "",
+                "project_path": "",
                 "start_date": None,
                 "end_date": None,
                 "sort_by": "updated",
@@ -191,6 +198,8 @@ class SessionService:
             parser.inactivity_threshold = self._inactivity_threshold  # type: ignore[attr-defined]
         if hasattr(parser, "model_timeout_threshold"):
             parser.model_timeout_threshold = self._model_timeout_threshold  # type: ignore[attr-defined]
+        if hasattr(parser, "_state_db_path") and self._codex_state_db_path is not None:
+            parser._state_db_path = self._codex_state_db_path  # type: ignore[attr-defined]
         return parser
 
     @staticmethod
@@ -408,6 +417,7 @@ class SessionService:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        project_path: str | None = None,
         bottleneck: str | None = None,
         min_tokens: int | None = None,
         max_tokens: int | None = None,
@@ -431,6 +441,7 @@ class SessionService:
                 start_date,
                 end_date,
                 ecosystem,
+                project_path,
                 bottleneck,
                 min_tokens,
                 max_tokens,
@@ -448,6 +459,7 @@ class SessionService:
             start_date,
             end_date,
             ecosystem,
+            project_path,
             bottleneck,
             min_tokens,
             max_tokens,
@@ -482,6 +494,7 @@ class SessionService:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        project_path: str | None = None,
         bottleneck: str | None = None,
         min_tokens: int | None = None,
         max_tokens: int | None = None,
@@ -497,6 +510,7 @@ class SessionService:
             start_date=start_date,
             end_date=end_date,
             ecosystem=ecosystem,
+            project_path=project_path,
             bottleneck=bottleneck,
             min_tokens=min_tokens,
             max_tokens=max_tokens,
@@ -515,6 +529,7 @@ class SessionService:
             start_date=start_date,
             end_date=end_date,
             ecosystem=ecosystem,
+            project_path=project_path,
             bottleneck=bottleneck,
             min_tokens=min_tokens,
             max_tokens=max_tokens,
@@ -556,6 +571,7 @@ class SessionService:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        project_path: str | None = None,
         bottleneck: str | None = None,
         min_tokens: int | None = None,
         max_tokens: int | None = None,
@@ -570,6 +586,9 @@ class SessionService:
             sid = session.metadata.session_id
             session_ecosystem = self._session_ecosystem.get(sid, "claude_code")
             if ecosystem and ecosystem != session_ecosystem:
+                continue
+            normalized_project_path = (session.metadata.project_path or "").lower()
+            if project_path and project_path.lower() not in normalized_project_path:
                 continue
 
             # Apply date filtering on in-memory sessions
@@ -711,6 +730,137 @@ class SessionService:
         session = self._sessions.get(session_id)
         if session is not None:
             return session.statistics
+        return None
+
+    def get_persisted_session_summary(self, session_id: str) -> PersistedSessionSummary | None:
+        """Return one persisted AI-generated session summary, if present."""
+        if self._repo is None:
+            return None
+
+        row = self._repo.get_session_summary(session_id)
+        if row is None:
+            return None
+
+        return PersistedSessionSummary(
+            generation_status=str(row["generation_status"] or ""),
+            summary_text=str(row["summary_text"]) if row["summary_text"] is not None else None,
+            summary_chars=int(row["summary_chars"]) if row["summary_chars"] is not None else None,
+            model_id=str(row["model_id"] or ""),
+            generated_at=str(row["generated_at"]) if row["generated_at"] is not None else None,
+            error_message=str(row["error_message"]) if row["error_message"] is not None else None,
+        )
+
+    def _resolve_session_ecosystem(self, session_id: str) -> str:
+        if session_id in self._session_ecosystem:
+            return self._session_ecosystem[session_id]
+        if self._repo is not None:
+            row = self._repo.get_session(session_id)
+            if row is not None and isinstance(row["ecosystem"], str) and row["ecosystem"]:
+                return str(row["ecosystem"])
+        return "claude_code"
+
+    @staticmethod
+    def _build_section_detail(
+        *,
+        section: Any,
+        persisted: sqlite3.Row | None,
+    ) -> SessionSectionDetail:
+        generation_status: Literal["missing", "completed", "failed"] = "missing"
+        model_id = None
+        prompt_version = None
+        generated_at = None
+        error_message = None
+        summary_text = None
+        summary_chars = None
+        structured_summary = None
+
+        if persisted is not None:
+            raw_status = str(persisted["generation_status"] or "").strip().lower()
+            if raw_status == "completed":
+                generation_status = "completed"
+            elif raw_status == "failed":
+                generation_status = "failed"
+            model_id = str(persisted["model_id"] or "") or None
+            prompt_version = str(persisted["prompt_version"] or "") or None
+            generated_at = str(persisted["generated_at"]) if persisted["generated_at"] else None
+            error_message = str(persisted["error_message"]) if persisted["error_message"] else None
+            summary_text = str(persisted["summary_text"]) if persisted["summary_text"] else None
+            summary_chars = int(persisted["summary_chars"]) if persisted["summary_chars"] else None
+            if persisted["summary_json"]:
+                try:
+                    structured_summary = StructuredSectionSummary.model_validate_json(
+                        str(persisted["summary_json"])
+                    )
+                except ValueError:
+                    structured_summary = None
+
+        return SessionSectionDetail(
+            section_id=section.section_id,
+            section_index=section.section_index,
+            title=section.title,
+            start_message_uuid=section.start_message_uuid,
+            end_message_uuid=section.end_message_uuid,
+            start_timestamp=section.start_timestamp,
+            end_timestamp=section.end_timestamp,
+            total_messages=section.total_messages,
+            user_message_count=section.user_message_count,
+            assistant_message_count=section.assistant_message_count,
+            tool_call_count=section.tool_call_count,
+            input_tokens=section.input_tokens,
+            output_tokens=section.output_tokens,
+            total_tokens=section.total_tokens,
+            char_count=section.char_count,
+            duration_seconds=section.duration_seconds,
+            generation_status=generation_status,
+            model_id=model_id,
+            prompt_version=prompt_version,
+            generated_at=generated_at,
+            error_message=error_message,
+            summary_text=summary_text,
+            summary_chars=summary_chars,
+            structured_summary=structured_summary,
+        )
+
+    async def get_session_sections(
+        self,
+        session_id: str,
+        *,
+        session: Session | None = None,
+    ) -> list[SessionSectionDetail]:
+        """Return derived section details with persisted AI summary overlay."""
+        if session is None:
+            session = await self.get_session(session_id)
+        if session is None:
+            return []
+
+        ecosystem = self._resolve_session_ecosystem(session_id)
+        derived_sections = derive_session_sections(session, ecosystem=ecosystem)
+        persisted_by_id: dict[str, sqlite3.Row] = {}
+        if self._repo is not None:
+            for row in self._repo.list_session_section_summaries(session_id):
+                persisted_by_id[str(row["section_id"])] = row
+
+        return [
+            self._build_section_detail(
+                section=section,
+                persisted=persisted_by_id.get(section.section_id),
+            )
+            for section in derived_sections
+        ]
+
+    async def get_session_section_detail(
+        self,
+        session_id: str,
+        section_index: int,
+    ) -> SessionSectionDetail | None:
+        """Return one section detail row for a session."""
+        session = await self.get_session(session_id)
+        if session is None:
+            return None
+        sections = await self.get_session_sections(session_id, session=session)
+        for section in sections:
+            if section.section_index == section_index:
+                return section
         return None
 
     def _get_tracked_file_stats(self) -> dict[str, int | str | None]:

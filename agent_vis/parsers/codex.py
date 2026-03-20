@@ -1137,9 +1137,11 @@ class CodexParser(TrajectoryParser):
         self,
         inactivity_threshold: float = 1800.0,
         model_timeout_threshold: float = 600.0,
+        state_db_path: Path | None = None,
     ) -> None:
         self.inactivity_threshold = inactivity_threshold
         self.model_timeout_threshold = model_timeout_threshold
+        self._state_db_path = state_db_path
 
     @property
     def ecosystem_name(self) -> str:
@@ -1161,11 +1163,71 @@ class CodexParser(TrajectoryParser):
         )
 
     def find_session_files(self, directory: Path) -> list[Path]:
-        return find_codex_session_files(directory)
+        # DB-first discovery with filesystem fallback
+        scan_root = directory.expanduser().resolve()
+        if self._state_db_path:
+            from agent_vis.parsers.codex_state_db import CodexStateDB
+
+            db = CodexStateDB(self._state_db_path)
+            threads = db.list_threads(include_archived=True)
+            if threads:
+                db_paths: set[Path] = set()
+                for t in threads:
+                    p = Path(t.rollout_path)
+                    if not p.exists():
+                        continue
+                    resolved = p.resolve()
+                    if resolved == scan_root or scan_root in resolved.parents:
+                        db_paths.add(resolved)
+                if db_paths:
+                    # Also discover files not yet indexed in the DB
+                    try:
+                        fs_files = {f.resolve() for f in find_codex_session_files(scan_root)}
+                    except SessionParseError:
+                        fs_files = set()
+                    return sorted(db_paths | fs_files)
+        # Fallback: pure filesystem discovery (existing behavior)
+        return find_codex_session_files(scan_root)
 
     def parse_session(self, file_path: Path) -> Session:
-        return parse_codex_session_file(
+        session = parse_codex_session_file(
             file_path,
             inactivity_threshold=self.inactivity_threshold,
             model_timeout_threshold=self.model_timeout_threshold,
         )
+        self._enrich_metadata_from_state_db(session, file_path)
+        return session
+
+    def _enrich_metadata_from_state_db(self, session: Session, file_path: Path) -> None:
+        """Overlay richer metadata from the Codex state DB when available."""
+        if not self._state_db_path:
+            return
+
+        from agent_vis.parsers.codex_state_db import CodexStateDB
+
+        db = CodexStateDB(self._state_db_path)
+        # Try matching by session_id first, then by physical_session_id
+        thread = db.get_thread(session.metadata.session_id)
+        if thread is None and session.metadata.physical_session_id:
+            thread = db.get_thread(session.metadata.physical_session_id)
+        if thread is None:
+            return
+
+        meta = session.metadata
+        if thread.git_branch and not meta.git_branch:
+            meta.git_branch = thread.git_branch
+        if thread.git_sha:
+            meta.git_sha = thread.git_sha
+        if thread.cwd and (not meta.project_path or meta.project_path == "unknown"):
+            meta.project_path = thread.cwd
+        if thread.cli_version:
+            meta.cli_version = thread.cli_version
+        if thread.title:
+            meta.title = thread.title
+        if thread.first_user_message:
+            meta.first_user_message = thread.first_user_message
+        if thread.model_provider:
+            meta.model_provider = thread.model_provider
+        if thread.source:
+            meta.session_source = thread.source
+        meta.is_archived = thread.archived

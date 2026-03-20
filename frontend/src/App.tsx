@@ -168,6 +168,7 @@ function App() {
   const hasHydratedPreferencesRef = useRef(false);
   const initialRoute = readRouteState();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialRoute.sessionId);
+  const [selectedSectionIndex, setSelectedSectionIndex] = useState<number | null>(null);
   const [selectedSessionEcosystem, setSelectedSessionEcosystem] = useState<string | null>(null);
   const [primaryView, setPrimaryView] = useState<PrimaryView>(initialRoute.view);
   const [sessionDetailTab, setSessionDetailTab] = useState<SessionDetailTab>(initialRoute.tab);
@@ -224,6 +225,9 @@ function App() {
       primaryView !== next.view || selectedSessionId !== next.sessionId;
 
     setPrimaryView(next.view);
+    if (selectedSessionId !== next.sessionId) {
+      setSelectedSectionIndex(null);
+    }
     setSelectedSessionId(next.sessionId);
     setSessionDetailTab(next.tab);
 
@@ -338,6 +342,7 @@ function App() {
     const handlePopState = () => {
       const next = readRouteState();
       setPrimaryView(next.view);
+      setSelectedSectionIndex(null);
       setSelectedSessionId(next.sessionId);
       setSessionDetailTab(next.tab);
       setIsMobileSidebarOpen(false);
@@ -367,6 +372,16 @@ function App() {
     }
 
     setSelectedSessionEcosystem(session?.ecosystem || null);
+    setSelectedSectionIndex(null);
+    applyRouteState({
+      view: 'session-detail',
+      sessionId,
+      tab: 'timeline',
+    });
+  };
+
+  const handleSectionOpenFromOverview = (sessionId: string, sectionIndex: number) => {
+    setSelectedSectionIndex(sectionIndex);
     applyRouteState({
       view: 'session-detail',
       sessionId,
@@ -543,7 +558,9 @@ function App() {
             <div className="overview-sessions-block">
               <SessionBrowser
                 onSessionChange={handleSessionOpenFromOverview}
+                onSectionChange={handleSectionOpenFromOverview}
                 selectedSessionId={selectedSessionId}
+                selectedSectionIndex={selectedSectionIndex}
                 autoSelectFirst={false}
                 aggregationMode={sessionAggregationMode}
                 onAggregationModeChange={(next) => {
@@ -624,7 +641,11 @@ function App() {
                           aria-hidden="true"
                         />
                       )}
-                      <SessionMetadataSidebar sessionId={selectedSessionId} />
+                      <SessionMetadataSidebar
+                        sessionId={selectedSessionId}
+                        selectedSectionIndex={selectedSectionIndex}
+                        onSelectSection={setSelectedSectionIndex}
+                      />
                     </div>
                   )}
                 </Suspense>

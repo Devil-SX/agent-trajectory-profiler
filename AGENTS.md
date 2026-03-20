@@ -85,3 +85,9 @@ Nightly quality checks:
 
 - It is not acceptable to merge behavior or UI changes that reduce test coverage.
 - It is not acceptable to disable failing tests without a linked issue and mitigation plan.
+
+## Agent Coordination Rule
+
+- Do not auto-use `todo_preview` for this repository.
+- Do not read or write `~/.todo/todo.md` as part of normal execution, even for parallel or multi-agent work.
+- Only use external todo or watchboard mechanisms when the user explicitly asks for them in this repository.

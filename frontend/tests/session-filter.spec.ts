@@ -3,6 +3,7 @@
  *
  * Tests cover:
  * - Search filtering sessions by project path and session ID
+ * - Dedicated server-backed project path filtering
  * - Sort order toggling between all 5 options
  * - Bottleneck filter buttons (All, Model, Tool, User)
  * - Combined filter interactions
@@ -230,6 +231,87 @@ test.describe('@full Session Filter - Search', () => {
     // All sessions should return
     await expect(page.locator('.session-card')).toHaveCount(4);
     await expect(page.locator('.session-count')).toContainText('4 of 4');
+  });
+
+  test('should request server filtering by project path', async ({ page }) => {
+    await page.route('**/api/sessions**', async (route) => {
+      const url = new URL(route.request().url());
+      const projectPath = (url.searchParams.get('project_path') || '').toLowerCase();
+      const filteredSessions = projectPath
+        ? filterMockSessionList.sessions.filter((session) =>
+            session.project_path.toLowerCase().includes(projectPath)
+          )
+        : filterMockSessionList.sessions;
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...filterMockSessionList,
+          sessions: filteredSessions,
+          count: filteredSessions.length,
+        }),
+      });
+    });
+    await page.route('**/api/sessions/session-*', async (route) => {
+      const url = route.request().url();
+      if (url.includes('/statistics')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            session_id: 'session-alpha',
+            statistics: {
+              message_count: 30,
+              user_message_count: 10,
+              assistant_message_count: 20,
+              system_message_count: 0,
+              total_tokens: 20000,
+              total_input_tokens: 14000,
+              total_output_tokens: 6000,
+              cache_read_tokens: 1000,
+              cache_creation_tokens: 200,
+              tool_calls: [],
+              total_tool_calls: 0,
+              subagent_count: 0,
+              subagent_sessions: {},
+              session_duration_seconds: 7200,
+              first_message_time: '2024-02-05T10:00:00Z',
+              last_message_time: '2024-02-05T12:00:00Z',
+            },
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            session: {
+              metadata: {
+                session_id: 'session-alpha',
+                project_path: '/home/user/frontend-app',
+                git_branch: 'main',
+                version: '1.0.0',
+                created_at: '2024-02-05T10:00:00Z',
+                updated_at: '2024-02-05T12:00:00Z',
+                total_messages: 30,
+                total_tokens: 20000,
+              },
+              messages: [],
+            },
+          }),
+        });
+      }
+    });
+
+    await page.goto('/');
+    await waitForSessions(page);
+    await expect(page.locator('.session-card')).toHaveCount(4);
+
+    await page.locator('.project-path-input').fill('backend-api');
+    await page.waitForTimeout(500);
+
+    await expect(page.locator('.session-card')).toHaveCount(2);
   });
 });
 

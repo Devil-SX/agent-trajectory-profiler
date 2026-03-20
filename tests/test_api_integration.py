@@ -5,9 +5,12 @@ Tests cover API endpoints, service layer integration, and error handling
 with test client for realistic request/response testing.
 """
 
+import asyncio
 import json
 from datetime import date, datetime, timedelta, timezone
+from importlib import import_module
 from pathlib import Path
+from urllib.parse import quote_plus
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +18,7 @@ from fastapi.testclient import TestClient
 from agent_vis.api.app import app
 from agent_vis.api.config import Settings, get_settings
 from agent_vis.api.service import SessionService
+from agent_vis.session_sections import SectionSummaryPayload, derive_session_sections
 
 
 class TestAPIHealthEndpoints:
@@ -135,6 +139,7 @@ class TestFrontendStateAPI:
                     assert default_payload["session_aggregation_mode"] == "logical"
                     assert default_payload["session_browser_filters"]["sort_by"] == "updated"
                     assert default_payload["session_browser_filters"]["sort_direction"] == "desc"
+                    assert default_payload["session_browser_filters"]["project_path"] == ""
                     assert default_payload["updated_at"] is None
 
                     update_response = client.put(
@@ -147,6 +152,7 @@ class TestFrontendStateAPI:
                             "session_aggregation_mode": "physical",
                             "session_browser_filters": {
                                 "search_query": "backend-api",
+                                "project_path": "/tmp/project",
                                 "start_date": "2026-02-01",
                                 "end_date": "2026-02-28",
                                 "sort_by": "tokens",
@@ -172,6 +178,9 @@ class TestFrontendStateAPI:
                     assert updated_payload["session_aggregation_mode"] == "physical"
                     assert (
                         updated_payload["session_browser_filters"]["search_query"] == "backend-api"
+                    )
+                    assert (
+                        updated_payload["session_browser_filters"]["project_path"] == "/tmp/project"
                     )
                     assert updated_payload["session_browser_filters"]["sort_by"] == "tokens"
                     assert updated_payload["session_browser_filters"]["sort_direction"] == "asc"
@@ -384,6 +393,29 @@ class TestSessionListAPI:
         token_values = [int(item["total_tokens"]) for item in sessions]
         assert token_values == sorted(token_values)
 
+    def test_list_sessions_supports_project_path_filter(self, test_client: TestClient) -> None:
+        source = test_client.get("/api/sessions?view=physical&page_size=200")
+        assert source.status_code == 200
+        source_sessions = source.json()["sessions"]
+
+        candidate = next(
+            (session for session in source_sessions if session.get("project_path")),
+            None,
+        )
+        if candidate is None:
+            pytest.skip("No session with project_path in fixture set")
+
+        project_path = str(candidate["project_path"])
+        needle = Path(project_path).name or project_path
+        response = test_client.get(
+            f"/api/sessions?view=physical&page_size=200&project_path={quote_plus(needle)}"
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        sessions = payload["sessions"]
+        assert len(sessions) >= 1
+        assert all(needle.lower() in str(item["project_path"]).lower() for item in sessions)
+
     def test_list_sessions_rejects_invalid_filter_ranges(self, test_client: TestClient) -> None:
         response = test_client.get("/api/sessions?min_tokens=50&max_tokens=10")
         assert response.status_code == 400
@@ -549,6 +581,152 @@ class TestSessionDetailAPI:
             assert "uuid" in message
             assert "timestamp" in message
             assert "type" in message
+
+    def test_get_session_includes_persisted_summary_when_available(
+        self,
+        initialized_session_service_sync: SessionService,
+    ) -> None:
+        from importlib import import_module
+        from unittest.mock import patch
+
+        api_app_module = import_module("agent_vis.api.app")
+        sessions, _ = asyncio.run(
+            initialized_session_service_sync.list_sessions(page=1, page_size=1)
+        )
+        session_id = sessions[0].session_id
+        initialized_session_service_sync._repo.upsert_session_summary(
+            session_id=session_id,
+            synopsis_hash="hash-summary",
+            prompt_version="v1",
+            model_id="codex:gpt-5.4",
+            generation_status="completed",
+            summary_text="Summary text for frontend detail rendering.",
+            summary_chars=42,
+            generated_at="2026-03-18T00:00:00Z",
+            error_message=None,
+        )
+
+        settings = Settings(
+            session_path=initialized_session_service_sync.session_path,
+            codex_session_path=initialized_session_service_sync.codex_session_path,
+            db_path=initialized_session_service_sync._db_path,
+            api_host="127.0.0.1",
+            api_port=8000,
+            api_reload=False,
+            log_level="INFO",
+            cors_origins=["http://localhost:5173"],
+        )
+
+        get_settings.cache_clear()
+        try:
+            with patch.object(api_app_module, "get_settings", return_value=settings):
+                with TestClient(app) as client:
+                    response = client.get(f"/api/sessions/{session_id}")
+        finally:
+            get_settings.cache_clear()
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["summary"] is not None
+        assert payload["summary"]["generation_status"] == "completed"
+        assert payload["summary"]["summary_text"] == "Summary text for frontend detail rendering."
+        assert payload["summary"]["model_id"] == "codex:gpt-5.4"
+
+    def test_get_session_includes_fallback_sections_when_section_ai_is_missing(
+        self,
+        initialized_session_service_sync: SessionService,
+    ) -> None:
+        sessions, _ = asyncio.run(
+            initialized_session_service_sync.list_sessions(page=1, page_size=1)
+        )
+        session_id = sessions[0].session_id
+        response = TestClient(app).get(f"/api/sessions/{session_id}")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["sections"]
+        assert payload["sections"][0]["generation_status"] == "missing"
+        assert payload["sections"][0]["total_messages"] >= 1
+
+    def test_get_session_and_section_endpoint_overlay_persisted_section_summary(
+        self,
+        initialized_session_service_sync: SessionService,
+    ) -> None:
+        from unittest.mock import patch
+
+        sessions, _ = asyncio.run(
+            initialized_session_service_sync.list_sessions(page=1, page_size=1)
+        )
+        session_id = sessions[0].session_id
+        session = asyncio.run(initialized_session_service_sync.get_session(session_id))
+        sections = derive_session_sections(
+            session,
+            ecosystem=initialized_session_service_sync._session_ecosystem.get(
+                session_id,
+                "claude_code",
+            ),
+        )
+        initialized_session_service_sync._repo.replace_session_sections(
+            session_id,
+            [section.to_row() for section in sections],
+        )
+        payload = SectionSummaryPayload(
+            title="Root cause section",
+            summary="Isolated the failure to one brittle selector.",
+            goal="Find root cause",
+            actions=["Read tests", "Run smoke suite"],
+            outcome="One selector needs narrowing",
+            tool_patterns=["Read", "Bash"],
+            risk_or_blocker=None,
+            keywords=["selector", "flake"],
+        )
+        initialized_session_service_sync._repo.upsert_session_section_summary(
+            section_id=sections[0].section_id,
+            session_id=session_id,
+            section_hash="hash-section",
+            prompt_version="session-section-summary-v1",
+            model_id="codex:gpt-5.4",
+            generation_status="completed",
+            summary_text=payload.summary,
+            summary_json=payload.model_dump_json(),
+            summary_chars=len(payload.summary),
+            generated_at="2026-03-18T00:00:00Z",
+            error_message=None,
+        )
+
+        api_app_module = import_module("agent_vis.api.app")
+        settings = Settings(
+            session_path=initialized_session_service_sync.session_path,
+            codex_session_path=initialized_session_service_sync.codex_session_path,
+            db_path=initialized_session_service_sync._db_path,
+            api_host="127.0.0.1",
+            api_port=8000,
+            api_reload=False,
+            log_level="INFO",
+            cors_origins=["http://localhost:5173"],
+        )
+
+        get_settings.cache_clear()
+        try:
+            with patch.object(api_app_module, "get_settings", return_value=settings):
+                with TestClient(app) as client:
+                    detail_response = client.get(f"/api/sessions/{session_id}")
+                    section_response = client.get(
+                        f"/api/sessions/{session_id}/sections/{sections[0].section_index}"
+                    )
+        finally:
+            get_settings.cache_clear()
+
+        assert detail_response.status_code == 200
+        detail_payload = detail_response.json()
+        assert detail_payload["sections"][0]["generation_status"] == "completed"
+        assert detail_payload["sections"][0]["model_id"] == "codex:gpt-5.4"
+        assert detail_payload["sections"][0]["structured_summary"]["title"] == "Root cause section"
+
+        assert section_response.status_code == 200
+        section_payload = section_response.json()
+        assert section_payload["section"]["summary_text"] == payload.summary
+        assert section_payload["section"]["structured_summary"]["outcome"] == payload.outcome
 
     def test_get_session_not_found(self, test_client: TestClient) -> None:
         """Test getting a non-existent session returns 404."""

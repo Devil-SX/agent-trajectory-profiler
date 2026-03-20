@@ -15,7 +15,7 @@
 }
 
 .filter-controls {
-  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, auto));
+  grid-template-columns: minmax(220px, 1.1fr) minmax(220px, 1.1fr) repeat(3, minmax(150px, auto));
 }
 
 .filter-buttons {
@@ -40,6 +40,10 @@
 }
 
 .search-group {
+  min-width: 220px;
+}
+
+.project-path-group {
   min-width: 220px;
 }
 

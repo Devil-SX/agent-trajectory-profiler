@@ -131,6 +131,13 @@ class SessionRepository:
         logical_session_id: str | None = None,
         parent_session_id: str | None = None,
         root_session_id: str | None = None,
+        git_sha: str | None = None,
+        cli_version: str | None = None,
+        title: str | None = None,
+        first_user_message: str | None = None,
+        model_provider: str | None = None,
+        session_source: str | None = None,
+        is_archived: bool = False,
     ) -> None:
         """Insert or update a session summary row."""
         now = datetime.now(timezone.utc).isoformat()
@@ -144,8 +151,10 @@ class SessionRepository:
                 file_id, ecosystem, project_path, git_branch,
                 created_at, updated_at, total_messages, total_tokens,
                 parsed_at, duration_seconds, total_tool_calls,
-                bottleneck, automation_ratio, version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                bottleneck, automation_ratio, version,
+                git_sha, cli_version, title, first_user_message,
+                model_provider, session_source, is_archived
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id) DO UPDATE SET
                 physical_session_id = excluded.physical_session_id,
                 logical_session_id  = excluded.logical_session_id,
@@ -164,7 +173,14 @@ class SessionRepository:
                 total_tool_calls = excluded.total_tool_calls,
                 bottleneck       = excluded.bottleneck,
                 automation_ratio = excluded.automation_ratio,
-                version          = excluded.version
+                version          = excluded.version,
+                git_sha          = excluded.git_sha,
+                cli_version      = excluded.cli_version,
+                title            = excluded.title,
+                first_user_message = excluded.first_user_message,
+                model_provider   = excluded.model_provider,
+                session_source   = excluded.session_source,
+                is_archived      = excluded.is_archived
             """,
             (
                 session_id,
@@ -186,6 +202,13 @@ class SessionRepository:
                 bottleneck,
                 automation_ratio,
                 version,
+                git_sha,
+                cli_version,
+                title,
+                first_user_message,
+                model_provider,
+                session_source,
+                int(is_archived),
             ),
         )
         self._commit_if_needed()
@@ -207,6 +230,7 @@ class SessionRepository:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        project_path: str | None = None,
         bottleneck: str | None = None,
         min_tokens: int | None = None,
         max_tokens: int | None = None,
@@ -246,6 +270,7 @@ class SessionRepository:
             start_date,
             end_date,
             ecosystem=ecosystem,
+            project_path=project_path,
             bottleneck=bottleneck,
             min_tokens=min_tokens,
             max_tokens=max_tokens,
@@ -278,6 +303,7 @@ class SessionRepository:
         start_date: str | None = None,
         end_date: str | None = None,
         ecosystem: str | None = None,
+        project_path: str | None = None,
         bottleneck: str | None = None,
         min_tokens: int | None = None,
         max_tokens: int | None = None,
@@ -292,6 +318,7 @@ class SessionRepository:
             start_date,
             end_date,
             ecosystem=ecosystem,
+            project_path=project_path,
             bottleneck=bottleneck,
             min_tokens=min_tokens,
             max_tokens=max_tokens,
@@ -432,6 +459,7 @@ class SessionRepository:
         end_date: str | None,
         *,
         ecosystem: str | None = None,
+        project_path: str | None = None,
         bottleneck: str | None = None,
         min_tokens: int | None = None,
         max_tokens: int | None = None,
@@ -441,6 +469,7 @@ class SessionRepository:
         max_automation: float | None = None,
         created_col: str = "created_at",
         ecosystem_col: str = "ecosystem",
+        project_path_col: str = "project_path",
         bottleneck_col: str = "bottleneck",
         total_tokens_col: str = "total_tokens",
         total_messages_col: str = "total_messages",
@@ -470,6 +499,10 @@ class SessionRepository:
         if ecosystem:
             clauses.append(f"{ecosystem_col} = ?")
             params.append(ecosystem)
+
+        if project_path:
+            clauses.append(f"LOWER(COALESCE({project_path_col}, '')) LIKE ?")
+            params.append(f"%{project_path.strip().lower()}%")
 
         if bottleneck:
             clauses.append(f"LOWER(COALESCE({bottleneck_col}, '')) = ?")
@@ -567,6 +600,196 @@ class SessionRepository:
         )
         self._commit_if_needed()
 
+    def replace_session_sections(
+        self,
+        session_id: str,
+        sections: list[dict[str, object]],
+    ) -> None:
+        """Replace persisted base section rows for one session."""
+        with self.transaction():
+            incoming_ids = [str(section["section_id"]) for section in sections]
+            if incoming_ids:
+                placeholders = ",".join(["?"] * len(incoming_ids))
+                self._conn.execute(
+                    f"""\
+                    DELETE FROM session_sections
+                    WHERE session_id = ?
+                      AND section_id NOT IN ({placeholders})
+                    """,
+                    [session_id, *incoming_ids],
+                )
+            else:
+                self._conn.execute(
+                    "DELETE FROM session_sections WHERE session_id = ?",
+                    (session_id,),
+                )
+                return
+
+            self._conn.executemany(
+                """\
+                INSERT INTO session_sections (
+                    section_id, session_id, section_index, title,
+                    start_message_uuid, end_message_uuid,
+                    start_timestamp, end_timestamp,
+                    total_messages, user_message_count, assistant_message_count,
+                    tool_call_count, input_tokens, output_tokens, total_tokens,
+                    char_count, duration_seconds
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(section_id) DO UPDATE SET
+                    session_id = excluded.session_id,
+                    section_index = excluded.section_index,
+                    title = excluded.title,
+                    start_message_uuid = excluded.start_message_uuid,
+                    end_message_uuid = excluded.end_message_uuid,
+                    start_timestamp = excluded.start_timestamp,
+                    end_timestamp = excluded.end_timestamp,
+                    total_messages = excluded.total_messages,
+                    user_message_count = excluded.user_message_count,
+                    assistant_message_count = excluded.assistant_message_count,
+                    tool_call_count = excluded.tool_call_count,
+                    input_tokens = excluded.input_tokens,
+                    output_tokens = excluded.output_tokens,
+                    total_tokens = excluded.total_tokens,
+                    char_count = excluded.char_count,
+                    duration_seconds = excluded.duration_seconds
+                """,
+                [
+                    (
+                        str(section["section_id"]),
+                        session_id,
+                        int(section["section_index"]),
+                        str(section["title"]),
+                        str(section["start_message_uuid"]),
+                        str(section["end_message_uuid"]),
+                        section["start_timestamp"],
+                        section["end_timestamp"],
+                        int(section["total_messages"]),
+                        int(section["user_message_count"]),
+                        int(section["assistant_message_count"]),
+                        int(section["tool_call_count"]),
+                        int(section["input_tokens"]),
+                        int(section["output_tokens"]),
+                        int(section["total_tokens"]),
+                        int(section["char_count"]),
+                        section["duration_seconds"],
+                    )
+                    for section in sections
+                ],
+            )
+
+    def get_session_section(self, session_id: str, section_index: int) -> sqlite3.Row | None:
+        """Return one persisted base section row or None."""
+        cur = self._conn.execute(
+            """\
+            SELECT *
+            FROM session_sections
+            WHERE session_id = ? AND section_index = ?
+            """,
+            (session_id, section_index),
+        )
+        return cur.fetchone()
+
+    def list_session_sections(self, session_id: str) -> list[sqlite3.Row]:
+        """Return persisted base section rows for one session."""
+        cur = self._conn.execute(
+            """\
+            SELECT *
+            FROM session_sections
+            WHERE session_id = ?
+            ORDER BY section_index
+            """,
+            (session_id,),
+        )
+        return cur.fetchall()
+
+    def count_session_sections(self) -> int:
+        """Return persisted base section row count."""
+        cur = self._conn.execute("SELECT COUNT(*) FROM session_sections")
+        return cur.fetchone()[0]
+
+    def upsert_session_section_summary(
+        self,
+        *,
+        section_id: str,
+        session_id: str,
+        section_hash: str,
+        prompt_version: str,
+        model_id: str,
+        generation_status: str,
+        summary_text: str | None,
+        summary_json: str | None,
+        summary_chars: int | None,
+        generated_at: str | None,
+        error_message: str | None,
+    ) -> None:
+        """Insert or update a persisted section summary row."""
+        self._conn.execute(
+            """\
+            INSERT INTO session_section_summaries (
+                section_id, session_id, section_hash, prompt_version, model_id,
+                generation_status, summary_text, summary_json, summary_chars,
+                generated_at, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(section_id) DO UPDATE SET
+                session_id = excluded.session_id,
+                section_hash = excluded.section_hash,
+                prompt_version = excluded.prompt_version,
+                model_id = excluded.model_id,
+                generation_status = excluded.generation_status,
+                summary_text = excluded.summary_text,
+                summary_json = excluded.summary_json,
+                summary_chars = excluded.summary_chars,
+                generated_at = excluded.generated_at,
+                error_message = excluded.error_message
+            """,
+            (
+                section_id,
+                session_id,
+                section_hash,
+                prompt_version,
+                model_id,
+                generation_status,
+                summary_text,
+                summary_json,
+                summary_chars,
+                generated_at,
+                error_message,
+            ),
+        )
+        self._commit_if_needed()
+
+    def get_session_section_summary(self, section_id: str) -> sqlite3.Row | None:
+        """Return one persisted section summary row or None."""
+        cur = self._conn.execute(
+            "SELECT * FROM session_section_summaries WHERE section_id = ?",
+            (section_id,),
+        )
+        return cur.fetchone()
+
+    def list_session_section_summaries(self, session_id: str) -> list[sqlite3.Row]:
+        """Return persisted section summaries for one session."""
+        cur = self._conn.execute(
+            """\
+            SELECT *
+            FROM session_section_summaries
+            WHERE session_id = ?
+            ORDER BY section_id
+            """,
+            (session_id,),
+        )
+        return cur.fetchall()
+
+    def count_session_section_summaries(self, *, generation_status: str | None = None) -> int:
+        """Return persisted section-summary count, optionally filtered by status."""
+        if generation_status is None:
+            cur = self._conn.execute("SELECT COUNT(*) FROM session_section_summaries")
+            return cur.fetchone()[0]
+        cur = self._conn.execute(
+            "SELECT COUNT(*) FROM session_section_summaries WHERE generation_status = ?",
+            (generation_status,),
+        )
+        return cur.fetchone()[0]
+
     def get_session_summary(self, session_id: str) -> sqlite3.Row | None:
         """Return persisted session summary row or None."""
         cur = self._conn.execute(
@@ -574,6 +797,17 @@ class SessionRepository:
             (session_id,),
         )
         return cur.fetchone()
+
+    def count_session_summaries(self, *, generation_status: str | None = None) -> int:
+        """Return persisted session summary count, optionally filtered by status."""
+        if generation_status is None:
+            cur = self._conn.execute("SELECT COUNT(*) FROM session_summaries")
+            return cur.fetchone()[0]
+        cur = self._conn.execute(
+            "SELECT COUNT(*) FROM session_summaries WHERE generation_status = ?",
+            (generation_status,),
+        )
+        return cur.fetchone()[0]
 
     def list_session_summaries_for_embedding(
         self,
@@ -648,6 +882,28 @@ class SessionRepository:
             (session_id,),
         )
         return cur.fetchone()
+
+    def count_session_summary_embeddings(
+        self,
+        *,
+        generation_status: str | None = None,
+        model_id: str | None = None,
+    ) -> int:
+        """Return persisted embedding count, optionally filtered by status/model."""
+        clauses: list[str] = []
+        params: list[object] = []
+        if generation_status is not None:
+            clauses.append("generation_status = ?")
+            params.append(generation_status)
+        if model_id is not None:
+            clauses.append("model_id = ?")
+            params.append(model_id)
+        where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        cur = self._conn.execute(
+            f"SELECT COUNT(*) FROM session_summary_embeddings{where_sql}",
+            params,
+        )
+        return cur.fetchone()[0]
 
     def list_completed_session_summary_embeddings(
         self,
@@ -777,6 +1033,35 @@ class SessionRepository:
         )
         row = cur.fetchone()
         return Path(row["file_path"]) if row else None
+
+    def list_session_source_files(
+        self,
+        *,
+        ecosystem: str | None = None,
+        session_ids: list[str] | None = None,
+    ) -> list[sqlite3.Row]:
+        """Return session source file rows for backfill-style generation commands."""
+        params: list[object] = []
+        clauses: list[str] = []
+        if ecosystem:
+            clauses.append("s.ecosystem = ?")
+            params.append(ecosystem)
+        if session_ids:
+            placeholders = ",".join(["?"] * len(session_ids))
+            clauses.append(f"s.session_id IN ({placeholders})")
+            params.extend(session_ids)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        cur = self._conn.execute(
+            f"""\
+            SELECT s.session_id, s.ecosystem, tf.file_path
+            FROM sessions s
+            JOIN tracked_files tf ON s.file_id = tf.id
+            {where_sql}
+            ORDER BY s.ecosystem, s.session_id
+            """,
+            params,
+        )
+        return cur.fetchall()
 
     def _fetch_sessions(
         self,

@@ -72,6 +72,8 @@ export const messages: Record<Locale, TranslationDictionary> = {
 
     'filter.searchPlaceholder': 'Search by project path or session ID...',
     'filter.searchLabel': 'Search',
+    'filter.projectPath': 'Project path',
+    'filter.projectPathPlaceholder': 'Filter by project path substring...',
     'filter.dateRange': 'Date range',
     'filter.sortBy': 'Sort by:',
     'filter.sort.updated': 'Updated (newest first)',
@@ -322,6 +324,8 @@ export const messages: Record<Locale, TranslationDictionary> = {
 
     'filter.searchPlaceholder': '按项目路径或会话 ID 搜索...',
     'filter.searchLabel': '搜索',
+    'filter.projectPath': '项目路径',
+    'filter.projectPathPlaceholder': '按项目路径子串筛选...',
     'filter.dateRange': '时间范围',
     'filter.sortBy': '排序：',
     'filter.sort.updated': '最近更新时间（新到旧）',

@@ -68,6 +68,7 @@ async function setupTableModeMockApi(page: Page): Promise<void> {
     session_aggregation_mode: 'logical',
     session_browser_filters: {
       search_query: '',
+      project_path: '',
       start_date: null,
       end_date: null,
       sort_by: 'updated',

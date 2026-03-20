@@ -25,6 +25,11 @@ class Settings(BaseSettings):
         description="Path to Codex rollout session directory",
     )
 
+    codex_state_db_path: Path = Field(
+        default_factory=lambda: Path.home() / ".codex" / "state_5.sqlite",
+        description="Path to Codex state SQLite database",
+    )
+
     # Single session mode (optional)
     single_session: str | None = Field(
         default=None,

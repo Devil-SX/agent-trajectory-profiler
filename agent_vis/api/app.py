@@ -30,6 +30,7 @@ from agent_vis.api.models import (
     ProjectSwimlaneResponse,
     SessionDetailResponse,
     SessionListResponse,
+    SessionSectionResponse,
     SessionStatisticsResponse,
     SyncRunDetail,
     SyncStatusResponse,
@@ -65,6 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db_path=settings.db_path,
         inactivity_threshold=settings.inactivity_threshold,
         model_timeout_threshold=settings.model_timeout_threshold,
+        codex_state_db_path=settings.codex_state_db_path,
     )
     await session_service.initialize()
     yield
@@ -194,6 +196,10 @@ async def list_sessions(
         default=None,
         description="Filter sessions by ecosystem (e.g. claude_code, codex)",
     ),
+    project_path: str | None = Query(
+        default=None,
+        description="Filter sessions whose project_path contains this substring",
+    ),
     bottleneck: Literal["model", "tool", "user"] | None = Query(
         default=None,
         description="Filter sessions by bottleneck category",
@@ -254,6 +260,9 @@ async def list_sessions(
 
     start_date, end_date = _normalize_date_range(start_date, end_date)
     ecosystem_filter = None if ecosystem in (None, "", "all") else ecosystem
+    project_path_filter = project_path.strip() if project_path else None
+    if project_path_filter == "":
+        project_path_filter = None
 
     try:
         sessions, total_count = await session_service.list_sessions(
@@ -264,6 +273,7 @@ async def list_sessions(
             start_date=start_date,
             end_date=end_date,
             ecosystem=ecosystem_filter,
+            project_path=project_path_filter,
             bottleneck=bottleneck,
             min_tokens=min_tokens,
             max_tokens=max_tokens,
@@ -323,16 +333,52 @@ async def get_session(session_id: str, response: Response) -> SessionDetailRespo
         session = await session_service.get_session(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+        summary = session_service.get_persisted_session_summary(session_id)
+        sections = await session_service.get_session_sections(session_id, session=session)
 
         # Add caching headers - cache for 10 minutes (session data is immutable)
         response.headers["Cache-Control"] = "public, max-age=600"
 
-        return SessionDetailResponse(session=session)
+        return SessionDetailResponse(session=session, summary=summary, sections=sections)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to get session {session_id}: {str(e)}"
+        ) from e
+
+
+@app.get(
+    "/api/sessions/{session_id}/sections/{section_index}",
+    response_model=SessionSectionResponse,
+    tags=["Sessions"],
+    summary="Get one session section detail",
+    description="Get one user-bounded section with local stats and persisted AI summary overlay",
+)
+async def get_session_section(
+    session_id: str,
+    section_index: int,
+    response: Response,
+) -> SessionSectionResponse:
+    """Get one section detail for a session."""
+    if session_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    try:
+        section = await session_service.get_session_section_detail(session_id, section_index)
+        if section is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Section not found: {session_id}[{section_index}]",
+            )
+        response.headers["Cache-Control"] = "public, max-age=600"
+        return SessionSectionResponse(session_id=session_id, section=section)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get section {section_index} for {session_id}: {str(e)}",
         ) from e
 
 

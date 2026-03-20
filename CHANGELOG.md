@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-03-20
+
+> **Code Stats** | Total: 93,434 lines | Delta: +6,171 (-167) = **+6,004 net** | Change: **+6.9%** vs v1.7.0
+
+### Added
+
+- User-boundary session section materialization with persisted section stats and structured AI section summaries, including dedicated prompt/runner support and regression coverage across repository, API, and CLI flows.
+- Atomic materialization support for `section-summary` plus expanded materialization status reporting, read-only session detail parity, and direct session-section API access for downstream tools and UIs.
+- Frontend project/session/section hierarchy navigation and metadata sidebar summary cards that surface session summaries, section summaries, and fallback section state when AI materialization has not run yet.
+- New `trajectory_database` skill documenting how other programs can directly query `~/.agent-vis/profiler.db`, which files define the schema, and which SQL patterns are used in the repository.
+
+### Changed
+
+- Session Browser now keeps the table view as the primary overview while layering the new hierarchy navigator and project-path-aware filtering onto the same selection flow.
+- Frontend session-detail fetching now normalizes section payloads into stable fallback-ready shapes, and generated OpenAPI/TypeScript contracts were refreshed to match the expanded backend schema.
+- Codex integration and repository plumbing now accept the Codex state database path and surface the additional metadata needed for section-aware materialization and read-only inspection.
+
+### Fixed
+
+- CLI and API regression coverage now includes section-summary dispatch/status behavior and session detail section parity, reducing drift between backend materialization stages and frontend consumption paths.
+
 ## [1.7.0] - 2026-03-10
 
 > **Code Stats** | Total: 87,426 lines | Delta: +247 (-1) = **+246 net** | Change: **+0.7%** vs v1.6.0

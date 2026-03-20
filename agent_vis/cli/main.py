@@ -153,6 +153,7 @@ def _build_readonly_session_service(db_path: Path | None):
         db_path=resolved_db_path,
         inactivity_threshold=settings.inactivity_threshold,
         model_timeout_threshold=settings.model_timeout_threshold,
+        codex_state_db_path=settings.codex_state_db_path,
     )
 
     try:
@@ -200,6 +201,488 @@ def _run_analytics_command(
 ) -> None:
     """Execute an async analytics service call and print its JSON response."""
     _run_readonly_service_command(db_path, operation)
+
+
+def _configure_parser_for_cli(
+    parser: Any,
+    *,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+    codex_state_db_path: Path | None,
+) -> Any:
+    """Apply runtime parser configuration shared by sync/backfill commands."""
+    if inactivity_threshold is not None and hasattr(parser, "inactivity_threshold"):
+        parser.inactivity_threshold = inactivity_threshold  # type: ignore[attr-defined]
+    if model_timeout is not None and hasattr(parser, "model_timeout_threshold"):
+        parser.model_timeout_threshold = model_timeout  # type: ignore[attr-defined]
+    if hasattr(parser, "_state_db_path") and codex_state_db_path is not None:
+        parser._state_db_path = codex_state_db_path  # type: ignore[attr-defined]
+    return parser
+
+
+def _load_sessions_for_summary_generation(
+    repo: Any,
+    *,
+    ecosystem: str | None,
+    session_ids: tuple[str, ...],
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+    codex_state_db_path: Path | None,
+) -> tuple[dict[str, list[Any]], list[str]]:
+    """Re-parse source files for persisted sessions so summaries can be generated offline."""
+    from agent_vis.parsers.registry import get_parser
+
+    selected_ecosystem = None if ecosystem in (None, "", "all") else ecosystem
+    rows = repo.list_session_source_files(
+        ecosystem=selected_ecosystem,
+        session_ids=list(session_ids) if session_ids else None,
+    )
+    parser_cache: dict[str, Any] = {}
+    sessions_by_ecosystem: dict[str, list[Any]] = {}
+    errors: list[str] = []
+    for row in rows:
+        row_ecosystem = str(row["ecosystem"])
+        parser = parser_cache.get(row_ecosystem)
+        if parser is None:
+            parser = _configure_parser_for_cli(
+                get_parser(row_ecosystem),
+                inactivity_threshold=inactivity_threshold,
+                model_timeout=model_timeout,
+                codex_state_db_path=codex_state_db_path,
+            )
+            parser_cache[row_ecosystem] = parser
+        file_path = Path(str(row["file_path"]))
+        try:
+            parsed_session = parser.parse_session(file_path)
+            sessions_by_ecosystem.setdefault(row_ecosystem, []).append(parsed_session)
+        except Exception as exc:
+            errors.append(f"{file_path.name}: {exc}")
+    return sessions_by_ecosystem, errors
+
+
+def _run_sync_stage(
+    *,
+    path: Path | None,
+    ecosystem: str,
+    force: bool,
+    db_path: Path | None,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+) -> tuple[Any, Path]:
+    """Execute the session materialization stage and return the sync result."""
+    from agent_vis.api.config import get_settings
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+    from agent_vis.db.sync import SyncEngine
+    from agent_vis.parsers.registry import get_parser
+
+    settings = get_settings()
+    default_path = Path.home() / ".claude" / "projects"
+    if ecosystem == "codex":
+        default_path = Path.home() / ".codex" / "sessions"
+    scan_path = (path or default_path).expanduser().resolve()
+
+    parser = _configure_parser_for_cli(
+        get_parser(ecosystem),
+        inactivity_threshold=inactivity_threshold,
+        model_timeout=model_timeout,
+        codex_state_db_path=settings.codex_state_db_path,
+    )
+
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    try:
+        engine = SyncEngine(repo, parser)
+        result = engine.sync(scan_path, force=force)
+    finally:
+        conn.close()
+    return result, scan_path
+
+
+def _run_summary_stage(
+    *,
+    db_path: Path | None,
+    ecosystem: str,
+    session_ids: tuple[str, ...],
+    backend: str,
+    model: str | None,
+    workers: int,
+    max_chars: int,
+    timeout: int,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+) -> tuple[dict[str, int], list[str]]:
+    """Execute the summary materialization stage and return aggregate counts."""
+    from agent_vis.api.config import get_settings
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+    from agent_vis.session_summaries import (
+        SessionSummaryCoordinator,
+        SummaryGenerationConfig,
+        build_summary_runner,
+    )
+
+    settings = get_settings()
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    try:
+        sessions_by_ecosystem, source_errors = _load_sessions_for_summary_generation(
+            repo,
+            ecosystem=ecosystem,
+            session_ids=session_ids,
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+            codex_state_db_path=settings.codex_state_db_path,
+        )
+        total_selected = sum(len(items) for items in sessions_by_ecosystem.values())
+        if total_selected == 0:
+            return {"generated": 0, "skipped": 0, "failed": 0}, source_errors
+
+        config = SummaryGenerationConfig(
+            enabled=True,
+            backend=backend.lower(),
+            model=model,
+            max_workers=workers,
+            max_chars=max_chars,
+            timeout_seconds=timeout,
+        )
+        coordinator = SessionSummaryCoordinator(repo, build_summary_runner(config), config)
+        generated = 0
+        skipped = 0
+        failed = 0
+        for row_ecosystem, sessions_to_summarize in sessions_by_ecosystem.items():
+            stage = coordinator.generate_for_sessions(
+                sessions_to_summarize,
+                ecosystem=row_ecosystem,
+            )
+            generated += stage.generated
+            skipped += stage.skipped
+            failed += stage.failed
+    finally:
+        conn.close()
+    return {"generated": generated, "skipped": skipped, "failed": failed}, source_errors
+
+
+def _run_section_summary_stage(
+    *,
+    db_path: Path | None,
+    ecosystem: str,
+    session_ids: tuple[str, ...],
+    backend: str,
+    model: str | None,
+    workers: int,
+    max_chars: int,
+    timeout: int,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+) -> tuple[dict[str, int], list[str]]:
+    """Execute the section-summary materialization stage and return aggregate counts."""
+    from agent_vis.api.config import get_settings
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+    from agent_vis.session_sections import (
+        SessionSectionSummaryCoordinator,
+        build_section_summary_runner,
+    )
+    from agent_vis.session_summaries import SummaryGenerationConfig
+
+    settings = get_settings()
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    try:
+        sessions_by_ecosystem, source_errors = _load_sessions_for_summary_generation(
+            repo,
+            ecosystem=ecosystem,
+            session_ids=session_ids,
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+            codex_state_db_path=settings.codex_state_db_path,
+        )
+        total_selected = sum(len(items) for items in sessions_by_ecosystem.values())
+        if total_selected == 0:
+            return {"generated": 0, "skipped": 0, "failed": 0, "sections": 0}, source_errors
+
+        config = SummaryGenerationConfig(
+            enabled=True,
+            backend=backend.lower(),
+            model=model,
+            max_workers=workers,
+            max_chars=max_chars,
+            timeout_seconds=timeout,
+        )
+        coordinator = SessionSectionSummaryCoordinator(
+            repo,
+            build_section_summary_runner(config),
+            config,
+        )
+        generated = 0
+        skipped = 0
+        failed = 0
+        sections = 0
+        for row_ecosystem, sessions_to_summarize in sessions_by_ecosystem.items():
+            stage = coordinator.generate_for_sessions(
+                sessions_to_summarize,
+                ecosystem=row_ecosystem,
+            )
+            generated += stage.generated
+            skipped += stage.skipped
+            failed += stage.failed
+            sections += stage.sections
+    finally:
+        conn.close()
+    return {
+        "generated": generated,
+        "skipped": skipped,
+        "failed": failed,
+        "sections": sections,
+    }, source_errors
+
+
+def _run_embedding_stage(
+    *,
+    db_path: Path | None,
+    session_ids: tuple[str, ...],
+    model: str,
+    workers: int,
+    timeout: float,
+    max_retries: int,
+) -> Any:
+    """Execute the embedding materialization stage."""
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+    from agent_vis.session_embeddings import (
+        EmbeddingGenerationConfig,
+        OpenRouterSessionEmbeddingClient,
+        SessionEmbeddingCoordinator,
+    )
+
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    try:
+        config = EmbeddingGenerationConfig(
+            enabled=True,
+            model=model,
+            max_workers=workers,
+            timeout_seconds=timeout,
+            max_retries=max_retries,
+        )
+        coordinator = SessionEmbeddingCoordinator(
+            repo,
+            OpenRouterSessionEmbeddingClient(),
+            config,
+        )
+        result = coordinator.generate_for_completed_summaries(
+            session_ids=list(session_ids) if session_ids else None
+        )
+    finally:
+        conn.close()
+    return result
+
+
+def _collect_materialization_status(
+    *,
+    db_path: Path | None,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+    summary_ecosystem: str,
+    embedding_model: str,
+) -> dict[str, object]:
+    """Inspect the materialization chain without mutating repository state."""
+    from agent_vis.api.config import get_settings
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+    from agent_vis.parsers.registry import get_parser
+    from agent_vis.session_embeddings import compute_summary_text_hash
+    from agent_vis.session_sections import compute_section_hash, derive_session_sections
+    from agent_vis.session_summaries import build_session_synopsis, compute_synopsis_hash
+
+    settings = get_settings()
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    try:
+        session_discovered = 0
+        session_missing_or_stale = 0
+        session_discovery_errors = 0
+        for row_ecosystem, root in [
+            ("claude_code", settings.session_path),
+            ("codex", settings.codex_session_path),
+        ]:
+            parser = _configure_parser_for_cli(
+                get_parser(row_ecosystem),
+                inactivity_threshold=inactivity_threshold,
+                model_timeout=model_timeout,
+                codex_state_db_path=settings.codex_state_db_path,
+            )
+            try:
+                files = parser.find_session_files(root)
+            except Exception:
+                session_discovery_errors += 1
+                continue
+            session_discovered += len(files)
+            for file_path in files:
+                try:
+                    stat = file_path.stat()
+                except OSError:
+                    session_missing_or_stale += 1
+                    continue
+                existing = repo.get_tracked_file(str(file_path.resolve()))
+                if existing is None:
+                    session_missing_or_stale += 1
+                    continue
+                if (
+                    existing["file_size"] != stat.st_size
+                    or existing["file_mtime"] != stat.st_mtime
+                    or existing["parse_status"] != "parsed"
+                ):
+                    session_missing_or_stale += 1
+
+        session_total = repo.count_sessions()
+        summary_total = repo.count_session_summaries()
+        summary_completed = repo.count_session_summaries(generation_status="completed")
+        summary_failed = repo.count_session_summaries(generation_status="failed")
+        section_total = repo.count_session_sections()
+        section_summary_total = repo.count_session_section_summaries()
+        section_summary_completed = repo.count_session_section_summaries(
+            generation_status="completed"
+        )
+        section_summary_failed = repo.count_session_section_summaries(generation_status="failed")
+        embedding_total = repo.count_session_summary_embeddings(model_id=embedding_model)
+        embedding_completed = repo.count_session_summary_embeddings(
+            generation_status="completed",
+            model_id=embedding_model,
+        )
+        embedding_failed = repo.count_session_summary_embeddings(
+            generation_status="failed",
+            model_id=embedding_model,
+        )
+
+        sessions_by_ecosystem, source_errors = _load_sessions_for_summary_generation(
+            repo,
+            ecosystem=summary_ecosystem,
+            session_ids=(),
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+            codex_state_db_path=settings.codex_state_db_path,
+        )
+        summary_missing = 0
+        summary_stale = 0
+        section_missing = 0
+        section_stale = 0
+        section_source_records = 0
+        for row_ecosystem, sessions in sessions_by_ecosystem.items():
+            for session in sessions:
+                current_synopsis = build_session_synopsis(
+                    session,
+                    ecosystem=row_ecosystem,
+                )
+                current_hash = compute_synopsis_hash(current_synopsis)
+                persisted = repo.get_session_summary(session.metadata.session_id)
+                if persisted is None:
+                    summary_missing += 1
+                elif persisted["generation_status"] != "completed":
+                    summary_stale += 1
+                elif persisted["synopsis_hash"] != current_hash:
+                    summary_stale += 1
+
+                for section in derive_session_sections(session, ecosystem=row_ecosystem):
+                    section_source_records += 1
+                    persisted_section = repo.get_session_section_summary(section.section_id)
+                    current_section_hash = compute_section_hash(section.synopsis)
+                    if persisted_section is None:
+                        section_missing += 1
+                    elif persisted_section["generation_status"] != "completed":
+                        section_stale += 1
+                    elif persisted_section["section_hash"] != current_section_hash:
+                        section_stale += 1
+
+        embedding_missing = 0
+        embedding_stale = 0
+        for row in repo.list_session_summaries_for_embedding():
+            session_id = str(row["session_id"])
+            persisted = repo.get_session_summary_embedding(session_id)
+            current_hash = compute_summary_text_hash(str(row["summary_text"]))
+            if persisted is None or persisted["model_id"] != embedding_model:
+                embedding_missing += 1
+                continue
+            if persisted["generation_status"] != "completed":
+                embedding_stale += 1
+                continue
+            if persisted["summary_hash"] != current_hash or not persisted["vector_json"]:
+                embedding_stale += 1
+
+        stage_session = {
+            "name": "session",
+            "depends_on": [],
+            "sync_ready": session_discovered > 0,
+            "up_to_date": session_missing_or_stale == 0 and session_discovery_errors == 0,
+            "source_records": session_discovered,
+            "materialized_records": session_total,
+            "missing_or_stale": session_missing_or_stale,
+            "failed": session_discovery_errors,
+            "command": "agent-vis materialize sync --stage session",
+        }
+        stage_summary = {
+            "name": "summary",
+            "depends_on": ["session"],
+            "sync_ready": session_total > 0,
+            "up_to_date": summary_missing == 0 and summary_stale == 0 and summary_failed == 0,
+            "input_records": session_total,
+            "materialized_records": summary_total,
+            "completed": summary_completed,
+            "missing": summary_missing,
+            "stale": summary_stale,
+            "failed": summary_failed,
+            "source_parse_errors": len(source_errors),
+            "command": "agent-vis materialize sync --stage summary",
+        }
+        stage_embedding = {
+            "name": "embedding",
+            "depends_on": ["summary"],
+            "sync_ready": summary_completed > 0,
+            "up_to_date": embedding_missing == 0 and embedding_stale == 0 and embedding_failed == 0,
+            "input_records": summary_completed,
+            "materialized_records": embedding_total,
+            "completed": embedding_completed,
+            "missing": embedding_missing,
+            "stale": embedding_stale,
+            "failed": embedding_failed,
+            "model": embedding_model,
+            "command": "agent-vis materialize sync --stage embedding",
+        }
+        stage_section_summary = {
+            "name": "section_summary",
+            "depends_on": ["session"],
+            "sync_ready": session_total > 0,
+            "up_to_date": (
+                section_missing == 0 and section_stale == 0 and section_summary_failed == 0
+            ),
+            "input_records": section_source_records,
+            "materialized_records": section_total,
+            "summary_records": section_summary_total,
+            "completed": section_summary_completed,
+            "missing": section_missing,
+            "stale": section_stale,
+            "failed": section_summary_failed,
+            "source_parse_errors": len(source_errors),
+            "command": "agent-vis materialize sync --stage section-summary",
+        }
+        return {
+            "chain": [
+                {"stage": "session", "depends_on": []},
+                {"stage": "summary", "depends_on": ["session"]},
+                {"stage": "section_summary", "depends_on": ["session"]},
+                {"stage": "embedding", "depends_on": ["summary"]},
+            ],
+            "stages": {
+                "session": stage_session,
+                "summary": stage_summary,
+                "section_summary": stage_section_summary,
+                "embedding": stage_embedding,
+            },
+            "summary_scope": summary_ecosystem,
+        }
+    finally:
+        conn.close()
 
 
 def _validate_numeric_range(
@@ -794,62 +1277,6 @@ def parse(
     default=None,
     help="Seconds of model inference gap to count as timeout (default: 600)",
 )
-@click.option(
-    "--summaries/--no-summaries",
-    default=False,
-    help="Generate bounded plain-text session summaries via Codex after sync",
-)
-@click.option(
-    "--summary-model",
-    default=None,
-    help="Codex model override for session summaries (default: use Codex CLI default)",
-)
-@click.option(
-    "--summary-workers",
-    type=click.IntRange(min=1),
-    default=4,
-    show_default=True,
-    help="Maximum concurrent summary workers when --summaries is enabled",
-)
-@click.option(
-    "--summary-max-chars",
-    type=click.IntRange(min=120, max=2000),
-    default=480,
-    show_default=True,
-    help="Maximum characters allowed in each generated summary",
-)
-@click.option(
-    "--embeddings/--no-embeddings",
-    default=False,
-    help="Generate OpenRouter embeddings from persisted summary text after sync",
-)
-@click.option(
-    "--embedding-model",
-    default="openai/text-embedding-3-small",
-    show_default=True,
-    help="OpenRouter embedding model ID used for persisted session summaries",
-)
-@click.option(
-    "--embedding-workers",
-    type=click.IntRange(min=1),
-    default=4,
-    show_default=True,
-    help="Maximum concurrent embedding workers when --embeddings is enabled",
-)
-@click.option(
-    "--embedding-timeout",
-    type=click.FloatRange(min=1.0),
-    default=30.0,
-    show_default=True,
-    help="Per-request timeout in seconds for OpenRouter embedding calls",
-)
-@click.option(
-    "--embedding-max-retries",
-    type=click.IntRange(min=0, max=5),
-    default=2,
-    show_default=True,
-    help="Retry count for transient OpenRouter embedding failures (429/5xx/network)",
-)
 def sync(
     path: Path | None,
     ecosystem: str,
@@ -857,15 +1284,6 @@ def sync(
     db_path: Path | None,
     inactivity_threshold: float | None,
     model_timeout: float | None,
-    summaries: bool,
-    summary_model: str | None,
-    summary_workers: int,
-    summary_max_chars: int,
-    embeddings: bool,
-    embedding_model: str,
-    embedding_workers: int,
-    embedding_timeout: float,
-    embedding_max_retries: int,
 ) -> None:
     """
     Incrementally scan and parse agent trajectory files into the database.
@@ -886,101 +1304,474 @@ def sync(
         # Force re-parse everything
         agent-vis sync --force
     """
-    from agent_vis.db.connection import get_connection
-    from agent_vis.db.repository import SessionRepository
-    from agent_vis.db.sync import SyncEngine
-    from agent_vis.parsers.registry import get_parser
-    from agent_vis.session_embeddings import (
-        EmbeddingGenerationConfig,
-        OpenRouterSessionEmbeddingClient,
-        SessionEmbeddingCoordinator,
-    )
-    from agent_vis.session_summaries import (
-        CodexSessionSummaryRunner,
-        SessionSummaryCoordinator,
-        SummaryGenerationConfig,
-    )
-
-    default_path = Path.home() / ".claude" / "projects"
-    if ecosystem == "codex":
-        default_path = Path.home() / ".codex" / "sessions"
-    scan_path = (path or default_path).expanduser().resolve()
-
     try:
-        parser = get_parser(ecosystem)
+        result, scan_path = _run_sync_stage(
+            path=path,
+            ecosystem=ecosystem,
+            force=force,
+            db_path=db_path,
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+        )
     except KeyError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    # Apply threshold overrides if provided
-    if inactivity_threshold is not None:
-        parser.inactivity_threshold = inactivity_threshold  # type: ignore[attr-defined]
-    if model_timeout is not None:
-        parser.model_timeout_threshold = model_timeout  # type: ignore[attr-defined]
-
-    conn = get_connection(db_path)
-    repo = SessionRepository(conn)
-    summary_coordinator = None
-    embedding_coordinator = None
-    if summaries:
-        summary_config = SummaryGenerationConfig(
-            enabled=True,
-            model=summary_model,
-            max_workers=summary_workers,
-            max_chars=summary_max_chars,
-        )
-        summary_coordinator = SessionSummaryCoordinator(
-            repo,
-            CodexSessionSummaryRunner(),
-            summary_config,
-        )
-    if embeddings:
-        embedding_config = EmbeddingGenerationConfig(
-            enabled=True,
-            model=embedding_model,
-            max_workers=embedding_workers,
-            timeout_seconds=embedding_timeout,
-            max_retries=embedding_max_retries,
-        )
-        embedding_coordinator = SessionEmbeddingCoordinator(
-            repo,
-            OpenRouterSessionEmbeddingClient(),
-            embedding_config,
-        )
-    engine = SyncEngine(
-        repo,
-        parser,
-        summary_coordinator=summary_coordinator,
-        embedding_coordinator=embedding_coordinator,
-    )
-
     click.echo(f"Scanning: {scan_path}", err=True)
-    result = engine.sync(scan_path, force=force)
-    conn.close()
 
     click.echo(
         f"Sync complete: {result.parsed} parsed, {result.skipped} skipped, "
         f"{len(result.errors)} errors",
         err=True,
     )
-    if summaries:
-        click.echo(
-            "Summary stage: "
-            f"{result.summaries_generated} generated, "
-            f"{result.summaries_skipped} skipped, "
-            f"{result.summaries_failed} failed",
-            err=True,
-        )
-    if embeddings:
-        click.echo(
-            "Embedding stage: "
-            f"{result.embeddings_generated} generated, "
-            f"{result.embeddings_skipped} skipped, "
-            f"{result.embeddings_failed} failed",
-            err=True,
-        )
     for err in result.errors[:10]:
         click.echo(f"  - {err}", err=True)
+
+
+@main.group()
+def summaries() -> None:
+    """Generate or inspect persisted session summaries."""
+    pass
+
+
+@summaries.command("generate")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+@click.option(
+    "--ecosystem",
+    type=click.Choice(["all", "claude_code", "codex"], case_sensitive=False),
+    default="all",
+    show_default=True,
+    help="Limit summary generation to one parsed ecosystem",
+)
+@click.option(
+    "--session-id",
+    "session_ids",
+    multiple=True,
+    help="Generate a summary for one specific persisted session (repeatable)",
+)
+@click.option(
+    "--backend",
+    type=click.Choice(["codex", "claude"], case_sensitive=False),
+    default="codex",
+    show_default=True,
+    help="Headless CLI used to generate summaries",
+)
+@click.option(
+    "--model",
+    "-m",
+    default=None,
+    help="Model override for the selected summary backend CLI",
+)
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1),
+    default=4,
+    show_default=True,
+    help="Maximum concurrent summary workers",
+)
+@click.option(
+    "--max-chars",
+    type=click.IntRange(min=120, max=2000),
+    default=480,
+    show_default=True,
+    help="Maximum characters allowed in each generated summary",
+)
+@click.option(
+    "--timeout",
+    type=click.IntRange(min=30),
+    default=180,
+    show_default=True,
+    help="Per-summary timeout in seconds for the headless backend CLI",
+)
+@click.option(
+    "--inactivity-threshold",
+    type=float,
+    default=None,
+    help="Seconds of gap to classify as inactive while reparsing source files",
+)
+@click.option(
+    "--model-timeout",
+    type=float,
+    default=None,
+    help="Seconds of model inference gap to count as timeout while reparsing source files",
+)
+def summaries_generate(
+    db_path: Path | None,
+    ecosystem: str,
+    session_ids: tuple[str, ...],
+    backend: str,
+    model: str | None,
+    workers: int,
+    max_chars: int,
+    timeout: int,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+) -> None:
+    """Generate persisted summaries independently from sync and embeddings."""
+    counts, source_errors = _run_summary_stage(
+        db_path=db_path,
+        ecosystem=ecosystem,
+        session_ids=session_ids,
+        backend=backend,
+        model=model,
+        workers=workers,
+        max_chars=max_chars,
+        timeout=timeout,
+        inactivity_threshold=inactivity_threshold,
+        model_timeout=model_timeout,
+    )
+    if counts["generated"] == 0 and counts["skipped"] == 0 and counts["failed"] == 0:
+        click.echo("No persisted sessions matched the summary generation request.", err=True)
+        for err in source_errors[:10]:
+            click.echo(f"  - {err}", err=True)
+        return
+
+    click.echo(
+        "Summary generation complete: "
+        f"{counts['generated']} generated, "
+        f"{counts['skipped']} skipped, "
+        f"{counts['failed']} failed",
+        err=True,
+    )
+    if source_errors:
+        click.echo(f"Source parse errors: {len(source_errors)}", err=True)
+        for err in source_errors[:10]:
+            click.echo(f"  - {err}", err=True)
+
+
+@main.group()
+def embeddings() -> None:
+    """Generate persisted summary embeddings."""
+    pass
+
+
+@embeddings.command("generate")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+@click.option(
+    "--session-id",
+    "session_ids",
+    multiple=True,
+    help="Generate an embedding for one specific persisted summary (repeatable)",
+)
+@click.option(
+    "--model",
+    "-m",
+    default="openai/text-embedding-3-small",
+    show_default=True,
+    help="OpenRouter embedding model ID used for persisted session summaries",
+)
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1),
+    default=4,
+    show_default=True,
+    help="Maximum concurrent embedding workers",
+)
+@click.option(
+    "--timeout",
+    type=click.FloatRange(min=1.0),
+    default=30.0,
+    show_default=True,
+    help="Per-request timeout in seconds for OpenRouter embedding calls",
+)
+@click.option(
+    "--max-retries",
+    type=click.IntRange(min=0, max=5),
+    default=2,
+    show_default=True,
+    help="Retry count for transient OpenRouter embedding failures (429/5xx/network)",
+)
+def embeddings_generate(
+    db_path: Path | None,
+    session_ids: tuple[str, ...],
+    model: str,
+    workers: int,
+    timeout: float,
+    max_retries: int,
+) -> None:
+    """Generate embeddings from already-persisted summaries."""
+    result = _run_embedding_stage(
+        db_path=db_path,
+        session_ids=session_ids,
+        model=model,
+        workers=workers,
+        timeout=timeout,
+        max_retries=max_retries,
+    )
+
+    click.echo(
+        "Embedding generation complete: "
+        f"{result.generated} generated, "
+        f"{result.skipped} skipped, "
+        f"{result.failed} failed",
+        err=True,
+    )
+
+
+@main.group()
+def materialize() -> None:
+    """Inspect and drive the session -> summary -> embedding materialization chain."""
+    pass
+
+
+@materialize.command("status")
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+@click.option(
+    "--summary-ecosystem",
+    type=click.Choice(["all", "claude_code", "codex"], case_sensitive=False),
+    default="all",
+    show_default=True,
+    help="Summary status detection scope",
+)
+@click.option(
+    "--embedding-model",
+    default="openai/text-embedding-3-small",
+    show_default=True,
+    help="Embedding model to inspect for the embedding stage",
+)
+@click.option(
+    "--inactivity-threshold",
+    type=float,
+    default=None,
+    help="Seconds of gap to classify as inactive while reparsing source files for summary status",
+)
+@click.option(
+    "--model-timeout",
+    type=float,
+    default=None,
+    help=(
+        "Seconds of model inference gap to count as timeout while reparsing "
+        "source files for summary status"
+    ),
+)
+def materialize_status(
+    db_path: Path | None,
+    summary_ecosystem: str,
+    embedding_model: str,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+) -> None:
+    """Return JSON status for the materialization chain."""
+    payload = _collect_materialization_status(
+        db_path=db_path,
+        inactivity_threshold=inactivity_threshold,
+        model_timeout=model_timeout,
+        summary_ecosystem=summary_ecosystem,
+        embedding_model=embedding_model,
+    )
+    _echo_json_payload(payload)
+
+
+@materialize.command("sync")
+@click.option(
+    "--stage",
+    type=click.Choice(["session", "summary", "section-summary", "embedding"], case_sensitive=False),
+    required=True,
+    help="Materialization stage to execute",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="SQLite database path (default: ~/.agent-vis/profiler.db)",
+)
+@click.option(
+    "--path",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Directory to scan when --stage=session",
+)
+@click.option(
+    "--ecosystem",
+    default="claude_code",
+    show_default=True,
+    help="Parser ecosystem for session, summary, or section-summary stage",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Force full re-parse when --stage=session",
+)
+@click.option(
+    "--session-id",
+    "session_ids",
+    multiple=True,
+    help="Limit summary/section-summary/embedding generation to specific persisted session ids",
+)
+@click.option(
+    "--backend",
+    type=click.Choice(["codex", "claude"], case_sensitive=False),
+    default="codex",
+    show_default=True,
+    help="Summary backend when --stage=summary or --stage=section-summary",
+)
+@click.option(
+    "--model",
+    "-m",
+    default=None,
+    help="Model override for summary/section-summary backend or embedding stage",
+)
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1),
+    default=4,
+    show_default=True,
+    help="Worker count for summary or embedding stage",
+)
+@click.option(
+    "--max-chars",
+    type=click.IntRange(min=120, max=2000),
+    default=480,
+    show_default=True,
+    help="Maximum summary characters when --stage=summary or --stage=section-summary",
+)
+@click.option(
+    "--timeout",
+    type=float,
+    default=180.0,
+    show_default=True,
+    help="Per-item timeout in seconds for summary, section-summary, or embedding stage",
+)
+@click.option(
+    "--max-retries",
+    type=click.IntRange(min=0, max=5),
+    default=2,
+    show_default=True,
+    help="Embedding retry count when --stage=embedding",
+)
+@click.option(
+    "--inactivity-threshold",
+    type=float,
+    default=None,
+    help="Seconds of gap to classify as inactive for session/summary/section-summary stage parsing",
+)
+@click.option(
+    "--model-timeout",
+    type=float,
+    default=None,
+    help=(
+        "Seconds of model inference gap to count as timeout for "
+        "session/summary/section-summary stage parsing"
+    ),
+)
+def materialize_sync(
+    stage: str,
+    db_path: Path | None,
+    path: Path | None,
+    ecosystem: str,
+    force: bool,
+    session_ids: tuple[str, ...],
+    backend: str,
+    model: str | None,
+    workers: int,
+    max_chars: int,
+    timeout: float,
+    max_retries: int,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+) -> None:
+    """Run one materialization stage without chaining later stages."""
+    if stage == "session":
+        result, scan_path = _run_sync_stage(
+            path=path,
+            ecosystem=ecosystem,
+            force=force,
+            db_path=db_path,
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+        )
+        click.echo(f"Scanning: {scan_path}", err=True)
+        click.echo(
+            f"Sync complete: {result.parsed} parsed, {result.skipped} skipped, "
+            f"{len(result.errors)} errors",
+            err=True,
+        )
+        for err in result.errors[:10]:
+            click.echo(f"  - {err}", err=True)
+        return
+    if stage == "summary":
+        counts, source_errors = _run_summary_stage(
+            db_path=db_path,
+            ecosystem=ecosystem,
+            session_ids=session_ids,
+            backend=backend,
+            model=model,
+            workers=workers,
+            max_chars=max_chars,
+            timeout=int(timeout),
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+        )
+        click.echo(
+            "Summary generation complete: "
+            f"{counts['generated']} generated, "
+            f"{counts['skipped']} skipped, "
+            f"{counts['failed']} failed",
+            err=True,
+        )
+        if source_errors:
+            click.echo(f"Source parse errors: {len(source_errors)}", err=True)
+            for err in source_errors[:10]:
+                click.echo(f"  - {err}", err=True)
+        return
+    if stage == "section-summary":
+        counts, source_errors = _run_section_summary_stage(
+            db_path=db_path,
+            ecosystem=ecosystem,
+            session_ids=session_ids,
+            backend=backend,
+            model=model,
+            workers=workers,
+            max_chars=max_chars,
+            timeout=int(timeout),
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+        )
+        click.echo(
+            "Section summary generation complete: "
+            f"{counts['generated']} generated, "
+            f"{counts['skipped']} skipped, "
+            f"{counts['failed']} failed "
+            f"across {counts['sections']} sections",
+            err=True,
+        )
+        if source_errors:
+            click.echo(f"Source parse errors: {len(source_errors)}", err=True)
+            for err in source_errors[:10]:
+                click.echo(f"  - {err}", err=True)
+        return
+    embedding_model = model or "openai/text-embedding-3-small"
+    result = _run_embedding_stage(
+        db_path=db_path,
+        session_ids=session_ids,
+        model=embedding_model,
+        workers=workers,
+        timeout=float(timeout),
+        max_retries=max_retries,
+    )
+    click.echo(
+        "Embedding generation complete: "
+        f"{result.generated} generated, "
+        f"{result.skipped} skipped, "
+        f"{result.failed} failed",
+        err=True,
+    )
 
 
 @main.group()
@@ -1328,6 +2119,7 @@ def analyze(
         "--system-prompt",
         system_role,
         "--dangerously-skip-permissions",
+        "--no-session-persistence",
     ]
 
     try:
@@ -1509,7 +2301,12 @@ def sessions_get(session_id: str, db_path: Path | None) -> None:
         session = await service.get_session(session_id)
         if session is None:
             raise ValueError(f"Session '{session_id}' not found.")
-        return SessionDetailResponse(session=session)
+        sections = await service.get_session_sections(session_id, session=session)
+        return SessionDetailResponse(
+            session=session,
+            summary=service.get_persisted_session_summary(session_id),
+            sections=sections,
+        )
 
     _run_readonly_service_command(db_path, _operation)
 

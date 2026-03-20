@@ -184,6 +184,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{session_id}/sections/{section_index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one session section detail
+         * @description Get one user-bounded section with local stats and persisted AI summary overlay
+         */
+        get: operations["get_session_section_api_sessions__session_id__sections__section_index__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{session_id}/statistics": {
         parameters: {
             query?: never;
@@ -1000,6 +1020,24 @@ export interface components {
          */
         MessageType: "user" | "assistant" | "file-history-snapshot" | "summary";
         /**
+         * PersistedSessionSummary
+         * @description Persisted AI-generated summary attached to a session detail response.
+         */
+        PersistedSessionSummary: {
+            /** Error Message */
+            error_message?: string | null;
+            /** Generated At */
+            generated_at?: string | null;
+            /** Generation Status */
+            generation_status: string;
+            /** Model Id */
+            model_id: string;
+            /** Summary Chars */
+            summary_chars?: number | null;
+            /** Summary Text */
+            summary_text?: string | null;
+        };
+        /**
          * ProjectAggregate
          * @description Aggregated metrics for a project path.
          */
@@ -1378,6 +1416,11 @@ export interface components {
             /** Message Min */
             message_min?: number | null;
             /**
+             * Project Path
+             * @default
+             */
+            project_path: string;
+            /**
              * Search Query
              * @default
              */
@@ -1406,7 +1449,10 @@ export interface components {
          * @description Response model for GET /api/sessions/{id}.
          */
         SessionDetailResponse: {
+            /** Sections */
+            sections?: components["schemas"]["SessionSectionDetail"][];
             session: components["schemas"]["Session"];
+            summary?: components["schemas"]["PersistedSessionSummary"] | null;
         };
         /**
          * SessionListResponse
@@ -1443,15 +1489,28 @@ export interface components {
          * @description Metadata about a Claude Code session.
          */
         SessionMetadata: {
+            /** Cli Version */
+            cli_version?: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** First User Message */
+            first_user_message?: string | null;
             /** Git Branch */
             git_branch?: string | null;
+            /** Git Sha */
+            git_sha?: string | null;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
             /** Logical Session Id */
             logical_session_id?: string | null;
+            /** Model Provider */
+            model_provider?: string | null;
             /** Parent Session Id */
             parent_session_id?: string | null;
             /** Physical Session Id */
@@ -1462,6 +1521,10 @@ export interface components {
             root_session_id?: string | null;
             /** Session Id */
             session_id: string;
+            /** Session Source */
+            session_source?: string | null;
+            /** Title */
+            title?: string | null;
             /** Total Messages */
             total_messages: number;
             /** Total Tokens */
@@ -1472,6 +1535,72 @@ export interface components {
             user_type?: string | null;
             /** Version */
             version: string;
+        };
+        /**
+         * SessionSectionDetail
+         * @description Session section detail with fallback-ready base stats and optional AI summary.
+         */
+        SessionSectionDetail: {
+            /** Assistant Message Count */
+            assistant_message_count: number;
+            /** Char Count */
+            char_count: number;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+            /** End Message Uuid */
+            end_message_uuid: string;
+            /** End Timestamp */
+            end_timestamp?: string | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Generated At */
+            generated_at?: string | null;
+            /**
+             * Generation Status
+             * @default missing
+             * @enum {string}
+             */
+            generation_status: "missing" | "completed" | "failed";
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model Id */
+            model_id?: string | null;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Section Id */
+            section_id: string;
+            /** Section Index */
+            section_index: number;
+            /** Start Message Uuid */
+            start_message_uuid: string;
+            /** Start Timestamp */
+            start_timestamp?: string | null;
+            structured_summary?: components["schemas"]["StructuredSectionSummary"] | null;
+            /** Summary Chars */
+            summary_chars?: number | null;
+            /** Summary Text */
+            summary_text?: string | null;
+            /** Title */
+            title: string;
+            /** Tool Call Count */
+            tool_call_count: number;
+            /** Total Messages */
+            total_messages: number;
+            /** Total Tokens */
+            total_tokens: number;
+            /** User Message Count */
+            user_message_count: number;
+        };
+        /**
+         * SessionSectionResponse
+         * @description Response model for GET /api/sessions/{id}/sections/{index}.
+         */
+        SessionSectionResponse: {
+            section: components["schemas"]["SessionSectionDetail"];
+            /** Session Id */
+            session_id: string;
         };
         /**
          * SessionStatistics
@@ -1637,6 +1766,28 @@ export interface components {
              * @default
              */
             version: string;
+        };
+        /**
+         * StructuredSectionSummary
+         * @description Structured summary payload for one session section.
+         */
+        StructuredSectionSummary: {
+            /** Actions */
+            actions?: string[];
+            /** Goal */
+            goal?: string | null;
+            /** Keywords */
+            keywords?: string[];
+            /** Outcome */
+            outcome?: string | null;
+            /** Risk Or Blocker */
+            risk_or_blocker?: string | null;
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+            /** Tool Patterns */
+            tool_patterns?: string[];
         };
         /**
          * SubagentSession
@@ -2043,10 +2194,6 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
@@ -2303,6 +2450,8 @@ export interface operations {
                 end_date?: string | null;
                 /** @description Filter sessions by ecosystem (e.g. claude_code, codex) */
                 ecosystem?: string | null;
+                /** @description Filter sessions whose project_path contains this substring */
+                project_path?: string | null;
                 /** @description Filter sessions by bottleneck category */
                 bottleneck?: ("model" | "tool" | "user") | null;
                 /** @description Sort key for session list */
@@ -2368,6 +2517,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_section_api_sessions__session_id__sections__section_index__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                section_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSectionResponse"];
                 };
             };
             /** @description Validation Error */

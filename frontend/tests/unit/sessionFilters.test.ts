@@ -102,6 +102,7 @@ describe('sessionFilters', () => {
   it('builds server query filters from browser state', () => {
     const query = buildSessionQueryFilters({
       ...DEFAULT_SESSION_FILTERS,
+      project_path: '/workspace/backend',
       bottleneck: 'tool',
       ecosystem: 'claude_code',
       sort_by: 'messages',
@@ -112,6 +113,7 @@ describe('sessionFilters', () => {
     });
 
     expect(query).toEqual({
+      project_path: '/workspace/backend',
       bottleneck: 'tool',
       ecosystem: 'claude_code',
       sort_by: 'messages',
@@ -130,7 +132,7 @@ describe('sessionFilters', () => {
     expect(
       hasActiveSessionFilter({
         ...DEFAULT_SESSION_FILTERS,
-        search_query: 'abc',
+        project_path: '/tmp/demo',
       })
     ).toBe(true);
   });

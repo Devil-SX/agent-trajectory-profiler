@@ -56,6 +56,51 @@ CREATE TABLE IF NOT EXISTS session_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_session_summaries_status ON session_summaries(generation_status);
 
+CREATE TABLE IF NOT EXISTS session_sections (
+    section_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    section_index INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    start_message_uuid TEXT NOT NULL,
+    end_message_uuid TEXT NOT NULL,
+    start_timestamp TEXT,
+    end_timestamp TEXT,
+    total_messages INTEGER NOT NULL,
+    user_message_count INTEGER NOT NULL,
+    assistant_message_count INTEGER NOT NULL,
+    tool_call_count INTEGER NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    total_tokens INTEGER NOT NULL,
+    char_count INTEGER NOT NULL,
+    duration_seconds REAL,
+    UNIQUE(session_id, section_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_sections_session
+    ON session_sections(session_id, section_index);
+
+CREATE TABLE IF NOT EXISTS session_section_summaries (
+    section_id TEXT PRIMARY KEY REFERENCES session_sections(section_id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    section_hash TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    generation_status TEXT NOT NULL,
+    summary_text TEXT,
+    summary_json TEXT,
+    summary_chars INTEGER,
+    generated_at TEXT,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_section_summaries_session
+    ON session_section_summaries(session_id, section_id);
+CREATE INDEX IF NOT EXISTS idx_session_section_summaries_status
+    ON session_section_summaries(generation_status);
+CREATE INDEX IF NOT EXISTS idx_session_section_summaries_model
+    ON session_section_summaries(model_id);
+
 CREATE TABLE IF NOT EXISTS session_summary_embeddings (
     session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
     summary_hash TEXT NOT NULL,
@@ -112,6 +157,13 @@ def _ensure_sessions_columns(conn: sqlite3.Connection) -> None:
         "parent_session_id": "TEXT",
         "root_session_id": "TEXT",
         "version": "TEXT DEFAULT ''",
+        "git_sha": "TEXT",
+        "cli_version": "TEXT",
+        "title": "TEXT",
+        "first_user_message": "TEXT",
+        "model_provider": "TEXT",
+        "session_source": "TEXT",
+        "is_archived": "INTEGER DEFAULT 0",
     }
     for column, ddl in required_columns.items():
         if column in existing_columns:

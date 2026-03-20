@@ -12,6 +12,7 @@ from agent_vis.parsers.codex import (
     parse_codex_jsonl_file_with_diagnostics,
     parse_codex_session_file,
 )
+from agent_vis.parsers.codex_state_db import CodexThreadRow
 
 
 class TestCodexParser:
@@ -80,6 +81,74 @@ class TestCodexParser:
         found = find_codex_session_files(codex_session_root)
         assert len(found) == 1
         assert found[0].name.startswith("rollout-")
+
+    def test_codex_parser_scopes_state_db_rollout_paths_to_scan_root(
+        self,
+        tmp_path: Path,
+        codex_session_root: Path,
+        sample_codex_rollout_file: Path,
+        monkeypatch,
+    ) -> None:
+        outside_root = tmp_path / "outside"
+        outside_root.mkdir()
+        outside_rollout = (
+            outside_root / "rollout-2026-02-26T12-11-00-deadbeef-dead-beef-dead-beefdeadbeef.jsonl"
+        )
+        outside_rollout.write_text("", encoding="utf-8")
+
+        class FakeStateDB:
+            def __init__(self, _db_path: Path) -> None:
+                pass
+
+            def list_threads(self, *, include_archived: bool = False) -> list[CodexThreadRow]:
+                assert include_archived is True
+                return [
+                    CodexThreadRow(
+                        id="inside",
+                        rollout_path=str(sample_codex_rollout_file),
+                        created_at=1,
+                        updated_at=1,
+                        title="inside",
+                        cwd="/tmp/codex",
+                        tokens_used=0,
+                        git_sha=None,
+                        git_branch=None,
+                        git_origin_url=None,
+                        cli_version="0.105.0",
+                        source="cli",
+                        model_provider="openai",
+                        first_user_message="inside",
+                        archived=False,
+                        sandbox_policy="default",
+                        approval_mode="never",
+                    ),
+                    CodexThreadRow(
+                        id="outside",
+                        rollout_path=str(outside_rollout),
+                        created_at=2,
+                        updated_at=2,
+                        title="outside",
+                        cwd="/tmp/outside",
+                        tokens_used=0,
+                        git_sha=None,
+                        git_branch=None,
+                        git_origin_url=None,
+                        cli_version="0.105.0",
+                        source="cli",
+                        model_provider="openai",
+                        first_user_message="outside",
+                        archived=False,
+                        sandbox_policy="default",
+                        approval_mode="never",
+                    ),
+                ]
+
+        monkeypatch.setattr("agent_vis.parsers.codex_state_db.CodexStateDB", FakeStateDB)
+
+        parser = CodexParser(state_db_path=tmp_path / "state_5.sqlite")
+        found = parser.find_session_files(codex_session_root)
+
+        assert found == [sample_codex_rollout_file.resolve()]
 
     def test_parser_registry_includes_codex(self) -> None:
         parser = get_parser("codex")

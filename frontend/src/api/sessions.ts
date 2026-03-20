@@ -16,10 +16,15 @@ import type {
   SyncRunDetail,
   SyncStatusResponse,
   SessionListResponse,
-  SessionDetailResponse,
+  SessionDetailResponse as ApiSessionDetailResponse,
   SessionStatisticsResponse,
 } from '../types/generated/api-contracts';
-import type { SessionQueryFilters } from '../types/session';
+import type {
+  SessionDetailResponse,
+  SessionQueryFilters,
+  SessionSectionDetail,
+  StructuredSectionSummary,
+} from '../types/session';
 
 function resolveApiBaseUrl(): string {
   const fromEnv = import.meta.env.VITE_API_BASE_URL?.trim();
@@ -43,6 +48,52 @@ function resolveApiBaseUrl(): string {
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
+
+function normalizeStructuredSectionSummary(
+  summary:
+    | NonNullable<NonNullable<ApiSessionDetailResponse['sections']>[number]['structured_summary']>
+    | null
+    | undefined
+): StructuredSectionSummary | null {
+  if (!summary) {
+    return null;
+  }
+
+  return {
+    title: summary.title,
+    summary: summary.summary,
+    goal: summary.goal ?? null,
+    actions: summary.actions ?? [],
+    outcome: summary.outcome ?? null,
+    tool_patterns: summary.tool_patterns ?? [],
+    risk_or_blocker: summary.risk_or_blocker ?? null,
+    keywords: summary.keywords ?? [],
+  };
+}
+
+function normalizeSessionSection(section: NonNullable<ApiSessionDetailResponse['sections']>[number]): SessionSectionDetail {
+  return {
+    ...section,
+    duration_seconds: section.duration_seconds ?? null,
+    end_timestamp: section.end_timestamp ?? null,
+    error_message: section.error_message ?? null,
+    generated_at: section.generated_at ?? null,
+    model_id: section.model_id ?? null,
+    prompt_version: section.prompt_version ?? null,
+    start_timestamp: section.start_timestamp ?? null,
+    structured_summary: normalizeStructuredSectionSummary(section.structured_summary),
+    summary_chars: section.summary_chars ?? null,
+    summary_text: section.summary_text ?? null,
+  };
+}
+
+function normalizeSessionDetailResponse(payload: ApiSessionDetailResponse): SessionDetailResponse {
+  return {
+    session: payload.session,
+    summary: payload.summary ?? null,
+    sections: (payload.sections ?? []).map(normalizeSessionSection),
+  };
+}
 
 /**
  * Retry configuration
@@ -196,6 +247,9 @@ export async function fetchSessions(
     if (filters?.ecosystem) {
       params.append('ecosystem', filters.ecosystem);
     }
+    if (filters?.project_path) {
+      params.append('project_path', filters.project_path);
+    }
     if (filters?.bottleneck) {
       params.append('bottleneck', filters.bottleneck);
     }
@@ -245,7 +299,7 @@ export async function fetchSessions(
 export async function fetchSessionDetail(sessionId: string): Promise<SessionDetailResponse> {
   try {
     const response = await fetchWithRetry(`${API_BASE_URL}/api/sessions/${sessionId}`);
-    return response.json();
+    return normalizeSessionDetailResponse((await response.json()) as ApiSessionDetailResponse);
   } catch (error) {
     if (import.meta.env.DEV) {
       console.error(`Failed to fetch session ${sessionId}:`, error);

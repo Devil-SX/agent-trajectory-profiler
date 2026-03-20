@@ -18,6 +18,7 @@ from agent_vis.prompts.session_summary import (
     build_session_summary_prompt,
 )
 from agent_vis.session_summaries import (
+    ClaudeSessionSummaryRunner,
     CodexSessionSummaryRunner,
     SessionSummaryCoordinator,
     SessionSummaryGenerationError,
@@ -205,6 +206,50 @@ def test_codex_runner_builds_expected_command_and_truncates_output(
     assert len(generation.summary_text) <= 83
 
 
+def test_claude_runner_builds_expected_command_and_truncates_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = ClaudeSessionSummaryRunner()
+    config = SummaryGenerationConfig(
+        enabled=True,
+        backend="claude",
+        model="sonnet",
+        max_chars=80,
+    )
+    synopsis = SessionSynopsis(
+        session_id="sess-a",
+        ecosystem="claude_code",
+        project_path="/tmp/project",
+        total_messages=2,
+        total_tokens=30,
+        total_tool_calls=0,
+    )
+
+    monkeypatch.setattr("agent_vis.session_summaries.shutil.which", lambda _: "/usr/bin/claude")
+
+    seen_commands: list[list[str]] = []
+
+    def _fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        command = list(args[0])
+        seen_commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="dense summary " * 20, stderr="")
+
+    monkeypatch.setattr("agent_vis.session_summaries.subprocess.run", _fake_run)
+
+    generation = runner.generate(synopsis, config=config)
+
+    assert seen_commands
+    assert seen_commands[0][0:2] == ["claude", "-p"]
+    assert "--model" in seen_commands[0]
+    assert "--dangerously-skip-permissions" in seen_commands[0]
+    assert "--no-session-persistence" in seen_commands[0]
+    assert generation.status == "completed"
+    assert generation.summary_text is not None
+    assert len(generation.summary_text) <= 83
+    assert generation.model_id == "claude:sonnet"
+
+
 def test_codex_runner_raises_when_binary_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = CodexSessionSummaryRunner()
     synopsis = SessionSynopsis(
@@ -242,7 +287,6 @@ def test_summary_coordinator_runs_in_parallel_and_persists_results(
         def generate(
             self, synopsis: SessionSynopsis, *, config: SummaryGenerationConfig
         ) -> SummaryGeneration:
-            del config
             with self.lock:
                 self.current += 1
                 self.max_seen = max(self.max_seen, self.current)
@@ -253,7 +297,7 @@ def test_summary_coordinator_runs_in_parallel_and_persists_results(
                     session_id=synopsis.session_id,
                     synopsis_hash=compute_synopsis_hash(synopsis),
                     prompt_version=SESSION_SUMMARY_PROMPT_VERSION,
-                    model_id="default",
+                    model_id=config.model_id,
                     status="completed",
                     summary_text=text,
                     summary_chars=len(text),
@@ -293,7 +337,7 @@ def test_summary_coordinator_skips_unchanged_synopsis(
         session_id=session.metadata.session_id,
         synopsis_hash=compute_synopsis_hash(synopsis),
         prompt_version=SESSION_SUMMARY_PROMPT_VERSION,
-        model_id="default",
+        model_id=SummaryGenerationConfig(enabled=True).model_id,
         generation_status="completed",
         summary_text="cached summary",
         summary_chars=len("cached summary"),
@@ -337,7 +381,6 @@ def test_sync_engine_summary_stage_success_skip_and_failure(
         def generate(
             self, synopsis: SessionSynopsis, *, config: SummaryGenerationConfig
         ) -> SummaryGeneration:
-            del config
             if self.fail and synopsis.session_id == "sess-b":
                 raise SessionSummaryGenerationError("forced summary failure")
             text = f"summary for {synopsis.session_id}"
@@ -345,7 +388,7 @@ def test_sync_engine_summary_stage_success_skip_and_failure(
                 session_id=synopsis.session_id,
                 synopsis_hash=compute_synopsis_hash(synopsis),
                 prompt_version=SESSION_SUMMARY_PROMPT_VERSION,
-                model_id="default",
+                model_id=config.model_id,
                 status="completed",
                 summary_text=text,
                 summary_chars=len(text),

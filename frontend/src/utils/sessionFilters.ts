@@ -20,6 +20,7 @@ export type {
 
 export const DEFAULT_SESSION_FILTERS: SessionBrowserFilters = {
   search_query: '',
+  project_path: '',
   start_date: null,
   end_date: null,
   sort_by: 'updated',
@@ -238,6 +239,7 @@ export function buildSessionQueryFilters(
   );
 
   return {
+    project_path: normalizeText(filters.project_path) || null,
     ecosystem:
       filters.ecosystem === 'all'
         ? null
@@ -260,6 +262,7 @@ export function buildSessionQueryFilters(
 export function hasActiveSessionFilter(filters: SessionBrowserFilters): boolean {
   return (
     filters.search_query.trim().length > 0 ||
+    filters.project_path.trim().length > 0 ||
     filters.start_date !== null ||
     filters.end_date !== null ||
     filters.sort_by !== DEFAULT_SESSION_FILTERS.sort_by ||

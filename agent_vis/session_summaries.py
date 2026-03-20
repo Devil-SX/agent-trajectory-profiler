@@ -1,9 +1,10 @@
-"""Session synopsis construction and headless Codex summary generation."""
+"""Session synopsis construction and headless CLI summary generation."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -133,16 +134,18 @@ class SummaryGenerationConfig:
     """Repository-owned settings for plain-text session summaries."""
 
     enabled: bool = False
+    backend: Literal["codex", "claude"] = "codex"
     model: str | None = None
     max_chars: int = SESSION_SUMMARY_MAX_CHARS
     max_workers: int = DEFAULT_SESSION_SUMMARY_WORKERS
     timeout_seconds: int = DEFAULT_SESSION_SUMMARY_TIMEOUT_SECONDS
     prompt_version: str = SESSION_SUMMARY_PROMPT_VERSION
     codex_bin: str = "codex"
+    claude_bin: str = "claude"
 
     @property
     def model_id(self) -> str:
-        return self.model or "default"
+        return f"{self.backend}:{self.model or 'default'}"
 
 
 @dataclass(frozen=True)
@@ -171,6 +174,15 @@ class SummaryStageResult:
 
 class SessionSummaryGenerationError(RuntimeError):
     """Raised when headless summary generation fails."""
+
+
+class SessionSummaryRunner(Protocol):
+    """Interface for repository-owned summary backends."""
+
+    def generate(
+        self, synopsis: SessionSynopsis, *, config: SummaryGenerationConfig
+    ) -> SummaryGeneration:
+        """Generate one bounded plain-text summary."""
 
 
 def derive_bottleneck_label(session: Session) -> str | None:
@@ -330,6 +342,81 @@ class CodexSessionSummaryRunner:
         )
 
 
+class ClaudeSessionSummaryRunner:
+    """Invoke Claude Code headlessly to generate bounded plain-text summaries."""
+
+    def generate(
+        self, synopsis: SessionSynopsis, *, config: SummaryGenerationConfig
+    ) -> SummaryGeneration:
+        if shutil.which(config.claude_bin) is None:
+            raise SessionSummaryGenerationError(
+                f"{config.claude_bin} CLI not found in PATH; cannot generate session summaries."
+            )
+
+        prompt = build_session_summary_prompt(
+            synopsis.to_prompt_context(),
+            max_chars=config.max_chars,
+        )
+        synopsis_hash = compute_synopsis_hash(synopsis)
+        command = [
+            config.claude_bin,
+            "-p",
+            prompt,
+            "--dangerously-skip-permissions",
+            "--no-session-persistence",
+        ]
+        if config.model:
+            command.extend(["--model", config.model])
+
+        env = None
+        if "CLAUDE_CODE_ENTRYPOINT" in os.environ:
+            env = os.environ.copy()
+            env.pop("CLAUDE_CODE_ENTRYPOINT", None)
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=config.timeout_seconds,
+                env=env,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr = _normalize_whitespace(exc.stderr or "")
+            raise SessionSummaryGenerationError(
+                f"claude -p failed with exit code {exc.returncode}: {stderr or 'no stderr'}"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SessionSummaryGenerationError(
+                f"claude -p timed out after {config.timeout_seconds} seconds"
+            ) from exc
+
+        normalized = normalize_summary_text(result.stdout, max_chars=config.max_chars)
+        if not normalized:
+            raise SessionSummaryGenerationError("claude -p returned an empty summary")
+
+        generated_at = datetime.now(timezone.utc).isoformat()
+        return SummaryGeneration(
+            session_id=synopsis.session_id,
+            synopsis_hash=synopsis_hash,
+            prompt_version=config.prompt_version,
+            model_id=config.model_id,
+            status="completed",
+            summary_text=normalized,
+            summary_chars=len(normalized),
+            generated_at=generated_at,
+            error_message=None,
+        )
+
+
+def build_summary_runner(config: SummaryGenerationConfig) -> SessionSummaryRunner:
+    """Select the configured summary backend."""
+    if config.backend == "claude":
+        return ClaudeSessionSummaryRunner()
+    return CodexSessionSummaryRunner()
+
+
 @dataclass(frozen=True)
 class _SummaryWorkItem:
     session_id: str
@@ -343,7 +430,7 @@ class SessionSummaryCoordinator:
     def __init__(
         self,
         repo: SessionRepository,
-        runner: CodexSessionSummaryRunner,
+        runner: SessionSummaryRunner,
         config: SummaryGenerationConfig,
     ) -> None:
         self._repo = repo

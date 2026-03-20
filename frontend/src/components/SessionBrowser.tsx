@@ -16,8 +16,10 @@ import {
   useSessionsQuery,
   useUpdateFrontendPreferencesMutation,
 } from '../hooks/useSessionsQuery';
-import type { SessionSummary } from '../types/session';
+import { fetchSessionDetail } from '../api/sessions';
+import type { SessionSectionDetail, SessionSummary } from '../types/session';
 import { SessionFilter } from './SessionFilter';
+import { SessionHierarchyView } from './SessionHierarchyView';
 import { SessionListView } from './SessionListView';
 import { useI18n } from '../i18n';
 import {
@@ -30,8 +32,10 @@ import './SessionBrowser.css';
 
 interface SessionBrowserProps {
   onSessionChange?: (sessionId: string | null, session?: SessionSummary | null) => void;
+  onSectionChange?: (sessionId: string, sectionIndex: number) => void;
   onComparisonSessionChange?: (sessionId: string | null) => void;
   selectedSessionId?: string | null;
+  selectedSectionIndex?: number | null;
   comparisonSessionId?: string | null;
   autoSelectFirst?: boolean;
   aggregationMode?: SessionAggregationMode;
@@ -49,8 +53,10 @@ function shortId(sessionId: string | null | undefined): string {
 
 export function SessionBrowser({
   onSessionChange,
+  onSectionChange,
   onComparisonSessionChange,
   selectedSessionId: controlledSelectedSessionId = null,
+  selectedSectionIndex = null,
   comparisonSessionId,
   autoSelectFirst = true,
   aggregationMode: controlledAggregationMode,
@@ -66,6 +72,11 @@ export function SessionBrowser({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     controlledSelectedSessionId
   );
+  const [sectionCache, setSectionCache] = useState<Record<string, SessionSectionDetail[]>>({});
+  const [loadingSectionsForSessionId, setLoadingSectionsForSessionId] = useState<string | null>(
+    null
+  );
+  const [expandedSessionIds, setExpandedSessionIds] = useState<string[]>([]);
 
   const [isPickingComparison, setIsPickingComparison] = useState(false);
   const [aggregationModeState, setAggregationModeState] = useState<SessionAggregationMode>('logical');
@@ -245,6 +256,50 @@ export function SessionBrowser({
     setActiveSessionId(sessionId);
     const session = sessions.find((item) => item.session_id === sessionId) || null;
     onSessionChange?.(sessionId, session);
+    if (!expandedSessionIds.includes(sessionId)) {
+      setExpandedSessionIds((prev) => [...prev, sessionId]);
+    }
+    if (!(sessionId in sectionCache)) {
+      setLoadingSectionsForSessionId(sessionId);
+      void fetchSessionDetail(sessionId)
+        .then((data) => {
+          setSectionCache((prev) => ({
+            ...prev,
+            [sessionId]: data.sections ?? [],
+          }));
+        })
+        .catch((err) => {
+          toast.error(err instanceof Error ? err.message : 'Failed to load sections');
+        })
+        .finally(() => setLoadingSectionsForSessionId((current) => (current === sessionId ? null : current)));
+    }
+  };
+
+  const handleSectionSelect = (sessionId: string, sectionIndex: number) => {
+    handleSessionSelect(sessionId);
+    onSectionChange?.(sessionId, sectionIndex);
+  };
+
+  const handleToggleSessionExpansion = (sessionId: string) => {
+    setExpandedSessionIds((prev) =>
+      prev.includes(sessionId)
+        ? prev.filter((item) => item !== sessionId)
+        : [...prev, sessionId]
+    );
+    if (!(sessionId in sectionCache)) {
+      setLoadingSectionsForSessionId(sessionId);
+      void fetchSessionDetail(sessionId)
+        .then((data) => {
+          setSectionCache((prev) => ({
+            ...prev,
+            [sessionId]: data.sections ?? [],
+          }));
+        })
+        .catch((err) => {
+          toast.error(err instanceof Error ? err.message : 'Failed to load sections');
+        })
+        .finally(() => setLoadingSectionsForSessionId((current) => (current === sessionId ? null : current)));
+    }
   };
 
   const showComparison = onComparisonSessionChange !== undefined;
@@ -324,6 +379,19 @@ export function SessionBrowser({
             </div>
 
             <div className="session-browser-list">
+              <div className="session-browser-hierarchy">
+                <SessionHierarchyView
+                  sessions={filteredAndSortedSessions}
+                  selectedSessionId={activeSessionId}
+                  selectedSectionIndex={selectedSectionIndex}
+                  sectionCache={sectionCache}
+                  loadingSectionsForSessionId={loadingSectionsForSessionId}
+                  expandedSessionIds={expandedSessionIds}
+                  onToggleSessionExpansion={handleToggleSessionExpansion}
+                  onSelectSession={handleSessionSelect}
+                  onSelectSection={handleSectionSelect}
+                />
+              </div>
               <SessionListView
                 sessions={filteredAndSortedSessions}
                 selectedId={activeSessionId}

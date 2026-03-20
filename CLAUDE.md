@@ -88,3 +88,4 @@ cd frontend && npm run format    # Prettier
 - Parser logic lives in `parsers/claude_code.py`; `session_parser.py` is a backward-compatibility shim
 - SQLite DB at `~/.agent-vis/profiler.db` (WAL mode); system falls back to in-memory when DB unavailable
 - **VS Code Tasks**: When adding new commands or changing server startup, update `.vscode/tasks.json` to keep IDE launch configurations in sync
+- Agent coordination: in this repository, do not auto-use `todo_preview` and do not read or write `~/.todo/todo.md` unless the user explicitly requests that workflow

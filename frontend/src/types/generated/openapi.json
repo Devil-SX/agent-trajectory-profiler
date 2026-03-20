@@ -1691,6 +1691,69 @@
         "title": "MessageType",
         "type": "string"
       },
+      "PersistedSessionSummary": {
+        "description": "Persisted AI-generated summary attached to a session detail response.",
+        "properties": {
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "generation_status": {
+            "title": "Generation Status",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "summary_chars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Chars"
+          },
+          "summary_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Text"
+          }
+        },
+        "required": [
+          "generation_status",
+          "model_id"
+        ],
+        "title": "PersistedSessionSummary",
+        "type": "object"
+      },
       "ProjectAggregate": {
         "description": "Aggregated metrics for a project path.",
         "properties": {
@@ -2626,6 +2689,11 @@
             ],
             "title": "Message Min"
           },
+          "project_path": {
+            "default": "",
+            "title": "Project Path",
+            "type": "string"
+          },
           "search_query": {
             "default": "",
             "title": "Search Query",
@@ -2693,8 +2761,25 @@
       "SessionDetailResponse": {
         "description": "Response model for GET /api/sessions/{id}.",
         "properties": {
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SessionSectionDetail"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
           "session": {
             "$ref": "#/components/schemas/Session"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersistedSessionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2747,10 +2832,32 @@
       "SessionMetadata": {
         "description": "Metadata about a Claude Code session.",
         "properties": {
+          "cli_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cli Version"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "first_user_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First User Message"
           },
           "git_branch": {
             "anyOf": [
@@ -2763,6 +2870,22 @@
             ],
             "title": "Git Branch"
           },
+          "git_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Sha"
+          },
+          "is_archived": {
+            "default": false,
+            "title": "Is Archived",
+            "type": "boolean"
+          },
           "logical_session_id": {
             "anyOf": [
               {
@@ -2773,6 +2896,17 @@
               }
             ],
             "title": "Logical Session Id"
+          },
+          "model_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Provider"
           },
           "parent_session_id": {
             "anyOf": [
@@ -2814,6 +2948,28 @@
           "session_id": {
             "title": "Session Id",
             "type": "string"
+          },
+          "session_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Source"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           },
           "total_messages": {
             "title": "Total Messages",
@@ -2860,6 +3016,217 @@
           "total_tokens"
         ],
         "title": "SessionMetadata",
+        "type": "object"
+      },
+      "SessionSectionDetail": {
+        "description": "Session section detail with fallback-ready base stats and optional AI summary.",
+        "properties": {
+          "assistant_message_count": {
+            "title": "Assistant Message Count",
+            "type": "integer"
+          },
+          "char_count": {
+            "title": "Char Count",
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "end_message_uuid": {
+            "title": "End Message Uuid",
+            "type": "string"
+          },
+          "end_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Timestamp"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "generation_status": {
+            "default": "missing",
+            "enum": [
+              "missing",
+              "completed",
+              "failed"
+            ],
+            "title": "Generation Status",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "section_id": {
+            "title": "Section Id",
+            "type": "string"
+          },
+          "section_index": {
+            "title": "Section Index",
+            "type": "integer"
+          },
+          "start_message_uuid": {
+            "title": "Start Message Uuid",
+            "type": "string"
+          },
+          "start_timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Timestamp"
+          },
+          "structured_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StructuredSectionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary_chars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Chars"
+          },
+          "summary_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary Text"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tool_call_count": {
+            "title": "Tool Call Count",
+            "type": "integer"
+          },
+          "total_messages": {
+            "title": "Total Messages",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "user_message_count": {
+            "title": "User Message Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "section_id",
+          "section_index",
+          "title",
+          "start_message_uuid",
+          "end_message_uuid",
+          "total_messages",
+          "user_message_count",
+          "assistant_message_count",
+          "tool_call_count",
+          "input_tokens",
+          "output_tokens",
+          "total_tokens",
+          "char_count"
+        ],
+        "title": "SessionSectionDetail",
+        "type": "object"
+      },
+      "SessionSectionResponse": {
+        "description": "Response model for GET /api/sessions/{id}/sections/{index}.",
+        "properties": {
+          "section": {
+            "$ref": "#/components/schemas/SessionSectionDetail"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "section"
+        ],
+        "title": "SessionSectionResponse",
         "type": "object"
       },
       "SessionStatistics": {
@@ -3334,6 +3701,79 @@
           "total_tokens"
         ],
         "title": "SessionSummary",
+        "type": "object"
+      },
+      "StructuredSectionSummary": {
+        "description": "Structured summary payload for one session section.",
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keywords",
+            "type": "array"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "risk_or_blocker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Or Blocker"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tool_patterns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tool Patterns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "summary"
+        ],
+        "title": "StructuredSectionSummary",
         "type": "object"
       },
       "SubagentSession": {
@@ -4019,13 +4459,6 @@
       },
       "ValidationError": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
           "loc": {
             "items": {
               "anyOf": [
@@ -4708,6 +5141,24 @@
             }
           },
           {
+            "description": "Filter sessions whose project_path contains this substring",
+            "in": "query",
+            "name": "project_path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter sessions whose project_path contains this substring",
+              "title": "Project Path"
+            }
+          },
+          {
             "description": "Filter sessions by bottleneck category",
             "in": "query",
             "name": "bottleneck",
@@ -4963,6 +5414,58 @@
           }
         },
         "summary": "Get session details",
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/api/sessions/{session_id}/sections/{section_index}": {
+      "get": {
+        "description": "Get one user-bounded section with local stats and persisted AI summary overlay",
+        "operationId": "get_session_section_api_sessions__session_id__sections__section_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "section_index",
+            "required": true,
+            "schema": {
+              "title": "Section Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get one session section detail",
         "tags": [
           "Sessions"
         ]

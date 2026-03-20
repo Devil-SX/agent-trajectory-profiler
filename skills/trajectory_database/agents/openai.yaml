@@ -1,0 +1,3 @@
+display_name: Trajectory Database
+short_description: Understand the agent-vis SQLite profiler database schema, contents, and direct SQL access patterns.
+default_prompt: Explain what can be read from ~/.agent-vis/profiler.db in this repository, which files define the schema and query behavior, and provide a few concrete SQL examples for sessions, summaries, and embeddings.

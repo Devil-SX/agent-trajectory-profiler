@@ -49,6 +49,13 @@ export function SessionFilter({ value, onChange }: SessionFilterProps) {
       clear: () => applyPatch({ search_query: DEFAULT_SESSION_FILTERS.search_query }),
     });
   }
+  if (value.project_path.trim()) {
+    activeChips.push({
+      key: 'project-path',
+      label: `${t('filter.projectPath')}: ${value.project_path.trim()}`,
+      clear: () => applyPatch({ project_path: DEFAULT_SESSION_FILTERS.project_path }),
+    });
+  }
   if (value.start_date || value.end_date) {
     activeChips.push({
       key: 'date',
@@ -143,6 +150,20 @@ export function SessionFilter({ value, onChange }: SessionFilterProps) {
             placeholder={t('filter.searchPlaceholder')}
             value={value.search_query}
             onChange={(event) => applyPatch({ search_query: event.target.value })}
+          />
+        </div>
+
+        <div className="filter-group project-path-group">
+          <label className="filter-label sr-only" htmlFor="session-filter-project-path">
+            {t('filter.projectPath')}
+          </label>
+          <input
+            id="session-filter-project-path"
+            type="text"
+            className="search-input project-path-input"
+            placeholder={t('filter.projectPathPlaceholder')}
+            value={value.project_path}
+            onChange={(event) => applyPatch({ project_path: event.target.value })}
           />
         </div>
 

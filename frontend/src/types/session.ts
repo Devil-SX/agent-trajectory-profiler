@@ -82,6 +82,7 @@ export type SessionAutomationBand = 'all' | 'low' | 'medium' | 'high';
 
 export interface SessionBrowserFilters {
   search_query: string;
+  project_path: string;
   start_date: string | null;
   end_date: string | null;
   sort_by: SessionSortOption;
@@ -117,6 +118,7 @@ export interface FrontendPreferencesUpdate {
 }
 
 export interface SessionQueryFilters {
+  project_path?: string | null;
   ecosystem?: Exclude<SessionEcosystemFilter, 'all'> | null;
   bottleneck?: Exclude<SessionBottleneckFilter, 'all'> | null;
   sort_by?: SessionSortOption;
@@ -316,6 +318,57 @@ export interface Session {
 
 export interface SessionDetailResponse {
   session: Session;
+  summary?: PersistedSessionSummary | null;
+  sections: SessionSectionDetail[];
+}
+
+export interface PersistedSessionSummary {
+  generation_status: string;
+  summary_text?: string | null;
+  summary_chars?: number | null;
+  model_id: string;
+  generated_at?: string | null;
+  error_message?: string | null;
+}
+
+export interface StructuredSectionSummary {
+  title: string;
+  summary: string;
+  goal?: string | null;
+  actions: string[];
+  outcome?: string | null;
+  tool_patterns: string[];
+  risk_or_blocker?: string | null;
+  keywords: string[];
+}
+
+export type SectionGenerationStatus = 'missing' | 'completed' | 'failed';
+
+export interface SessionSectionDetail {
+  section_id: string;
+  section_index: number;
+  title: string;
+  start_message_uuid: string;
+  end_message_uuid: string;
+  start_timestamp?: string | null;
+  end_timestamp?: string | null;
+  total_messages: number;
+  user_message_count: number;
+  assistant_message_count: number;
+  tool_call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  char_count: number;
+  duration_seconds?: number | null;
+  generation_status: SectionGenerationStatus;
+  model_id?: string | null;
+  prompt_version?: string | null;
+  generated_at?: string | null;
+  error_message?: string | null;
+  summary_text?: string | null;
+  summary_chars?: number | null;
+  structured_summary?: StructuredSectionSummary | null;
 }
 
 export type SubagentType =

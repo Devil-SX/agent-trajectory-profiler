@@ -200,6 +200,13 @@ class SyncEngine:
                     bottleneck=bottleneck,
                     automation_ratio=automation_ratio,
                     version=meta.version,
+                    git_sha=meta.git_sha,
+                    cli_version=meta.cli_version,
+                    title=meta.title,
+                    first_user_message=meta.first_user_message,
+                    model_provider=meta.model_provider,
+                    session_source=meta.session_source,
+                    is_archived=meta.is_archived,
                 )
 
                 if stats:

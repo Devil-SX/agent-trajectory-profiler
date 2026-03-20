@@ -11,6 +11,7 @@ import agent_vis.cli.main as cli_main
 from agent_vis.api.models import (
     CapabilityListResponse,
     FrontendPreferences,
+    PersistedSessionSummary,
     SessionDetailResponse,
     SessionListResponse,
     SessionStatisticsResponse,
@@ -60,9 +61,29 @@ def test_sessions_get_and_statistics_match_service_payloads(
 ) -> None:
     sessions, _ = asyncio.run(initialized_session_service_sync.list_sessions(page=1, page_size=1))
     session_id = sessions[0].session_id
+    initialized_session_service_sync._repo.upsert_session_summary(
+        session_id=session_id,
+        synopsis_hash="hash-summary",
+        prompt_version="v1",
+        model_id="codex:gpt-5.4",
+        generation_status="completed",
+        summary_text="Readonly command summary payload.",
+        summary_chars=32,
+        generated_at="2026-03-18T00:00:00Z",
+        error_message=None,
+    )
 
     expected_detail = SessionDetailResponse(
-        session=asyncio.run(initialized_session_service_sync.get_session(session_id))
+        session=asyncio.run(initialized_session_service_sync.get_session(session_id)),
+        summary=PersistedSessionSummary(
+            generation_status="completed",
+            summary_text="Readonly command summary payload.",
+            summary_chars=32,
+            model_id="codex:gpt-5.4",
+            generated_at="2026-03-18T00:00:00Z",
+            error_message=None,
+        ),
+        sections=asyncio.run(initialized_session_service_sync.get_session_sections(session_id)),
     ).model_dump(mode="json")
     expected_statistics = SessionStatisticsResponse(
         session_id=session_id,

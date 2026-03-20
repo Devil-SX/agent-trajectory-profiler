@@ -47,10 +47,72 @@ class SessionListResponse(BaseModel):
     total_pages: int = Field(description="Total number of pages")
 
 
+class PersistedSessionSummary(BaseModel):
+    """Persisted AI-generated summary attached to a session detail response."""
+
+    generation_status: str
+    summary_text: str | None = None
+    summary_chars: int | None = None
+    model_id: str
+    generated_at: str | None = None
+    error_message: str | None = None
+
+
+class StructuredSectionSummary(BaseModel):
+    """Structured summary payload for one session section."""
+
+    title: str
+    summary: str
+    goal: str | None = None
+    actions: list[str] = Field(default_factory=list)
+    outcome: str | None = None
+    tool_patterns: list[str] = Field(default_factory=list)
+    risk_or_blocker: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+
+
+class SessionSectionDetail(BaseModel):
+    """Session section detail with fallback-ready base stats and optional AI summary."""
+
+    section_id: str
+    section_index: int
+    title: str
+    start_message_uuid: str
+    end_message_uuid: str
+    start_timestamp: str | None = None
+    end_timestamp: str | None = None
+    total_messages: int
+    user_message_count: int
+    assistant_message_count: int
+    tool_call_count: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    char_count: int
+    duration_seconds: float | None = None
+    generation_status: Literal["missing", "completed", "failed"] = "missing"
+    model_id: str | None = None
+    prompt_version: str | None = None
+    generated_at: str | None = None
+    error_message: str | None = None
+    summary_text: str | None = None
+    summary_chars: int | None = None
+    structured_summary: StructuredSectionSummary | None = None
+
+
 class SessionDetailResponse(BaseModel):
     """Response model for GET /api/sessions/{id}."""
 
     session: Session
+    summary: PersistedSessionSummary | None = None
+    sections: list[SessionSectionDetail] = Field(default_factory=list)
+
+
+class SessionSectionResponse(BaseModel):
+    """Response model for GET /api/sessions/{id}/sections/{index}."""
+
+    session_id: str
+    section: SessionSectionDetail
 
 
 class SessionStatisticsResponse(BaseModel):
@@ -107,6 +169,7 @@ class SessionBrowserFilterState(BaseModel):
     """Persisted filter state for Session Browser."""
 
     search_query: str = ""
+    project_path: str = ""
     start_date: str | None = None
     end_date: str | None = None
     sort_by: Literal["updated", "created", "tokens", "duration", "automation", "messages"] = (

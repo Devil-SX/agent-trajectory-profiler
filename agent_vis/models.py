@@ -381,6 +381,13 @@ class SessionMetadata(BaseModel):
     total_messages: int
     total_tokens: int
     user_type: str | None = None
+    git_sha: str | None = None
+    cli_version: str | None = None
+    title: str | None = None
+    first_user_message: str | None = None
+    model_provider: str | None = None
+    session_source: str | None = None
+    is_archived: bool = False
 
 
 class SessionStatistics(BaseModel):
