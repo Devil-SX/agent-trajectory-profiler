@@ -148,6 +148,29 @@ agent-vis sync --embeddings                           # 通过 OpenRouter 对已
 agent-vis sync --summaries --embeddings               # 同一次 sync 内先生成摘要，再生成 embedding
 ```
 
+#### 物化流程
+
+```mermaid
+flowchart TD
+    A["原始会话文件<br/>Claude / Codex JSONL"] --> B["session<br/>解析 + 统计 + SQLite 持久化"]
+    B --> C["summary<br/>session synopsis -> AI 摘要"]
+    B --> D["section_summary<br/>按 user message 切段 -> 结构化 AI 摘要"]
+    C --> E["embedding<br/>summary_text -> 向量 embedding"]
+    E --> F["clusters<br/>基于已持久化 embedding 的离线聚类"]
+    B --> G["CLI / REST 只读模型"]
+    C --> G
+    D --> G
+    E --> G
+```
+
+各个物化阶段是原子化的，可以分别检测与执行：
+
+- `session` 是基础阶段，负责解析原始 JSONL、计算统计信息，并持久化规范化后的 session 记录。
+- `summary` 依赖 `session`，保存受长度预算约束的 AI session 摘要以及调用模型元数据。
+- `section_summary` 也只依赖 `session`，不依赖 `summary`。它先按 user message 边界切段并持久化 section 统计数据，再按可用性补充每段的结构化 AI 摘要。
+- `embedding` 依赖已完成的 `summary`，且只会把已持久化的 `summary_text` 发送给 embedding provider。
+- `agent-vis sync-status` 会输出物化链依赖关系以及各阶段是否 `sync ready`；在实际运维上，仍建议将各阶段分开执行以便观察与排障。
+
 开启 `--summaries` 后，sync 会在 parse 之后启动独立 worker 池，先构建 provider-agnostic 的 `SessionSynopsis`，再用 `codex exec --ephemeral` 做无交互摘要生成，并将受仓库预算限制的纯文本摘要及元数据持久化到 SQLite，供后续增量复用。该阶段失败不会回滚 parse/statistics 持久化结果。
 
 开启 `--embeddings` 后，sync 会读取 `session_summaries` 中已完成的摘要，只把受限长度的纯文本 `summary_text` 发送给 OpenRouter embedding API，并将向量与元数据持久化到 SQLite，供后续相似度分析或聚类复用。原始 session payload 不会发给 embedding provider。当摘要指纹和 embedding 模型都未变化时会自动跳过重算；embedding 阶段失败也不会回滚 parse/statistics/summary 的结果。

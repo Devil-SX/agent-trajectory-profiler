@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- README and README.zh now include a dedicated materialization pipeline diagram for `session`, `summary`, `section_summary`, `embedding`, and `clusters`, plus stage dependency notes and `sync-status` guidance for atomic inspection.
+
 ## [1.8.0] - 2026-03-20
 
 > **Code Stats** | Total: 93,434 lines | Delta: +6,171 (-167) = **+6,004 net** | Change: **+6.9%** vs v1.7.0

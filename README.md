@@ -149,6 +149,29 @@ agent-vis sync --embeddings                           # embed persisted summarie
 agent-vis sync --summaries --embeddings               # generate summaries, then embed them in the same run
 ```
 
+#### Materialization Pipeline
+
+```mermaid
+flowchart TD
+    A["Raw session files<br/>Claude / Codex JSONL"] --> B["session<br/>parse + statistics + SQLite persistence"]
+    B --> C["summary<br/>session synopsis -> AI summary"]
+    B --> D["section_summary<br/>user-bounded sections -> structured AI summaries"]
+    C --> E["embedding<br/>summary_text -> vector embedding"]
+    E --> F["clusters<br/>offline clustering over persisted embeddings"]
+    B --> G["CLI / REST read models"]
+    C --> G
+    D --> G
+    E --> G
+```
+
+Materialization stages are atomic and can be inspected independently:
+
+- `session` is the base stage. It parses raw JSONL, computes statistics, and persists the canonical session rows.
+- `summary` depends on `session` and stores a bounded AI-generated session summary plus model metadata.
+- `section_summary` also depends on `session`, but not on `summary`. It splits the session on user-message boundaries, persists section stats first, and can later attach structured AI summaries per section.
+- `embedding` depends on completed `summary` rows and only sends persisted `summary_text` to the embedding provider.
+- `agent-vis sync-status` reports the dependency graph and whether each stage is ready to sync, while the recommended operational flow remains running sync/materialization stages separately for observability.
+
 When `--summaries` is enabled, sync runs a post-parse worker pool that builds a provider-agnostic `SessionSynopsis`, calls `codex exec --ephemeral` headlessly, truncates the plain-text output to the repository budget, and stores summary metadata in SQLite for incremental reuse. This stage is failure-isolated from parse/statistics persistence.
 
 When `--embeddings` is enabled, sync reads completed rows from `session_summaries`, sends the bounded plain-text `summary_text` to OpenRouter's embeddings API, and stores vector metadata in SQLite for later similarity analysis. Raw session payloads are never sent to the embedding provider. Re-embedding is skipped when both the persisted summary fingerprint and embedding model are unchanged, and embedding failures do not roll back parse/statistics/summary writes.
