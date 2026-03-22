@@ -158,12 +158,14 @@ def test_materialize_status_prints_chain_json(monkeypatch) -> None:
         "chain": [
             {"stage": "session", "depends_on": []},
             {"stage": "summary", "depends_on": ["session"]},
-            {"stage": "section_summary", "depends_on": ["session"]},
+            {"stage": "section", "depends_on": ["session"]},
+            {"stage": "section_summary", "depends_on": ["section"]},
             {"stage": "embedding", "depends_on": ["summary"]},
         ],
         "stages": {
             "session": {"sync_ready": True, "up_to_date": False},
             "summary": {"sync_ready": True, "up_to_date": True},
+            "section": {"sync_ready": True, "up_to_date": False},
             "section_summary": {"sync_ready": True, "up_to_date": False},
             "embedding": {"sync_ready": True, "up_to_date": False},
         },
@@ -212,6 +214,52 @@ def test_materialize_sync_summary_dispatches_to_summary_stage(monkeypatch) -> No
     assert captured["model"] == "sonnet"
     assert captured["workers"] == 3
     assert "Summary generation complete: 4 generated, 1 skipped, 0 failed" in result.output
+    assert "Source parse errors: 1" in result.output
+
+
+def test_materialize_sync_section_dispatches_to_section_stage(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_run_section_stage(**kwargs):
+        captured.update(kwargs)
+        return (
+            {"generated": 2, "skipped": 1, "failed": 0, "sections": 7},
+            ["broken-session.jsonl: parse error"],
+        )
+
+    monkeypatch.setattr(cli_main, "_run_section_stage", _fake_run_section_stage)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli_main.main,
+        [
+            "materialize",
+            "sync",
+            "--stage",
+            "section",
+            "--ecosystem",
+            "codex",
+            "--backend",
+            "codex",
+            "-m",
+            "gpt-5.4",
+            "--session-id",
+            "sess-a",
+            "--workers",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["ecosystem"] == "codex"
+    assert captured["backend"] == "codex"
+    assert captured["model"] == "gpt-5.4"
+    assert captured["session_ids"] == ("sess-a",)
+    assert captured["workers"] == 2
+    assert (
+        "Section materialization complete: 2 generated, 1 skipped, 0 failed producing 7 sections"
+        in result.output
+    )
     assert "Source parse errors: 1" in result.output
 
 

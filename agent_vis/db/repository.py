@@ -707,6 +707,68 @@ class SessionRepository:
         cur = self._conn.execute("SELECT COUNT(*) FROM session_sections")
         return cur.fetchone()[0]
 
+    def upsert_session_section_materialization(
+        self,
+        *,
+        session_id: str,
+        session_hash: str,
+        prompt_version: str,
+        model_id: str,
+        generation_status: str,
+        section_count: int,
+        generated_at: str | None,
+        error_message: str | None,
+    ) -> None:
+        """Insert or update one per-session AI section materialization row."""
+        self._conn.execute(
+            """\
+            INSERT INTO session_section_materializations (
+                session_id, session_hash, prompt_version, model_id,
+                generation_status, section_count, generated_at, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                session_hash = excluded.session_hash,
+                prompt_version = excluded.prompt_version,
+                model_id = excluded.model_id,
+                generation_status = excluded.generation_status,
+                section_count = excluded.section_count,
+                generated_at = excluded.generated_at,
+                error_message = excluded.error_message
+            """,
+            (
+                session_id,
+                session_hash,
+                prompt_version,
+                model_id,
+                generation_status,
+                section_count,
+                generated_at,
+                error_message,
+            ),
+        )
+        self._commit_if_needed()
+
+    def get_session_section_materialization(self, session_id: str) -> sqlite3.Row | None:
+        """Return one persisted section-materialization row or None."""
+        cur = self._conn.execute(
+            "SELECT * FROM session_section_materializations WHERE session_id = ?",
+            (session_id,),
+        )
+        return cur.fetchone()
+
+    def count_session_section_materializations(
+        self, *, generation_status: str | None = None
+    ) -> int:
+        """Return per-session section-materialization count."""
+        if generation_status is None:
+            cur = self._conn.execute("SELECT COUNT(*) FROM session_section_materializations")
+            return cur.fetchone()[0]
+        cur = self._conn.execute(
+            "SELECT COUNT(*) FROM session_section_materializations WHERE generation_status = ?",
+            (generation_status,),
+        )
+        return cur.fetchone()[0]
+
     def upsert_session_section_summary(
         self,
         *,

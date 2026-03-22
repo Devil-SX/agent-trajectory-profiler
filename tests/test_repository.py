@@ -361,6 +361,28 @@ class TestSessionMaterializationQueries:
         assert repo.count_session_sections() == 1
         assert repo.count_session_section_summaries(generation_status="completed") == 1
 
+    def test_session_section_materialization_metadata_roundtrip(
+        self, repo: SessionRepository
+    ) -> None:
+        self._seed_sessions(repo)
+        repo.upsert_session_section_materialization(
+            session_id="sess-a",
+            session_hash="hash-sections-a",
+            prompt_version="session-sectioning-v1",
+            model_id="codex:gpt-5.4",
+            generation_status="completed",
+            section_count=3,
+            generated_at="2026-03-18T00:00:00Z",
+            error_message=None,
+        )
+
+        row = repo.get_session_section_materialization("sess-a")
+        assert row is not None
+        assert row["session_hash"] == "hash-sections-a"
+        assert row["section_count"] == 3
+        assert repo.count_session_section_materializations() == 1
+        assert repo.count_session_section_materializations(generation_status="completed") == 1
+
     def test_count_session_summary_embeddings_filters_by_status_and_model(
         self, repo: SessionRepository
     ) -> None:

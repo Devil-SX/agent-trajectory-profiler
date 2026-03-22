@@ -2,12 +2,34 @@
 
 # Agent Trajectory Profiler
 
-可视化与分析 Claude Code 智能体会话 —— 支持 **Web 仪表盘**、**无头 CLI** 批量处理，以及 **AI 驱动分析** 生成可操作的洞察报告。
+这是一个以数据库为中心的 Claude Code / Codex 轨迹分析仓库。它将原始 `.jsonl` 会话文件物化进 SQLite，再基于同一份持久化状态提供 CLI、REST API、前端仪表盘、聚类结果和 AI 摘要能力。
 
-解析 `~/.claude/projects/` 下的 `.jsonl` 会话文件，计算分析指标（消息统计、工具使用、Token 消耗、时间归因、子智能体追踪），通过交互式 React 前端、结构化 JSON 输出或 AI 生成的 Markdown 报告呈现结果。
+核心思路是：原始轨迹文件是输入，`~/.agent-vis/profiler.db` 是统一查询面，所有更高层能力都建立在数据库里的基础物化或派生物化之上。
+
+## 数据库视角总览
+
+- 原始 session JSONL 会被增量扫描，规范化后落成 canonical `session` 记录及统计数据。
+- `summary`、`section_summary`、`embedding` 等 AI 派生阶段是独立的原子物化，具备明确依赖关系。
+- 前端、只读 CLI、analytics 查询和 cluster 检查都优先读取 SQLite，而不是重复解析源文件。
+- 因此这个仓库既是一个应用，也是一个可以被其他程序直接查询的本地数据系统。
+
+```mermaid
+flowchart TD
+    A["原始会话文件<br/>Claude / Codex JSONL"] --> B["session<br/>解析 + 统计 + SQLite 持久化"]
+    B --> C["summary<br/>session synopsis -> AI 摘要"]
+    B --> D["section_summary<br/>按 user message 切段 -> 结构化 AI 摘要"]
+    C --> E["embedding<br/>summary_text -> 向量 embedding"]
+    E --> F["clusters<br/>基于已持久化 embedding 的离线聚类"]
+    B --> G["CLI / REST 只读模型"]
+    C --> G
+    D --> G
+    E --> G
+```
 
 ## 功能特性
 
+- **以 SQLite 为中心的架构** — 同一份持久化数据库支撑 sync、API、dashboard、summary、embedding 和 clustering
+- **原子化物化链** — `session`、`summary`、`section_summary`、`embedding` 可分别检测、分别同步
 - **多模式 CLI** — `serve` / `parse` / `sync` / `stats` / `analytics` / `analyze`
 - **三级输出详细度** — L1 单行摘要、L2 标准、L3 完整详情
 - **时间归因** — 模型推理 / 工具执行 / 用户空闲 / 非活跃
@@ -21,17 +43,6 @@
 - **SQLite 持久化** — 基于 mtime 的增量同步
 - **交互式 Web 仪表盘** — React 前端，含图表和时间线
 - **AI 分析报告** — Claude 驱动的 Markdown 洞察
-
-```mermaid
-graph LR
-    A[".jsonl 文件"] --> B["解析器"]
-    B --> C["SQLite 数据库"]
-    B --> D["CLI 输出"]
-    C --> E["Web 仪表盘"]
-    C --> F["stats 命令"]
-    C --> H["analytics 命令"]
-    B --> G["AI 分析"]
-```
 
 ## 安装
 
@@ -148,22 +159,7 @@ agent-vis sync --embeddings                           # 通过 OpenRouter 对已
 agent-vis sync --summaries --embeddings               # 同一次 sync 内先生成摘要，再生成 embedding
 ```
 
-#### 物化流程
-
-```mermaid
-flowchart TD
-    A["原始会话文件<br/>Claude / Codex JSONL"] --> B["session<br/>解析 + 统计 + SQLite 持久化"]
-    B --> C["summary<br/>session synopsis -> AI 摘要"]
-    B --> D["section_summary<br/>按 user message 切段 -> 结构化 AI 摘要"]
-    C --> E["embedding<br/>summary_text -> 向量 embedding"]
-    E --> F["clusters<br/>基于已持久化 embedding 的离线聚类"]
-    B --> G["CLI / REST 只读模型"]
-    C --> G
-    D --> G
-    E --> G
-```
-
-各个物化阶段是原子化的，可以分别检测与执行：
+#### 物化语义
 
 - `session` 是基础阶段，负责解析原始 JSONL、计算统计信息，并持久化规范化后的 session 记录。
 - `summary` 依赖 `session`，保存受长度预算约束的 AI session 摘要以及调用模型元数据。

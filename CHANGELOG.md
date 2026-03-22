@@ -6,9 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-03-22
+
+> **Code Stats** | Total: 94,692 lines | Delta: +1,480 (-222) = **+1,258 net** | Change: **+1.3%** vs v1.8.0
+
+### Added
+
+- AI-driven session section boundary detection as a new `section` materialization stage, backed by `session_section_materializations` table, atomic `replace + upsert` transactions, and skip logic keyed on session hash, prompt version, and model ID.
+- `materialize sync --stage section` CLI command with `--backend`, `--model`, `--workers`, `--timeout`, `--session-id`, and `--ecosystem` flags matching the existing summary stage API.
+- `SessionSectionMaterializationCoordinator` with parallel `ThreadPoolExecutor` fan-out, `CodexSessionSectionMaterializationRunner`, and `ClaudeSessionSectionMaterializationRunner` implementing the `SessionSectionMaterializationRunner` Protocol.
+- `load_persisted_session_sections` for rehydrating DB-persisted section rows into in-memory `SessionSection` objects; the API service now serves persisted sections first with heuristic fallback when none exist.
+- `section` stage included in `materialize status` output with staleness tracking; `section_summary` dependency chain updated from `session` to `section`.
+- `chat_trajectory` skill documenting how to query `~/.agent-vis/profiler.db` directly (replaces `trajectory_database` skill).
+- Codex benchmark results for section-summary generation added to `docs/`.
+
 ### Changed
 
-- README and README.zh now include a dedicated materialization pipeline diagram for `session`, `summary`, `section_summary`, `embedding`, and `clusters`, plus stage dependency notes and `sync-status` guidance for atomic inspection.
+- README and README.zh restructured around a database-first architecture overview with the materialization pipeline diagram promoted to the top-level introduction.
+- `SessionSectionSummaryCoordinator` now loads persisted sections from DB instead of recomputing heuristic boundaries; `section_summary` stage depends on `section` completing first.
+- `session_sections.py` refactored: section-building logic extracted into `_build_section_from_group`, `_extract_tool_names` extracted from `_message_tool_call_count`, `build_session_section_from_row` and `_normalize_section_boundaries` helpers added.
+
+### Fixed
+
+- `load_persisted_session_sections` now builds a single UUID→index map per call, reducing message-scan complexity from O(N×S) to O(N+S).
+- `SessionSectionMaterializationRunner` Protocol method now includes required `...` body to satisfy Pyright's `reportReturnType` check.
+- Test assertion in `test_sectioning_prompt_requires_exact_first_and_last_ordinals` corrected to match prompt's actual line-wrapped text.
 
 ## [1.8.0] - 2026-03-20
 

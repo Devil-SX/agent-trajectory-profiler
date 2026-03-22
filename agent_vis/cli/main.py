@@ -363,6 +363,79 @@ def _run_summary_stage(
     return {"generated": generated, "skipped": skipped, "failed": failed}, source_errors
 
 
+def _run_section_stage(
+    *,
+    db_path: Path | None,
+    ecosystem: str,
+    session_ids: tuple[str, ...],
+    backend: str,
+    model: str | None,
+    workers: int,
+    timeout: int,
+    inactivity_threshold: float | None,
+    model_timeout: float | None,
+) -> tuple[dict[str, int], list[str]]:
+    """Execute the AI section-boundary materialization stage and return aggregate counts."""
+    from agent_vis.api.config import get_settings
+    from agent_vis.db.connection import get_connection
+    from agent_vis.db.repository import SessionRepository
+    from agent_vis.session_sections import (
+        SectionMaterializationConfig,
+        SessionSectionMaterializationCoordinator,
+        build_section_materialization_runner,
+    )
+
+    settings = get_settings()
+    conn = get_connection(db_path)
+    repo = SessionRepository(conn)
+    try:
+        sessions_by_ecosystem, source_errors = _load_sessions_for_summary_generation(
+            repo,
+            ecosystem=ecosystem,
+            session_ids=session_ids,
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+            codex_state_db_path=settings.codex_state_db_path,
+        )
+        total_selected = sum(len(items) for items in sessions_by_ecosystem.values())
+        if total_selected == 0:
+            return {"generated": 0, "skipped": 0, "failed": 0, "sections": 0}, source_errors
+
+        config = SectionMaterializationConfig(
+            enabled=True,
+            backend=backend.lower(),
+            model=model,
+            max_workers=workers,
+            timeout_seconds=timeout,
+        )
+        coordinator = SessionSectionMaterializationCoordinator(
+            repo,
+            build_section_materialization_runner(config),
+            config,
+        )
+        generated = 0
+        skipped = 0
+        failed = 0
+        sections = 0
+        for row_ecosystem, sessions_to_section in sessions_by_ecosystem.items():
+            stage = coordinator.generate_for_sessions(
+                sessions_to_section,
+                ecosystem=row_ecosystem,
+            )
+            generated += stage.generated
+            skipped += stage.skipped
+            failed += stage.failed
+            sections += stage.sections
+    finally:
+        conn.close()
+    return {
+        "generated": generated,
+        "skipped": skipped,
+        "failed": failed,
+        "sections": sections,
+    }, source_errors
+
+
 def _run_section_summary_stage(
     *,
     db_path: Path | None,
@@ -493,7 +566,12 @@ def _collect_materialization_status(
     from agent_vis.db.repository import SessionRepository
     from agent_vis.parsers.registry import get_parser
     from agent_vis.session_embeddings import compute_summary_text_hash
-    from agent_vis.session_sections import compute_section_hash, derive_session_sections
+    from agent_vis.session_sections import (
+        build_session_sectioning_synopsis,
+        compute_section_hash,
+        compute_sectioning_hash,
+        load_persisted_session_sections,
+    )
     from agent_vis.session_summaries import build_session_synopsis, compute_synopsis_hash
 
     settings = get_settings()
@@ -541,6 +619,13 @@ def _collect_materialization_status(
         summary_completed = repo.count_session_summaries(generation_status="completed")
         summary_failed = repo.count_session_summaries(generation_status="failed")
         section_total = repo.count_session_sections()
+        section_materialization_total = repo.count_session_section_materializations()
+        section_materialization_completed = repo.count_session_section_materializations(
+            generation_status="completed"
+        )
+        section_materialization_failed = repo.count_session_section_materializations(
+            generation_status="failed"
+        )
         section_summary_total = repo.count_session_section_summaries()
         section_summary_completed = repo.count_session_section_summaries(
             generation_status="completed"
@@ -568,6 +653,8 @@ def _collect_materialization_status(
         summary_stale = 0
         section_missing = 0
         section_stale = 0
+        section_summary_missing = 0
+        section_summary_stale = 0
         section_source_records = 0
         for row_ecosystem, sessions in sessions_by_ecosystem.items():
             for session in sessions:
@@ -584,16 +671,41 @@ def _collect_materialization_status(
                 elif persisted["synopsis_hash"] != current_hash:
                     summary_stale += 1
 
-                for section in derive_session_sections(session, ecosystem=row_ecosystem):
-                    section_source_records += 1
-                    persisted_section = repo.get_session_section_summary(section.section_id)
+                sectioning_synopsis = build_session_sectioning_synopsis(
+                    session,
+                    ecosystem=row_ecosystem,
+                )
+                current_sectioning_hash = compute_sectioning_hash(sectioning_synopsis)
+                persisted_materialization = repo.get_session_section_materialization(
+                    session.metadata.session_id
+                )
+                if persisted_materialization is None:
+                    section_missing += 1
+                    continue
+                if persisted_materialization["generation_status"] != "completed":
+                    section_stale += 1
+                    continue
+                if persisted_materialization["session_hash"] != current_sectioning_hash:
+                    section_stale += 1
+                    continue
+                persisted_sections = load_persisted_session_sections(
+                    repo,
+                    session,
+                    ecosystem=row_ecosystem,
+                )
+                if len(persisted_sections) != int(persisted_materialization["section_count"] or 0):
+                    section_stale += 1
+                    continue
+                section_source_records += len(persisted_sections)
+                for section in persisted_sections:
+                    persisted_section_summary = repo.get_session_section_summary(section.section_id)
                     current_section_hash = compute_section_hash(section.synopsis)
-                    if persisted_section is None:
-                        section_missing += 1
-                    elif persisted_section["generation_status"] != "completed":
-                        section_stale += 1
-                    elif persisted_section["section_hash"] != current_section_hash:
-                        section_stale += 1
+                    if persisted_section_summary is None:
+                        section_summary_missing += 1
+                    elif persisted_section_summary["generation_status"] != "completed":
+                        section_summary_stale += 1
+                    elif persisted_section_summary["section_hash"] != current_section_hash:
+                        section_summary_stale += 1
 
         embedding_missing = 0
         embedding_stale = 0
@@ -635,6 +747,23 @@ def _collect_materialization_status(
             "source_parse_errors": len(source_errors),
             "command": "agent-vis materialize sync --stage summary",
         }
+        stage_section = {
+            "name": "section",
+            "depends_on": ["session"],
+            "sync_ready": session_total > 0,
+            "up_to_date": (
+                section_missing == 0 and section_stale == 0 and section_materialization_failed == 0
+            ),
+            "input_records": session_total,
+            "materialized_records": section_total,
+            "completed": section_materialization_completed,
+            "missing": section_missing,
+            "stale": section_stale,
+            "failed": section_materialization_failed,
+            "summary_records": section_materialization_total,
+            "source_parse_errors": len(source_errors),
+            "command": "agent-vis materialize sync --stage section",
+        }
         stage_embedding = {
             "name": "embedding",
             "depends_on": ["summary"],
@@ -651,17 +780,19 @@ def _collect_materialization_status(
         }
         stage_section_summary = {
             "name": "section_summary",
-            "depends_on": ["session"],
-            "sync_ready": session_total > 0,
+            "depends_on": ["section"],
+            "sync_ready": section_materialization_completed > 0,
             "up_to_date": (
-                section_missing == 0 and section_stale == 0 and section_summary_failed == 0
+                section_summary_missing == 0
+                and section_summary_stale == 0
+                and section_summary_failed == 0
             ),
             "input_records": section_source_records,
             "materialized_records": section_total,
             "summary_records": section_summary_total,
             "completed": section_summary_completed,
-            "missing": section_missing,
-            "stale": section_stale,
+            "missing": section_summary_missing,
+            "stale": section_summary_stale,
             "failed": section_summary_failed,
             "source_parse_errors": len(source_errors),
             "command": "agent-vis materialize sync --stage section-summary",
@@ -670,12 +801,14 @@ def _collect_materialization_status(
             "chain": [
                 {"stage": "session", "depends_on": []},
                 {"stage": "summary", "depends_on": ["session"]},
-                {"stage": "section_summary", "depends_on": ["session"]},
+                {"stage": "section", "depends_on": ["session"]},
+                {"stage": "section_summary", "depends_on": ["section"]},
                 {"stage": "embedding", "depends_on": ["summary"]},
             ],
             "stages": {
                 "session": stage_session,
                 "summary": stage_summary,
+                "section": stage_section,
                 "section_summary": stage_section_summary,
                 "embedding": stage_embedding,
             },
@@ -1580,7 +1713,10 @@ def materialize_status(
 @materialize.command("sync")
 @click.option(
     "--stage",
-    type=click.Choice(["session", "summary", "section-summary", "embedding"], case_sensitive=False),
+    type=click.Choice(
+        ["session", "summary", "section", "section-summary", "embedding"],
+        case_sensitive=False,
+    ),
     required=True,
     help="Materialization stage to execute",
 )
@@ -1600,7 +1736,7 @@ def materialize_status(
     "--ecosystem",
     default="claude_code",
     show_default=True,
-    help="Parser ecosystem for session, summary, or section-summary stage",
+    help="Parser ecosystem for session, summary, section, or section-summary stage",
 )
 @click.option(
     "--force",
@@ -1612,27 +1748,30 @@ def materialize_status(
     "--session-id",
     "session_ids",
     multiple=True,
-    help="Limit summary/section-summary/embedding generation to specific persisted session ids",
+    help=(
+        "Limit summary/section/section-summary/embedding generation "
+        "to specific persisted session ids"
+    ),
 )
 @click.option(
     "--backend",
     type=click.Choice(["codex", "claude"], case_sensitive=False),
     default="codex",
     show_default=True,
-    help="Summary backend when --stage=summary or --stage=section-summary",
+    help="LLM backend when --stage=summary, --stage=section, or --stage=section-summary",
 )
 @click.option(
     "--model",
     "-m",
     default=None,
-    help="Model override for summary/section-summary backend or embedding stage",
+    help="Model override for summary/section/section-summary backend or embedding stage",
 )
 @click.option(
     "--workers",
     type=click.IntRange(min=1),
     default=4,
     show_default=True,
-    help="Worker count for summary or embedding stage",
+    help="Worker count for summary, section, section-summary, or embedding stage",
 )
 @click.option(
     "--max-chars",
@@ -1646,7 +1785,7 @@ def materialize_status(
     type=float,
     default=180.0,
     show_default=True,
-    help="Per-item timeout in seconds for summary, section-summary, or embedding stage",
+    help="Per-item timeout in seconds for summary, section, section-summary, or embedding stage",
 )
 @click.option(
     "--max-retries",
@@ -1659,7 +1798,10 @@ def materialize_status(
     "--inactivity-threshold",
     type=float,
     default=None,
-    help="Seconds of gap to classify as inactive for session/summary/section-summary stage parsing",
+    help=(
+        "Seconds of gap to classify as inactive for "
+        "session/summary/section/section-summary stage parsing"
+    ),
 )
 @click.option(
     "--model-timeout",
@@ -1667,7 +1809,7 @@ def materialize_status(
     default=None,
     help=(
         "Seconds of model inference gap to count as timeout for "
-        "session/summary/section-summary stage parsing"
+        "session/summary/section/section-summary stage parsing"
     ),
 )
 def materialize_sync(
@@ -1723,6 +1865,31 @@ def materialize_sync(
             f"{counts['generated']} generated, "
             f"{counts['skipped']} skipped, "
             f"{counts['failed']} failed",
+            err=True,
+        )
+        if source_errors:
+            click.echo(f"Source parse errors: {len(source_errors)}", err=True)
+            for err in source_errors[:10]:
+                click.echo(f"  - {err}", err=True)
+        return
+    if stage == "section":
+        counts, source_errors = _run_section_stage(
+            db_path=db_path,
+            ecosystem=ecosystem,
+            session_ids=session_ids,
+            backend=backend,
+            model=model,
+            workers=workers,
+            timeout=int(timeout),
+            inactivity_threshold=inactivity_threshold,
+            model_timeout=model_timeout,
+        )
+        click.echo(
+            "Section materialization complete: "
+            f"{counts['generated']} generated, "
+            f"{counts['skipped']} skipped, "
+            f"{counts['failed']} failed "
+            f"producing {counts['sections']} sections",
             err=True,
         )
         if source_errors:

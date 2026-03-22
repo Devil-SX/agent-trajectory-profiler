@@ -53,7 +53,7 @@ from agent_vis.db.sync import SyncEngine
 from agent_vis.models import Session, SessionStatistics
 from agent_vis.parsers import SessionParseError, get_parser
 from agent_vis.parsers.capabilities import list_capability_manifests
-from agent_vis.session_sections import derive_session_sections
+from agent_vis.session_sections import derive_session_sections, load_persisted_session_sections
 
 AnalyticsDimension = Literal[
     "bottleneck",
@@ -834,7 +834,15 @@ class SessionService:
             return []
 
         ecosystem = self._resolve_session_ecosystem(session_id)
-        derived_sections = derive_session_sections(session, ecosystem=ecosystem)
+        derived_sections = []
+        if self._repo is not None:
+            derived_sections = load_persisted_session_sections(
+                self._repo,
+                session,
+                ecosystem=ecosystem,
+            )
+        if not derived_sections:
+            derived_sections = derive_session_sections(session, ecosystem=ecosystem)
         persisted_by_id: dict[str, sqlite3.Row] = {}
         if self._repo is not None:
             for row in self._repo.list_session_section_summaries(session_id):

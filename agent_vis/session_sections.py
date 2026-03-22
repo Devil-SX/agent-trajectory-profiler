@@ -1,4 +1,4 @@
-"""User-boundary section derivation and structured section summary materialization."""
+"""AI-driven section materialization and structured per-section summaries."""
 
 from __future__ import annotations
 
@@ -22,6 +22,10 @@ from agent_vis.models import MessageRecord, Session
 from agent_vis.prompts.session_section_summary import (
     SESSION_SECTION_SUMMARY_PROMPT_VERSION,
     build_session_section_summary_prompt,
+)
+from agent_vis.prompts.session_sectioning import (
+    SESSION_SECTIONING_PROMPT_VERSION,
+    build_session_sectioning_prompt,
 )
 from agent_vis.session_summaries import (
     SessionSummaryGenerationError,
@@ -62,18 +66,24 @@ def _extract_text_fragments(message: MessageRecord) -> list[str]:
     return parts
 
 
+def _extract_tool_names(message: MessageRecord) -> list[str]:
+    if message.message is None or not isinstance(message.message.content, list):
+        return []
+    tool_names: list[str] = []
+    for block in message.message.content:
+        if isinstance(block, dict) and block.get("type") == "tool_use":
+            tool_name = block.get("name")
+            if isinstance(tool_name, str):
+                tool_names.append(tool_name)
+    return tool_names
+
+
 def _message_char_count(message: MessageRecord) -> int:
     return sum(len(fragment) for fragment in _extract_text_fragments(message))
 
 
 def _message_tool_call_count(message: MessageRecord) -> int:
-    if message.message is None or not isinstance(message.message.content, list):
-        return 0
-    count = 0
-    for block in message.message.content:
-        if isinstance(block, dict) and block.get("type") == "tool_use":
-            count += 1
-    return count
+    return len(_extract_tool_names(message))
 
 
 def _message_usage(message: MessageRecord) -> tuple[int, int]:
@@ -102,9 +112,23 @@ def _default_section_title(messages: list[MessageRecord], section_index: int) ->
             title = _truncate_text(text or f"Section {section_index}", 72)
             if title:
                 return title
-    if section_index == 0:
-        return "Opening context"
     return f"Section {section_index}"
+
+
+def _find_coverable_message_window(messages: list[MessageRecord]) -> tuple[int, int] | None:
+    first_user_idx = next(
+        (idx for idx, message in enumerate(messages) if message.is_user_message), None
+    )
+    if first_user_idx is None:
+        return None
+    last_non_user_idx = None
+    for idx in range(len(messages) - 1, first_user_idx - 1, -1):
+        if not messages[idx].is_user_message:
+            last_non_user_idx = idx
+            break
+    if last_non_user_idx is None or last_non_user_idx < first_user_idx:
+        return None
+    return first_user_idx, last_non_user_idx
 
 
 class SectionSummaryPayload(BaseModel):
@@ -118,6 +142,20 @@ class SectionSummaryPayload(BaseModel):
     tool_patterns: list[str] = Field(default_factory=list)
     risk_or_blocker: str | None = None
     keywords: list[str] = Field(default_factory=list)
+
+
+class SectionBoundaryItem(BaseModel):
+    """One AI-generated section boundary span."""
+
+    title: str
+    start_message_ordinal: int
+    end_message_ordinal: int
+
+
+class SectionBoundaryPayload(BaseModel):
+    """Structured JSON payload for AI-driven section boundary detection."""
+
+    sections: list[SectionBoundaryItem] = Field(default_factory=list)
 
 
 class SessionSectionSynopsis(BaseModel):
@@ -173,9 +211,58 @@ class SessionSectionSynopsis(BaseModel):
         return "\n".join(lines)
 
 
+class SessionSectioningMessage(BaseModel):
+    """Compact per-message record used for AI section-boundary prompting."""
+
+    ordinal: int
+    uuid: str
+    role: str
+    timestamp: str
+    tool_names: list[str] = Field(default_factory=list)
+    text_preview: str
+
+    def to_prompt_line(self) -> str:
+        tools = ", ".join(self.tool_names) if self.tool_names else "(none)"
+        return (
+            f"{self.ordinal}. role={self.role} uuid={self.uuid} "
+            f"timestamp={self.timestamp} tools={tools} text={self.text_preview}"
+        )
+
+
+class SessionSectioningSynopsis(BaseModel):
+    """Promptable session-level synopsis for AI-driven section partitioning."""
+
+    session_id: str
+    ecosystem: str
+    project_path: str
+    total_messages: int
+    first_user_ordinal: int | None = None
+    last_coverable_ordinal: int | None = None
+    messages: list[SessionSectioningMessage] = Field(default_factory=list)
+
+    def to_prompt_context(self) -> str:
+        lines = [
+            f"session_id: {self.session_id}",
+            f"ecosystem: {self.ecosystem}",
+            f"project_path: {self.project_path}",
+            f"total_messages: {self.total_messages}",
+            "first_user_ordinal: "
+            + (str(self.first_user_ordinal) if self.first_user_ordinal is not None else "(none)"),
+            "last_coverable_ordinal: "
+            + (
+                str(self.last_coverable_ordinal)
+                if self.last_coverable_ordinal is not None
+                else "(none)"
+            ),
+            "messages:",
+            *[message.to_prompt_line() for message in self.messages],
+        ]
+        return "\n".join(lines)
+
+
 @dataclass(frozen=True)
 class SessionSection:
-    """Locally derived section boundary and statistics for one session segment."""
+    """Materialized section boundary and statistics for one session segment."""
 
     section_id: str
     session_id: str
@@ -218,6 +305,38 @@ class SessionSection:
 
 
 @dataclass(frozen=True)
+class SectionMaterializationConfig:
+    """Repository-owned settings for AI section-boundary generation."""
+
+    enabled: bool = False
+    backend: Literal["codex", "claude"] = "codex"
+    model: str | None = None
+    max_workers: int = 4
+    timeout_seconds: int = 180
+    prompt_version: str = SESSION_SECTIONING_PROMPT_VERSION
+    codex_bin: str = "codex"
+    claude_bin: str = "claude"
+
+    @property
+    def model_id(self) -> str:
+        return f"{self.backend}:{self.model or 'default'}"
+
+
+@dataclass(frozen=True)
+class SectionMaterializationGeneration:
+    """One generated or failed AI section-boundary materialization."""
+
+    session_id: str
+    session_hash: str
+    prompt_version: str
+    model_id: str
+    status: _SECTION_STATUS
+    sections: list[SessionSection]
+    generated_at: str
+    error_message: str | None = None
+
+
+@dataclass(frozen=True)
 class SectionSummaryGeneration:
     """One generated or failed structured section summary."""
 
@@ -235,6 +354,16 @@ class SectionSummaryGeneration:
 
 
 @dataclass(frozen=True)
+class SectionStageResult:
+    """Aggregate section-boundary generation outcome for one run."""
+
+    generated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    sections: int = 0
+
+
+@dataclass(frozen=True)
 class SectionSummaryStageResult:
     """Aggregate section-summary generation outcome for one run."""
 
@@ -242,6 +371,21 @@ class SectionSummaryStageResult:
     skipped: int = 0
     failed: int = 0
     sections: int = 0
+
+
+class SessionSectionMaterializationRunner(Protocol):
+    """Interface for repository-owned AI section-boundary backends."""
+
+    def generate(
+        self,
+        synopsis: SessionSectioningSynopsis,
+        *,
+        session: Session,
+        ecosystem: str,
+        config: SectionMaterializationConfig,
+    ) -> SectionMaterializationGeneration:
+        """Generate persisted section boundaries for one session."""
+        ...
 
 
 class SessionSectionSummaryRunner(Protocol):
@@ -259,21 +403,249 @@ def compute_section_hash(synopsis: SessionSectionSynopsis) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _extract_json_object(raw_text: str) -> dict[str, Any]:
+def compute_sectioning_hash(synopsis: SessionSectioningSynopsis) -> str:
+    """Compute a stable hash over one AI sectioning synopsis payload."""
+    payload = json.dumps(synopsis.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def build_session_sectioning_synopsis(
+    session: Session,
+    *,
+    ecosystem: str,
+) -> SessionSectioningSynopsis:
+    """Construct a compact whole-session prompt context for AI section partitioning."""
+    messages = session.main_messages
+    coverable = _find_coverable_message_window(messages)
+    first_user_ordinal = coverable[0] + 1 if coverable is not None else None
+    last_coverable_ordinal = coverable[1] + 1 if coverable is not None else None
+    items = [
+        SessionSectioningMessage(
+            ordinal=index + 1,
+            uuid=message.uuid,
+            role=(
+                "user"
+                if message.is_user_message
+                else "assistant" if message.is_assistant_message else "other"
+            ),
+            timestamp=message.timestamp,
+            tool_names=_clip_list(_extract_tool_names(message), limit=4),
+            text_preview=_truncate_text(" ".join(_extract_text_fragments(message)), 180)
+            or "(empty)",
+        )
+        for index, message in enumerate(messages)
+    ]
+    return SessionSectioningSynopsis(
+        session_id=session.metadata.session_id,
+        ecosystem=ecosystem,
+        project_path=session.metadata.project_path,
+        total_messages=len(messages),
+        first_user_ordinal=first_user_ordinal,
+        last_coverable_ordinal=last_coverable_ordinal,
+        messages=items,
+    )
+
+
+def _build_section_from_group(
+    session: Session,
+    *,
+    ecosystem: str,
+    section_index: int,
+    group: list[MessageRecord],
+    title_override: str | None = None,
+) -> SessionSection:
+    first = group[0]
+    last = group[-1]
+    input_tokens = 0
+    output_tokens = 0
+    tool_call_count = 0
+    char_count = 0
+    user_message_count = 0
+    assistant_message_count = 0
+    tool_names: list[str] = []
+    excerpt_lines: list[str] = []
+    first_user_message = None
+    last_assistant_message = None
+
+    for message in group:
+        message_input, message_output = _message_usage(message)
+        input_tokens += message_input
+        output_tokens += message_output
+        tool_call_count += _message_tool_call_count(message)
+        char_count += _message_char_count(message)
+        if message.is_user_message:
+            user_message_count += 1
+            if first_user_message is None:
+                first_user_message = _truncate_text(" ".join(_extract_text_fragments(message)), 180)
+        if message.is_assistant_message:
+            assistant_message_count += 1
+            last_assistant_message = _truncate_text(" ".join(_extract_text_fragments(message)), 180)
+        tool_names.extend(_extract_tool_names(message))
+        text_preview = _truncate_text(" ".join(_extract_text_fragments(message)), 160)
+        if text_preview:
+            role = (
+                "user"
+                if message.is_user_message
+                else "assistant" if message.is_assistant_message else "other"
+            )
+            excerpt_lines.append(f"{role}: {text_preview}")
+
+    total_tokens = input_tokens + output_tokens
+    duration_seconds = None
+    if first.parsed_timestamp and last.parsed_timestamp:
+        duration_seconds = max(
+            (last.parsed_timestamp - first.parsed_timestamp).total_seconds(), 0.0
+        )
+
+    section_id = f"{session.metadata.session_id}:section:{section_index}"
+    title = _truncate_text(title_override or _default_section_title(group, section_index), 72)
+    synopsis = SessionSectionSynopsis(
+        section_id=section_id,
+        session_id=session.metadata.session_id,
+        section_index=section_index,
+        ecosystem=ecosystem,
+        project_path=session.metadata.project_path,
+        title=title,
+        start_timestamp=first.timestamp,
+        end_timestamp=last.timestamp,
+        total_messages=len(group),
+        user_message_count=user_message_count,
+        assistant_message_count=assistant_message_count,
+        tool_call_count=tool_call_count,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        char_count=char_count,
+        duration_seconds=duration_seconds,
+        first_user_message=first_user_message,
+        last_assistant_message=last_assistant_message,
+        notable_tools=_clip_list(tool_names, limit=5),
+        transcript_excerpt=excerpt_lines[:8],
+    )
+    return SessionSection(
+        section_id=section_id,
+        session_id=session.metadata.session_id,
+        section_index=section_index,
+        title=title,
+        start_message_uuid=first.uuid,
+        end_message_uuid=last.uuid,
+        start_timestamp=first.timestamp,
+        end_timestamp=last.timestamp,
+        total_messages=len(group),
+        user_message_count=user_message_count,
+        assistant_message_count=assistant_message_count,
+        tool_call_count=tool_call_count,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        char_count=char_count,
+        duration_seconds=duration_seconds,
+        synopsis=synopsis,
+    )
+
+
+def build_session_section_from_row(
+    session: Session,
+    row: Any,
+    *,
+    ecosystem: str,
+) -> SessionSection | None:
+    """Rehydrate one persisted section row against the current in-memory session."""
+    messages = session.main_messages
+    start_uuid = row["start_message_uuid"]
+    end_uuid = row["end_message_uuid"]
+    start_index = next(
+        (idx for idx, message in enumerate(messages) if message.uuid == start_uuid), None
+    )
+    end_index = next(
+        (idx for idx, message in enumerate(messages) if message.uuid == end_uuid), None
+    )
+    if start_index is None or end_index is None or end_index < start_index:
+        return None
+    group = messages[start_index : end_index + 1]
+    if not group:
+        return None
+    return _build_section_from_group(
+        session,
+        ecosystem=ecosystem,
+        section_index=int(row["section_index"]),
+        group=group,
+        title_override=row["title"] or "",
+    )
+
+
+def load_persisted_session_sections(
+    repo: SessionRepository,
+    session: Session,
+    *,
+    ecosystem: str,
+) -> list[SessionSection]:
+    """Load and rehydrate persisted sections for one session."""
+    messages = session.main_messages
+    uuid_to_index = {msg.uuid: idx for idx, msg in enumerate(messages)}
+    sections: list[SessionSection] = []
+    for row in repo.list_session_sections(session.metadata.session_id):
+        start_index = uuid_to_index.get(row["start_message_uuid"])
+        end_index = uuid_to_index.get(row["end_message_uuid"])
+        if start_index is None or end_index is None or end_index < start_index:
+            continue
+        group = messages[start_index : end_index + 1]
+        if group:
+            sections.append(
+                _build_section_from_group(
+                    session,
+                    ecosystem=ecosystem,
+                    section_index=int(row["section_index"]),
+                    group=group,
+                    title_override=row["title"] or "",
+                )
+            )
+    return sections
+
+
+def derive_session_sections(session: Session, *, ecosystem: str) -> list[SessionSection]:
+    """Fallback heuristic that splits a session on every user-message boundary."""
+    messages = session.main_messages
+    if not messages:
+        return []
+
+    groups: list[list[MessageRecord]] = []
+    current: list[MessageRecord] = []
+    seen_any_user = False
+    for message in messages:
+        if not seen_any_user and not message.is_user_message:
+            continue
+        if message.is_user_message and current:
+            groups.append(current)
+            current = []
+            seen_any_user = True
+        elif message.is_user_message:
+            seen_any_user = True
+        current.append(message)
+    if current:
+        groups.append(current)
+
+    return [
+        _build_section_from_group(session, ecosystem=ecosystem, section_index=index, group=group)
+        for index, group in enumerate(groups, start=1)
+    ]
+
+
+def _extract_json_object(raw_text: str, *, empty_message: str) -> dict[str, Any]:
     normalized = raw_text.strip()
     if not normalized:
-        raise SessionSummaryGenerationError("section summary runner returned empty output")
+        raise SessionSummaryGenerationError(empty_message)
     first = normalized.find("{")
     last = normalized.rfind("}")
     if first == -1 or last == -1 or last <= first:
-        raise SessionSummaryGenerationError("section summary runner did not return a JSON object")
+        raise SessionSummaryGenerationError("runner did not return a JSON object")
     try:
         return cast(dict[str, Any], json.loads(normalized[first : last + 1]))
     except json.JSONDecodeError as exc:
-        raise SessionSummaryGenerationError(f"invalid section summary JSON: {exc}") from exc
+        raise SessionSummaryGenerationError(f"invalid JSON payload: {exc}") from exc
 
 
-def _normalize_payload(
+def _normalize_section_summary_payload(
     payload: SectionSummaryPayload,
     *,
     fallback_title: str,
@@ -295,143 +667,238 @@ def _normalize_payload(
     )
 
 
-def derive_session_sections(session: Session, *, ecosystem: str) -> list[SessionSection]:
-    """Split one session into ordered sections using user messages as boundaries."""
+def _normalize_section_boundaries(
+    payload: SectionBoundaryPayload,
+    *,
+    session: Session,
+    ecosystem: str,
+) -> list[SessionSection]:
     messages = session.main_messages
-    if not messages:
+    coverable = _find_coverable_message_window(messages)
+    if coverable is None:
         return []
 
-    groups: list[tuple[int, list[MessageRecord]]] = []
-    prelude: list[MessageRecord] = []
-    current: list[MessageRecord] = []
-    next_index = 1
-    seen_any_user = False
-    for message in messages:
-        if not seen_any_user and not message.is_user_message:
-            prelude.append(message)
-            continue
-        if message.is_user_message:
-            if not seen_any_user and prelude:
-                groups.append((0, prelude))
-                prelude = []
-            elif current:
-                groups.append((next_index, current))
-                next_index += 1
-                current = []
-            seen_any_user = True
-        current.append(message)
+    if not payload.sections:
+        raise SessionSummaryGenerationError("sectioning runner returned no sections")
 
-    if current:
-        groups.append((next_index if seen_any_user else 0, current))
-    elif prelude:
-        groups.append((0, prelude))
-
+    first_coverable = coverable[0] + 1
+    last_coverable = coverable[1] + 1
+    next_expected_start = first_coverable
     sections: list[SessionSection] = []
-    for section_index, group in groups:
-        first = group[0]
-        last = group[-1]
-        input_tokens = 0
-        output_tokens = 0
-        tool_call_count = 0
-        char_count = 0
-        user_message_count = 0
-        assistant_message_count = 0
-        tool_names: list[str] = []
-        excerpt_lines: list[str] = []
-        first_user_message = None
-        last_assistant_message = None
-
-        for message in group:
-            message_input, message_output = _message_usage(message)
-            input_tokens += message_input
-            output_tokens += message_output
-            tool_call_count += _message_tool_call_count(message)
-            char_count += _message_char_count(message)
-            if message.is_user_message:
-                user_message_count += 1
-                if first_user_message is None:
-                    first_user_message = _truncate_text(
-                        " ".join(_extract_text_fragments(message)),
-                        180,
-                    )
-            if message.is_assistant_message:
-                assistant_message_count += 1
-                last_assistant_message = _truncate_text(
-                    " ".join(_extract_text_fragments(message)),
-                    180,
-                )
-            if message.message is not None and isinstance(message.message.content, list):
-                for block in message.message.content:
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        tool_name = block.get("name")
-                        if isinstance(tool_name, str):
-                            tool_names.append(tool_name)
-            text_preview = _truncate_text(" ".join(_extract_text_fragments(message)), 160)
-            if text_preview:
-                if message.is_user_message:
-                    role = "user"
-                elif message.is_assistant_message:
-                    role = "assistant"
-                else:
-                    role = "other"
-                excerpt_lines.append(f"{role}: {text_preview}")
-
-        total_tokens = input_tokens + output_tokens
-        duration_seconds = None
-        if first.parsed_timestamp and last.parsed_timestamp:
-            duration_seconds = max(
-                (last.parsed_timestamp - first.parsed_timestamp).total_seconds(),
-                0.0,
+    for section_index, item in enumerate(payload.sections, start=1):
+        start_ordinal = int(item.start_message_ordinal)
+        end_ordinal = int(item.end_message_ordinal)
+        if start_ordinal != next_expected_start:
+            raise SessionSummaryGenerationError(
+                "section "
+                f"{section_index} must start at ordinal {next_expected_start}, "
+                f"got {start_ordinal}"
+            )
+        if (
+            start_ordinal < first_coverable
+            or end_ordinal > last_coverable
+            or end_ordinal < start_ordinal
+        ):
+            raise SessionSummaryGenerationError(
+                f"section {section_index} has invalid ordinal range {start_ordinal}..{end_ordinal}"
             )
 
-        section_id = f"{session.metadata.session_id}:section:{section_index}"
-        title = _default_section_title(group, section_index)
-        synopsis = SessionSectionSynopsis(
-            section_id=section_id,
-            session_id=session.metadata.session_id,
-            section_index=section_index,
-            ecosystem=ecosystem,
-            project_path=session.metadata.project_path,
-            title=title,
-            start_timestamp=first.timestamp,
-            end_timestamp=last.timestamp,
-            total_messages=len(group),
-            user_message_count=user_message_count,
-            assistant_message_count=assistant_message_count,
-            tool_call_count=tool_call_count,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            char_count=char_count,
-            duration_seconds=duration_seconds,
-            first_user_message=first_user_message,
-            last_assistant_message=last_assistant_message,
-            notable_tools=_clip_list(tool_names, limit=5),
-            transcript_excerpt=excerpt_lines[:8],
-        )
+        start_message = messages[start_ordinal - 1]
+        end_message = messages[end_ordinal - 1]
+        if not start_message.is_user_message:
+            raise SessionSummaryGenerationError(
+                f"section {section_index} must start on a user message"
+            )
+        if end_message.is_user_message:
+            raise SessionSummaryGenerationError(
+                f"section {section_index} must end on a non-user message"
+            )
+
         sections.append(
-            SessionSection(
-                section_id=section_id,
-                session_id=session.metadata.session_id,
+            _build_section_from_group(
+                session,
+                ecosystem=ecosystem,
                 section_index=section_index,
-                title=title,
-                start_message_uuid=first.uuid,
-                end_message_uuid=last.uuid,
-                start_timestamp=first.timestamp,
-                end_timestamp=last.timestamp,
-                total_messages=len(group),
-                user_message_count=user_message_count,
-                assistant_message_count=assistant_message_count,
-                tool_call_count=tool_call_count,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total_tokens,
-                char_count=char_count,
-                duration_seconds=duration_seconds,
-                synopsis=synopsis,
+                group=messages[start_ordinal - 1 : end_ordinal],
+                title_override=item.title,
             )
+        )
+        next_expected_start = end_ordinal + 1
+
+    if next_expected_start - 1 != last_coverable:
+        raise SessionSummaryGenerationError(
+            "section coverage ended at ordinal "
+            f"{next_expected_start - 1}, expected {last_coverable}"
         )
     return sections
+
+
+class CodexSessionSectionMaterializationRunner:
+    """Invoke Codex headlessly to generate AI section boundaries."""
+
+    def __init__(self, *, repo_root: Path | None = None) -> None:
+        self._repo_root = repo_root or Path(__file__).resolve().parent.parent
+
+    def build_command(
+        self,
+        *,
+        config: SectionMaterializationConfig,
+        output_path: Path,
+    ) -> list[str]:
+        command = [
+            config.codex_bin,
+            "exec",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            str(self._repo_root),
+            "--output-last-message",
+            str(output_path),
+            "-",
+        ]
+        if config.model:
+            command[2:2] = ["--model", config.model]
+        return command
+
+    def generate(
+        self,
+        synopsis: SessionSectioningSynopsis,
+        *,
+        session: Session,
+        ecosystem: str,
+        config: SectionMaterializationConfig,
+    ) -> SectionMaterializationGeneration:
+        if shutil.which(config.codex_bin) is None:
+            raise SessionSummaryGenerationError(
+                f"{config.codex_bin} CLI not found in PATH; cannot generate sections."
+            )
+
+        prompt = build_session_sectioning_prompt(synopsis.to_prompt_context())
+        session_hash = compute_sectioning_hash(synopsis)
+        with tempfile.TemporaryDirectory(prefix="agent-vis-sectioning-") as tmp_dir:
+            output_path = Path(tmp_dir) / "sectioning.json"
+            command = self.build_command(config=config, output_path=output_path)
+            try:
+                result = subprocess.run(
+                    command,
+                    input=prompt,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                    timeout=config.timeout_seconds,
+                )
+            except subprocess.CalledProcessError as exc:
+                stderr = _normalize_whitespace(exc.stderr or "")
+                raise SessionSummaryGenerationError(
+                    f"codex exec failed with exit code {exc.returncode}: {stderr or 'no stderr'}"
+                ) from exc
+            except subprocess.TimeoutExpired as exc:
+                raise SessionSummaryGenerationError(
+                    f"codex exec timed out after {config.timeout_seconds} seconds"
+                ) from exc
+
+            raw_text = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+            if not raw_text.strip():
+                raw_text = result.stdout
+            payload_dict = _extract_json_object(
+                raw_text,
+                empty_message="sectioning runner returned empty output",
+            )
+            try:
+                payload = SectionBoundaryPayload.model_validate(payload_dict)
+            except ValidationError as exc:
+                raise SessionSummaryGenerationError(
+                    f"sectioning JSON did not match schema: {exc}"
+                ) from exc
+
+        sections = _normalize_section_boundaries(payload, session=session, ecosystem=ecosystem)
+        return SectionMaterializationGeneration(
+            session_id=session.metadata.session_id,
+            session_hash=session_hash,
+            prompt_version=config.prompt_version,
+            model_id=config.model_id,
+            status="completed",
+            sections=sections,
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            error_message=None,
+        )
+
+
+class ClaudeSessionSectionMaterializationRunner:
+    """Invoke Claude Code headlessly to generate AI section boundaries."""
+
+    def generate(
+        self,
+        synopsis: SessionSectioningSynopsis,
+        *,
+        session: Session,
+        ecosystem: str,
+        config: SectionMaterializationConfig,
+    ) -> SectionMaterializationGeneration:
+        if shutil.which(config.claude_bin) is None:
+            raise SessionSummaryGenerationError(
+                f"{config.claude_bin} CLI not found in PATH; cannot generate sections."
+            )
+
+        prompt = build_session_sectioning_prompt(synopsis.to_prompt_context())
+        session_hash = compute_sectioning_hash(synopsis)
+        command = [
+            config.claude_bin,
+            "-p",
+            prompt,
+            "--dangerously-skip-permissions",
+            "--no-session-persistence",
+        ]
+        if config.model:
+            command.extend(["--model", config.model])
+
+        env = None
+        if "CLAUDE_CODE_ENTRYPOINT" in os.environ:
+            env = os.environ.copy()
+            env.pop("CLAUDE_CODE_ENTRYPOINT", None)
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=config.timeout_seconds,
+                env=env,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr = _normalize_whitespace(exc.stderr or "")
+            raise SessionSummaryGenerationError(
+                f"claude -p failed with exit code {exc.returncode}: {stderr or 'no stderr'}"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SessionSummaryGenerationError(
+                f"claude -p timed out after {config.timeout_seconds} seconds"
+            ) from exc
+
+        payload_dict = _extract_json_object(
+            result.stdout,
+            empty_message="sectioning runner returned empty output",
+        )
+        try:
+            payload = SectionBoundaryPayload.model_validate(payload_dict)
+        except ValidationError as exc:
+            raise SessionSummaryGenerationError(
+                f"sectioning JSON did not match schema: {exc}"
+            ) from exc
+
+        sections = _normalize_section_boundaries(payload, session=session, ecosystem=ecosystem)
+        return SectionMaterializationGeneration(
+            session_id=session.metadata.session_id,
+            session_hash=session_hash,
+            prompt_version=config.prompt_version,
+            model_id=config.model_id,
+            status="completed",
+            sections=sections,
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            error_message=None,
+        )
 
 
 class CodexSessionSectionSummaryRunner:
@@ -469,7 +936,6 @@ class CodexSessionSectionSummaryRunner:
             synopsis.to_prompt_context(),
             max_chars=config.max_chars,
         )
-        section_hash = compute_section_hash(synopsis)
         with tempfile.TemporaryDirectory(prefix="agent-vis-section-") as tmp_dir:
             output_path = Path(tmp_dir) / "section-summary.json"
             command = self.build_command(config=config, output_path=output_path)
@@ -495,7 +961,10 @@ class CodexSessionSectionSummaryRunner:
             raw_text = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
             if not raw_text.strip():
                 raw_text = result.stdout
-            payload_dict = _extract_json_object(raw_text)
+            payload_dict = _extract_json_object(
+                raw_text,
+                empty_message="section summary runner returned empty output",
+            )
             try:
                 payload = SectionSummaryPayload.model_validate(payload_dict)
             except ValidationError as exc:
@@ -503,23 +972,22 @@ class CodexSessionSectionSummaryRunner:
                     f"section summary JSON did not match schema: {exc}"
                 ) from exc
 
-        normalized = _normalize_payload(
+        normalized = _normalize_section_summary_payload(
             payload,
             fallback_title=synopsis.title,
             max_chars=config.max_chars,
         )
-        generated_at = datetime.now(timezone.utc).isoformat()
         return SectionSummaryGeneration(
             section_id=synopsis.section_id,
             session_id=synopsis.session_id,
-            section_hash=section_hash,
+            section_hash=compute_section_hash(synopsis),
             prompt_version=SESSION_SECTION_SUMMARY_PROMPT_VERSION,
             model_id=config.model_id,
             status="completed",
             summary_text=normalized.summary,
             summary_json=normalized.model_dump_json(),
             summary_chars=len(normalized.summary),
-            generated_at=generated_at,
+            generated_at=datetime.now(timezone.utc).isoformat(),
             error_message=None,
         )
 
@@ -539,7 +1007,6 @@ class ClaudeSessionSectionSummaryRunner:
             synopsis.to_prompt_context(),
             max_chars=config.max_chars,
         )
-        section_hash = compute_section_hash(synopsis)
         command = [
             config.claude_bin,
             "-p",
@@ -574,7 +1041,10 @@ class ClaudeSessionSectionSummaryRunner:
                 f"claude -p timed out after {config.timeout_seconds} seconds"
             ) from exc
 
-        payload_dict = _extract_json_object(result.stdout)
+        payload_dict = _extract_json_object(
+            result.stdout,
+            empty_message="section summary runner returned empty output",
+        )
         try:
             payload = SectionSummaryPayload.model_validate(payload_dict)
         except ValidationError as exc:
@@ -582,25 +1052,33 @@ class ClaudeSessionSectionSummaryRunner:
                 f"section summary JSON did not match schema: {exc}"
             ) from exc
 
-        normalized = _normalize_payload(
+        normalized = _normalize_section_summary_payload(
             payload,
             fallback_title=synopsis.title,
             max_chars=config.max_chars,
         )
-        generated_at = datetime.now(timezone.utc).isoformat()
         return SectionSummaryGeneration(
             section_id=synopsis.section_id,
             session_id=synopsis.session_id,
-            section_hash=section_hash,
+            section_hash=compute_section_hash(synopsis),
             prompt_version=SESSION_SECTION_SUMMARY_PROMPT_VERSION,
             model_id=config.model_id,
             status="completed",
             summary_text=normalized.summary,
             summary_json=normalized.model_dump_json(),
             summary_chars=len(normalized.summary),
-            generated_at=generated_at,
+            generated_at=datetime.now(timezone.utc).isoformat(),
             error_message=None,
         )
+
+
+def build_section_materialization_runner(
+    config: SectionMaterializationConfig,
+) -> SessionSectionMaterializationRunner:
+    """Select the configured AI section-boundary backend."""
+    if config.backend == "claude":
+        return ClaudeSessionSectionMaterializationRunner()
+    return CodexSessionSectionMaterializationRunner()
 
 
 def build_section_summary_runner(config: SummaryGenerationConfig) -> SessionSectionSummaryRunner:
@@ -611,13 +1089,149 @@ def build_section_summary_runner(config: SummaryGenerationConfig) -> SessionSect
 
 
 @dataclass(frozen=True)
-class _SectionWorkItem:
+class _SectionMaterializationWorkItem:
+    session: Session
+    synopsis: SessionSectioningSynopsis
+    session_hash: str
+
+
+@dataclass(frozen=True)
+class _SectionSummaryWorkItem:
     section: SessionSection
     section_hash: str
 
 
+class SessionSectionMaterializationCoordinator:
+    """Fan out AI section-boundary generation for persisted sessions."""
+
+    def __init__(
+        self,
+        repo: SessionRepository,
+        runner: SessionSectionMaterializationRunner,
+        config: SectionMaterializationConfig,
+    ) -> None:
+        self._repo = repo
+        self._runner = runner
+        self._config = config
+        self._write_lock = Lock()
+
+    def _should_skip(self, session_id: str, session_hash: str) -> bool:
+        existing = self._repo.get_session_section_materialization(session_id)
+        if existing is None:
+            return False
+        return (
+            existing["session_hash"] == session_hash
+            and existing["prompt_version"] == self._config.prompt_version
+            and existing["model_id"] == self._config.model_id
+            and existing["generation_status"] == "completed"
+        )
+
+    def _persist_generation(self, generation: SectionMaterializationGeneration) -> None:
+        with self._write_lock:
+            with self._repo.transaction():
+                self._repo.replace_session_sections(
+                    generation.session_id,
+                    [section.to_row() for section in generation.sections],
+                )
+                self._repo.upsert_session_section_materialization(
+                    session_id=generation.session_id,
+                    session_hash=generation.session_hash,
+                    prompt_version=generation.prompt_version,
+                    model_id=generation.model_id,
+                    generation_status=generation.status,
+                    section_count=len(generation.sections),
+                    generated_at=generation.generated_at,
+                    error_message=generation.error_message,
+                )
+
+    def _persist_failure(self, generation: SectionMaterializationGeneration) -> None:
+        with self._write_lock:
+            self._repo.upsert_session_section_materialization(
+                session_id=generation.session_id,
+                session_hash=generation.session_hash,
+                prompt_version=generation.prompt_version,
+                model_id=generation.model_id,
+                generation_status=generation.status,
+                section_count=0,
+                generated_at=generation.generated_at,
+                error_message=generation.error_message,
+            )
+
+    def generate_for_sessions(
+        self,
+        sessions: list[Session],
+        *,
+        ecosystem: str,
+    ) -> SectionStageResult:
+        if not self._config.enabled:
+            return SectionStageResult()
+
+        work_items: list[_SectionMaterializationWorkItem] = []
+        skipped = 0
+        for session in sessions:
+            synopsis = build_session_sectioning_synopsis(session, ecosystem=ecosystem)
+            session_hash = compute_sectioning_hash(synopsis)
+            if self._should_skip(session.metadata.session_id, session_hash):
+                skipped += 1
+                continue
+            work_items.append(
+                _SectionMaterializationWorkItem(
+                    session=session,
+                    synopsis=synopsis,
+                    session_hash=session_hash,
+                )
+            )
+
+        if not work_items:
+            return SectionStageResult(generated=0, skipped=skipped, failed=0, sections=0)
+
+        generated = 0
+        failed = 0
+        section_count = 0
+        max_workers = max(1, min(self._config.max_workers, len(work_items)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._runner.generate,
+                    item.synopsis,
+                    session=item.session,
+                    ecosystem=ecosystem,
+                    config=self._config,
+                ): item
+                for item in work_items
+            }
+            for future in as_completed(futures):
+                item = futures[future]
+                try:
+                    generation = future.result()
+                except Exception as exc:
+                    generation = SectionMaterializationGeneration(
+                        session_id=item.session.metadata.session_id,
+                        session_hash=item.session_hash,
+                        prompt_version=self._config.prompt_version,
+                        model_id=self._config.model_id,
+                        status="failed",
+                        sections=[],
+                        generated_at=datetime.now(timezone.utc).isoformat(),
+                        error_message=str(exc),
+                    )
+                    failed += 1
+                    self._persist_failure(generation)
+                else:
+                    generated += 1
+                    section_count += len(generation.sections)
+                    self._persist_generation(generation)
+
+        return SectionStageResult(
+            generated=generated,
+            skipped=skipped,
+            failed=failed,
+            sections=section_count,
+        )
+
+
 class SessionSectionSummaryCoordinator:
-    """Fan out structured section summary generation for persisted sessions."""
+    """Fan out structured section summary generation for persisted sections."""
 
     def __init__(
         self,
@@ -667,22 +1281,20 @@ class SessionSectionSummaryCoordinator:
         if not self._config.enabled:
             return SectionSummaryStageResult()
 
-        work_items: list[_SectionWorkItem] = []
+        work_items: list[_SectionSummaryWorkItem] = []
         skipped = 0
         total_sections = 0
         for session in sessions:
-            sections = derive_session_sections(session, ecosystem=ecosystem)
+            sections = load_persisted_session_sections(self._repo, session, ecosystem=ecosystem)
             total_sections += len(sections)
-            self._repo.replace_session_sections(
-                session.metadata.session_id,
-                [section.to_row() for section in sections],
-            )
             for section in sections:
                 section_hash = compute_section_hash(section.synopsis)
                 if self._should_skip(section.section_id, section_hash):
                     skipped += 1
                     continue
-                work_items.append(_SectionWorkItem(section=section, section_hash=section_hash))
+                work_items.append(
+                    _SectionSummaryWorkItem(section=section, section_hash=section_hash)
+                )
 
         if not work_items:
             return SectionSummaryStageResult(
@@ -698,9 +1310,7 @@ class SessionSectionSummaryCoordinator:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    self._runner.generate,
-                    item.section.synopsis,
-                    config=self._config,
+                    self._runner.generate, item.section.synopsis, config=self._config
                 ): item
                 for item in work_items
             }

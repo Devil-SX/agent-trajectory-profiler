@@ -1,9 +1,9 @@
 ---
-name: trajectory_database
+name: chat_trajectory
 description: 其他程序想要理解 ~/.agent_vis/profiler.db 的格式、字段、可读取信息和 SQL 访问方式时使用。适用于 Claude Code / Codex 等 agent，需要快速判断这个仓库的 SQLite 数据库存了什么、去哪里看 schema、如何直接查询 session、summary、embedding、cluster 等信息。
 ---
 
-# trajectory_database
+# chat_trajectory
 
 Use this skill when an agent needs to understand or query the repository's SQLite metadata database directly, without going through the repository CLI.
 

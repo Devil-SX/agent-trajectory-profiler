@@ -80,6 +80,22 @@ CREATE TABLE IF NOT EXISTS session_sections (
 CREATE INDEX IF NOT EXISTS idx_session_sections_session
     ON session_sections(session_id, section_index);
 
+CREATE TABLE IF NOT EXISTS session_section_materializations (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+    session_hash TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    generation_status TEXT NOT NULL,
+    section_count INTEGER NOT NULL DEFAULT 0,
+    generated_at TEXT,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_section_materializations_status
+    ON session_section_materializations(generation_status);
+CREATE INDEX IF NOT EXISTS idx_session_section_materializations_model
+    ON session_section_materializations(model_id);
+
 CREATE TABLE IF NOT EXISTS session_section_summaries (
     section_id TEXT PRIMARY KEY REFERENCES session_sections(section_id) ON DELETE CASCADE,
     session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,

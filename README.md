@@ -2,12 +2,34 @@
 
 # Agent Trajectory Profiler
 
-Visualize and analyze Claude Code agent sessions — run as a **web dashboard**, use **headless CLI** for batch processing, or invoke **AI-powered analysis** for actionable insights.
+Database-first profiler for Claude Code and Codex trajectories. The repository ingests raw `.jsonl` session files, materializes them into SQLite, and then serves the same persisted state to the CLI, REST API, frontend dashboard, clustering jobs, and AI-assisted summaries.
 
-Parses `.jsonl` session files from `~/.claude/projects/`, computes analytics (message stats, tool usage, token consumption, time attribution, subagent tracking), and presents them through an interactive React frontend, structured JSON output, or AI-generated Markdown reports.
+The core design is: raw trajectory files are the input, `~/.agent-vis/profiler.db` is the query surface, and every higher-level capability is a read model or derived materialization built on top of that database.
+
+## Database-Centered Overview
+
+- Raw session JSONL files are scanned incrementally and normalized into canonical `session` rows plus statistics.
+- AI-derived stages such as `summary`, `section_summary`, and `embedding` are persisted as separate atomic materializations with explicit dependencies.
+- The frontend, read-only CLI commands, analytics queries, and cluster inspection all read from SQLite instead of reparsing source files.
+- This makes the repository usable both as an application and as a local data system that other programs can query directly.
+
+```mermaid
+flowchart TD
+    A["Raw session files<br/>Claude / Codex JSONL"] --> B["session<br/>parse + statistics + SQLite persistence"]
+    B --> C["summary<br/>session synopsis -> AI summary"]
+    B --> D["section_summary<br/>user-bounded sections -> structured AI summaries"]
+    C --> E["embedding<br/>summary_text -> vector embedding"]
+    E --> F["clusters<br/>offline clustering over persisted embeddings"]
+    B --> G["CLI / REST read models"]
+    C --> G
+    D --> G
+    E --> G
+```
 
 ## Features
 
+- **SQLite-centered architecture** — one persisted database powers sync, API, dashboard, summaries, embeddings, and clustering
+- **Atomic materialization pipeline** — `session`, `summary`, `section_summary`, and `embedding` stages can be inspected and synced independently
 - **Multi-mode CLI** — `serve` / `parse` / `sync` / `stats` / `analytics` / `analyze`
 - **Three output detail levels** — L1 one-liner, L2 standard, L3 full detail
 - **Time attribution** — model inference / tool execution / user idle / inactive
@@ -21,17 +43,6 @@ Parses `.jsonl` session files from `~/.claude/projects/`, computes analytics (me
 - **SQLite persistence** — incremental sync with mtime-based change detection
 - **Interactive web dashboard** — React frontend with charts and timeline
 - **AI analysis reports** — Claude-powered Markdown insights
-
-```mermaid
-graph LR
-    A[".jsonl Files"] --> B["Parser"]
-    B --> C["SQLite DB"]
-    B --> D["CLI Output"]
-    C --> E["Web Dashboard"]
-    C --> F["stats Command"]
-    C --> H["analytics Commands"]
-    B --> G["AI Analysis"]
-```
 
 ## Installation
 
@@ -149,22 +160,7 @@ agent-vis sync --embeddings                           # embed persisted summarie
 agent-vis sync --summaries --embeddings               # generate summaries, then embed them in the same run
 ```
 
-#### Materialization Pipeline
-
-```mermaid
-flowchart TD
-    A["Raw session files<br/>Claude / Codex JSONL"] --> B["session<br/>parse + statistics + SQLite persistence"]
-    B --> C["summary<br/>session synopsis -> AI summary"]
-    B --> D["section_summary<br/>user-bounded sections -> structured AI summaries"]
-    C --> E["embedding<br/>summary_text -> vector embedding"]
-    E --> F["clusters<br/>offline clustering over persisted embeddings"]
-    B --> G["CLI / REST read models"]
-    C --> G
-    D --> G
-    E --> G
-```
-
-Materialization stages are atomic and can be inspected independently:
+#### Materialization Semantics
 
 - `session` is the base stage. It parses raw JSONL, computes statistics, and persists the canonical session rows.
 - `summary` depends on `session` and stores a bounded AI-generated session summary plus model metadata.

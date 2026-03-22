@@ -9,10 +9,17 @@ from agent_vis.db.connection import get_connection
 from agent_vis.db.repository import SessionRepository
 from agent_vis.models import Session
 from agent_vis.parsers.claude_code import ClaudeCodeParser
+from agent_vis.prompts.session_sectioning import build_session_sectioning_prompt
 from agent_vis.session_sections import (
+    SectionMaterializationConfig,
+    SectionMaterializationGeneration,
     SectionSummaryGeneration,
     SectionSummaryPayload,
+    SessionSection,
+    SessionSectionMaterializationCoordinator,
     SessionSectionSummaryCoordinator,
+    build_session_sectioning_synopsis,
+    compute_sectioning_hash,
     derive_session_sections,
 )
 from agent_vis.session_summaries import SummaryGenerationConfig
@@ -137,6 +144,25 @@ def test_derive_session_sections_splits_on_user_boundaries(
     assert "Investigate the flaky test failure" in sections[0].title
 
 
+def test_sectioning_prompt_requires_exact_first_and_last_ordinals() -> None:
+    prompt = build_session_sectioning_prompt(
+        "\n".join(
+            [
+                "session_id: sess-sections",
+                "first_user_ordinal: 1",
+                "last_coverable_ordinal: 4",
+                "messages:",
+                "1. role=user uuid=u1 timestamp=t1 tools=(none) text=setup command",
+                "2. role=assistant uuid=a1 timestamp=t2 tools=(none) text=ack",
+            ]
+        )
+    )
+
+    assert "The first section must start exactly at `first_user_ordinal`." in prompt
+    assert "The last section must end exactly at `last_coverable_ordinal`." in prompt
+    assert "Do not skip command-style, metadata-like, interrupted, or setup user" in prompt
+
+
 def test_section_summary_coordinator_persists_structured_rows(
     parser: ClaudeCodeParser,
     section_session_dir: Path,
@@ -146,6 +172,23 @@ def test_section_summary_coordinator_persists_structured_rows(
     repo = SessionRepository(conn)
     session = parser.parse_session(section_session_dir / "sess-sections.jsonl")
     _persist_session(repo, session, section_session_dir / "sess-sections.jsonl")
+    sections = derive_session_sections(session, ecosystem="claude_code")
+    repo.replace_session_sections(
+        session.metadata.session_id,
+        [section.to_row() for section in sections],
+    )
+    repo.upsert_session_section_materialization(
+        session_id=session.metadata.session_id,
+        session_hash=compute_sectioning_hash(
+            build_session_sectioning_synopsis(session, ecosystem="claude_code")
+        ),
+        prompt_version="session-sectioning-v1",
+        model_id="codex:gpt-5.4",
+        generation_status="completed",
+        section_count=len(sections),
+        generated_at="2026-03-18T00:00:00Z",
+        error_message=None,
+    )
 
     class _FakeRunner:
         def generate(self, synopsis, *, config):
@@ -188,4 +231,120 @@ def test_section_summary_coordinator_persists_structured_rows(
     persisted = repo.get_session_section_summary("sess-sections:section:1")
     assert persisted is not None
     assert persisted["model_id"] == "codex:gpt-5.4"
+    conn.close()
+
+
+def test_section_materialization_coordinator_persists_ai_sections(
+    parser: ClaudeCodeParser,
+    section_session_dir: Path,
+    tmp_path: Path,
+) -> None:
+    conn = get_connection(tmp_path / "sections.db")
+    repo = SessionRepository(conn)
+    session = parser.parse_session(section_session_dir / "sess-sections.jsonl")
+    _persist_session(repo, session, section_session_dir / "sess-sections.jsonl")
+
+    heuristic_sections = derive_session_sections(session, ecosystem="claude_code")
+
+    class _FakeBoundaryRunner:
+        def generate(self, synopsis, *, session, ecosystem, config):
+            assert synopsis.session_id == "sess-sections"
+            return SectionMaterializationGeneration(
+                session_id=session.metadata.session_id,
+                session_hash=compute_sectioning_hash(synopsis),
+                prompt_version="session-sectioning-v1",
+                model_id=config.model_id,
+                status="completed",
+                sections=[
+                    SessionSection(
+                        **{
+                            **heuristic_sections[0].__dict__,
+                        }
+                    ),
+                    SessionSection(
+                        **{
+                            **heuristic_sections[1].__dict__,
+                        }
+                    ),
+                ],
+                generated_at="2026-03-18T00:00:00Z",
+                error_message=None,
+            )
+
+    coordinator = SessionSectionMaterializationCoordinator(
+        repo,
+        _FakeBoundaryRunner(),
+        SectionMaterializationConfig(enabled=True, model="gpt-5.4"),
+    )
+
+    result = coordinator.generate_for_sessions([session], ecosystem="claude_code")
+
+    assert result.generated == 1
+    assert result.sections == 2
+    assert repo.count_session_sections() == 2
+    persisted = repo.get_session_section_materialization("sess-sections")
+    assert persisted is not None
+    assert persisted["model_id"] == "codex:gpt-5.4"
+    assert persisted["prompt_version"] == "session-sectioning-v1"
+    conn.close()
+
+
+def test_section_summary_coordinator_uses_persisted_sections_not_fallback(
+    parser: ClaudeCodeParser,
+    section_session_dir: Path,
+    tmp_path: Path,
+) -> None:
+    conn = get_connection(tmp_path / "sections.db")
+    repo = SessionRepository(conn)
+    session = parser.parse_session(section_session_dir / "sess-sections.jsonl")
+    _persist_session(repo, session, section_session_dir / "sess-sections.jsonl")
+
+    heuristic_sections = derive_session_sections(session, ecosystem="claude_code")
+    repo.replace_session_sections(
+        session.metadata.session_id,
+        [heuristic_sections[0].to_row()],
+    )
+    repo.upsert_session_section_materialization(
+        session_id=session.metadata.session_id,
+        session_hash=compute_sectioning_hash(
+            build_session_sectioning_synopsis(session, ecosystem="claude_code")
+        ),
+        prompt_version="session-sectioning-v1",
+        model_id="codex:gpt-5.4",
+        generation_status="completed",
+        section_count=1,
+        generated_at="2026-03-18T00:00:00Z",
+        error_message=None,
+    )
+
+    class _FakeRunner:
+        def generate(self, synopsis, *, config):
+            return SectionSummaryGeneration(
+                section_id=synopsis.section_id,
+                session_id=synopsis.session_id,
+                section_hash="hash-" + synopsis.section_id,
+                prompt_version="session-section-summary-v1",
+                model_id=config.model_id,
+                status="completed",
+                summary_text=f"Summary for {synopsis.section_id}",
+                summary_json=SectionSummaryPayload(
+                    title=synopsis.title,
+                    summary=f"Summary for {synopsis.section_id}",
+                ).model_dump_json(),
+                summary_chars=12,
+                generated_at="2026-03-18T00:00:00Z",
+                error_message=None,
+            )
+
+    coordinator = SessionSectionSummaryCoordinator(
+        repo,
+        _FakeRunner(),
+        SummaryGenerationConfig(enabled=True, model="gpt-5.4"),
+    )
+
+    result = coordinator.generate_for_sessions([session], ecosystem="claude_code")
+
+    assert result.sections == 1
+    assert result.generated == 1
+    assert repo.count_session_section_summaries(generation_status="completed") == 1
     conn.close()
