@@ -1,10 +1,23 @@
 # Changelog
 
-All notable changes to **Agent Trajectory Profiler** will be documented in this file.
+All notable changes to **BatCave Trajectory** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## [2.0.1] - 2026-10-06
+
+### Added
+
+- Authenticated remote protocol ingestion and analysis with native machine collectors.
+- Durable bounded request traces for reads, writes, public access and denied requests; request IDs join backend and edge metadata. Invalid credentials never supply an account identity.
+
+### Changed
+
+- Ship the remote service package without the legacy local analysis CLI.
+
+Code stats (staged release delta): +1715 (-684) = +1031 vs v1.9.0.
 
 ## [1.9.0] - 2026-03-22
 
@@ -17,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `SessionSectionMaterializationCoordinator` with parallel `ThreadPoolExecutor` fan-out, `CodexSessionSectionMaterializationRunner`, and `ClaudeSessionSectionMaterializationRunner` implementing the `SessionSectionMaterializationRunner` Protocol.
 - `load_persisted_session_sections` for rehydrating DB-persisted section rows into in-memory `SessionSection` objects; the API service now serves persisted sections first with heuristic fallback when none exist.
 - `section` stage included in `materialize status` output with staleness tracking; `section_summary` dependency chain updated from `session` to `section`.
-- `chat_trajectory` skill documenting how to query `~/.agent-vis/profiler.db` directly (replaces `trajectory_database` skill).
+- `chat_trajectory` skill documenting how to query `~/.trajectory/profiler.db` directly (replaces `trajectory_database` skill).
 - Codex benchmark results for section-summary generation added to `docs/`.
 
 ### Changed
@@ -41,7 +54,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - User-boundary session section materialization with persisted section stats and structured AI section summaries, including dedicated prompt/runner support and regression coverage across repository, API, and CLI flows.
 - Atomic materialization support for `section-summary` plus expanded materialization status reporting, read-only session detail parity, and direct session-section API access for downstream tools and UIs.
 - Frontend project/session/section hierarchy navigation and metadata sidebar summary cards that surface session summaries, section summaries, and fallback section state when AI materialization has not run yet.
-- New `trajectory_database` skill documenting how other programs can directly query `~/.agent-vis/profiler.db`, which files define the schema, and which SQL patterns are used in the repository.
+- New `trajectory_database` skill documenting how other programs can directly query `~/.trajectory/profiler.db`, which files define the schema, and which SQL patterns are used in the repository.
 
 ### Changed
 
@@ -59,7 +72,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Offline deterministic clustering for persisted session-summary embeddings via `agent-vis clusters run|list`, backed by repository-owned cluster snapshot tables, repeatable cosine-threshold grouping, latest-run inspection output, and regression coverage for grouping, persistence, rerun replacement, and empty/small datasets (`agent_vis/session_clustering.py`, `agent_vis/db/*`, `agent_vis/cli/main.py`, `tests/test_session_clustering.py`, `README.md`, `README.zh.md`).
+- Offline deterministic clustering for persisted session-summary embeddings via `trajectory clusters run|list`, backed by repository-owned cluster snapshot tables, repeatable cosine-threshold grouping, latest-run inspection output, and regression coverage for grouping, persistence, rerun replacement, and empty/small datasets (`trajectory/session_clustering.py`, `trajectory/db/*`, `trajectory/cli/main.py`, `tests/test_session_clustering.py`, `README.md`, `README.zh.md`).
 
 ## [1.6.0] - 2026-03-10
 
@@ -67,10 +80,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- CLI parity for analytics GET endpoints via `agent-vis analytics overview|distributions|timeseries|project-comparison|project-swimlane`, including API-aligned default 7-day date normalization, read-only DB-backed service wiring, README examples, and regression coverage (`agent_vis/cli/main.py`, `tests/test_cli_analytics_command.py`, `README.md`, `README.zh.md`).
-- Read-only CLI parity for session listing/detail/statistics JSON, sync status, capability manifests, and frontend preference inspection via `agent-vis sessions *`, `agent-vis sync-status`, `agent-vis capabilities`, `agent-vis frontend-preferences`, plus `agent-vis stats --json` for `/api/sessions/{id}/statistics` parity, with regression coverage and README examples (`agent_vis/cli/main.py`, `tests/test_cli_readonly_command.py`, `README.md`, `README.zh.md`).
-- Optional sync-time plain-text session summary generation via Codex headless, backed by provider-agnostic `SessionSynopsis` inputs, bounded summary-length enforcement, concurrent worker fan-out, SQLite `session_summaries` persistence, incremental fingerprint skipping, and regression coverage for success/skip/failure paths (`agent_vis/session_summaries.py`, `agent_vis/prompts/session_summary.py`, `agent_vis/db/*`, `tests/test_session_summaries.py`, `README.md`, `README.zh.md`).
-- Optional sync-time OpenRouter embedding generation from persisted plain-text session summaries, backed by repository-owned `session_summary_embeddings` storage, summary-hash incremental skipping, timeout/retry controls, and regression coverage for payload construction, persistence, skip logic, and failure isolation (`agent_vis/session_embeddings.py`, `agent_vis/db/*`, `agent_vis/cli/main.py`, `tests/test_session_embeddings.py`, `README.md`, `README.zh.md`).
+- CLI parity for analytics GET endpoints via `trajectory analytics overview|distributions|timeseries|project-comparison|project-swimlane`, including API-aligned default 7-day date normalization, read-only DB-backed service wiring, README examples, and regression coverage (`trajectory/cli/main.py`, `tests/test_cli_analytics_command.py`, `README.md`, `README.zh.md`).
+- Read-only CLI parity for session listing/detail/statistics JSON, sync status, capability manifests, and frontend preference inspection via `trajectory sessions *`, `trajectory sync-status`, `trajectory capabilities`, `trajectory frontend-preferences`, plus `trajectory stats --json` for `/api/sessions/{id}/statistics` parity, with regression coverage and README examples (`trajectory/cli/main.py`, `tests/test_cli_readonly_command.py`, `README.md`, `README.zh.md`).
+- Optional sync-time plain-text session summary generation via Codex headless, backed by provider-agnostic `SessionSynopsis` inputs, bounded summary-length enforcement, concurrent worker fan-out, SQLite `session_summaries` persistence, incremental fingerprint skipping, and regression coverage for success/skip/failure paths (`trajectory/session_summaries.py`, `trajectory/prompts/session_summary.py`, `trajectory/db/*`, `tests/test_session_summaries.py`, `README.md`, `README.zh.md`).
+- Optional sync-time OpenRouter embedding generation from persisted plain-text session summaries, backed by repository-owned `session_summary_embeddings` storage, summary-hash incremental skipping, timeout/retry controls, and regression coverage for payload construction, persistence, skip logic, and failure isolation (`trajectory/session_embeddings.py`, `trajectory/db/*`, `trajectory/cli/main.py`, `tests/test_session_embeddings.py`, `README.md`, `README.zh.md`).
 - Parser architecture regression coverage that compares the flattened Claude parse pipeline against staged normalized-event materialization for large `tool_result`, `thinkingMetadata`, `todos`, and `compact_boundary` cases.
 
 ### Changed
@@ -83,12 +96,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Required Rust native character-classifier extension with mixed Python/Rust packaging, runtime wrapper import checks, and parity coverage against the Python reference implementation (`Cargo.toml`, `src/lib.rs`, `agent_vis/parsers/character_classifier.py`, `tests/test_character_classifier_native.py`).
+- Required Rust native character-classifier extension with mixed Python/Rust packaging, runtime wrapper import checks, and parity coverage against the Python reference implementation (`Cargo.toml`, `src/lib.rs`, `trajectory/parsers/character_classifier.py`, `tests/test_character_classifier_native.py`).
 
 ### Changed
 
-- Session statistics now compute character breakdowns through the native Rust classifier, cutting real-data sync statistics cost to sub-second levels while preserving exact bucket semantics (`agent_vis/parsers/claude_code.py`, `agent_vis/perf/backend_runner.py`, `tests/test_perf_runner.py`).
-- Parser JSON decode paths now consistently use the shared decoder abstraction with `orjson` as the default fast path when available across Claude/Codex/canonical normalization flows, with updated docs for decoder/runtime expectations (`agent_vis/parsers/decoders.py`, `agent_vis/parsers/canonical.py`, `agent_vis/parsers/codex.py`, `agent_vis/parsers/normalization.py`, `docs/agents/claude_code.md`, `docs/performance.md`, `README.md`).
+- Session statistics now compute character breakdowns through the native Rust classifier, cutting real-data sync statistics cost to sub-second levels while preserving exact bucket semantics (`trajectory/parsers/claude_code.py`, `trajectory/perf/backend_runner.py`, `tests/test_perf_runner.py`).
+- Parser JSON decode paths now consistently use the shared decoder abstraction with `orjson` as the default fast path when available across Claude/Codex/canonical normalization flows, with updated docs for decoder/runtime expectations (`trajectory/parsers/decoders.py`, `trajectory/parsers/canonical.py`, `trajectory/parsers/codex.py`, `trajectory/parsers/normalization.py`, `docs/agents/claude_code.md`, `docs/performance.md`, `README.md`).
 
 ## [1.4.0] - 2026-03-06
 
@@ -96,14 +109,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Pluggable Claude JSON decoder abstraction with staged decode/normalize/materialize parser internals, optional `orjson` backend selection, and normalized event IR reuse across parse and canonical conversion paths (`agent_vis/parsers/decoders.py`, `agent_vis/parsers/claude_code.py`, `agent_vis/parsers/normalization.py`).
-- Repository-owned parser decoder benchmark runner and CLI (`agent_vis/perf/parser_benchmark.py`, `scripts/run_parser_bench.py`) with JSON/Markdown artifacts for repeatable decoder comparisons.
+- Pluggable Claude JSON decoder abstraction with staged decode/normalize/materialize parser internals, optional `orjson` backend selection, and normalized event IR reuse across parse and canonical conversion paths (`trajectory/parsers/decoders.py`, `trajectory/parsers/claude_code.py`, `trajectory/parsers/normalization.py`).
+- Repository-owned parser decoder benchmark runner and CLI (`trajectory/perf/parser_benchmark.py`, `scripts/run_parser_bench.py`) with JSON/Markdown artifacts for repeatable decoder comparisons.
 - Parser architecture regression coverage for decoder selection, normalized Claude IR materialization, and benchmark artifact generation (`tests/test_claude_parse_architecture.py`, `tests/test_parser_decoder_benchmark.py`).
 
 ### Changed
 
 - Backend performance workflow now publishes parser benchmark summaries alongside existing backend performance artifacts, and Claude ecosystem documentation/performance docs now describe the staged parser pipeline and decoder override path (`.github/workflows/backend-performance.yml`, `docs/performance.md`, `docs/agents/claude_code.md`).
-- Claude sync/profile internals now reuse the staged parse pipeline for compact-event extraction and precomputed subagent-aware statistics calculation, eliminating the extra compact-event file scan from sync profiling (`agent_vis/perf/sync_profiler.py`, `tests/test_statistics.py`).
+- Claude sync/profile internals now reuse the staged parse pipeline for compact-event extraction and precomputed subagent-aware statistics calculation, eliminating the extra compact-event file scan from sync profiling (`trajectory/perf/sync_profiler.py`, `tests/test_statistics.py`).
 
 ## [1.3.0] - 2026-03-06
 
@@ -111,19 +124,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Real local sync profiling support with git-ignored private softlink inputs, per-stage sync breakdown artifacts, and a dedicated runner script (`agent_vis/perf/sync_profiler.py`, `scripts/profile_real_sync.py`).
+- Real local sync profiling support with git-ignored private softlink inputs, per-stage sync breakdown artifacts, and a dedicated runner script (`trajectory/perf/sync_profiler.py`, `scripts/profile_real_sync.py`).
 - Regression coverage for real/synthetic sync profiling payloads and private local smoke execution (`tests/test_sync_profiler.py`, `tests/test_sync_private_real_profile.py`).
-- New `agent-vis dashboard` CLI command to launch backend uvicorn and frontend Vite dev servers together with shared startup output, frontend port option, and graceful dual-process shutdown (`agent_vis/cli/main.py`).
+- New `trajectory dashboard` CLI command to launch backend uvicorn and frontend Vite dev servers together with shared startup output, frontend port option, and graceful dual-process shutdown (`trajectory/cli/main.py`).
 - CLI regression coverage for dashboard startup, dependency failure paths, and Ctrl+C cleanup behavior (`tests/test_cli_dashboard_command.py`).
 - Parser/Sync regression tests for transaction rollback safety and character-classification edge cases (`tests/test_sync.py`, `tests/test_repository.py`, `tests/test_character_metrics.py`).
 - Analytics read-path regression tests for lightweight query routing and cache lifecycle behavior (`tests/test_api_integration.py`), plus repository coverage for selective statistics fetch (`tests/test_repository.py`).
-- Persistent backend performance framework with budgeted benchmark runner (`scripts/run_backend_perf.py` + `agent_vis/perf/*`), synthetic perf dataset generation, and structured JSON/Markdown artifacts under `output/perf/`.
+- Persistent backend performance framework with budgeted benchmark runner (`scripts/run_backend_perf.py` + `trajectory/perf/*`), synthetic perf dataset generation, and structured JSON/Markdown artifacts under `output/perf/`.
 - New repository-tracked performance budget config and regression tests (`tests/perf/budgets.json`, `tests/test_perf_framework.py`, `tests/test_perf_runner.py`) covering soft-gate evaluation behavior and artifact generation.
 - New CI workflow for backend performance trend checks (`.github/workflows/backend-performance.yml`) with PR quick profile, nightly full profile, job summary publishing, and artifact upload.
 - Backend performance playbook documenting local execution, metric semantics, soft-gate policy, CI integration, and budget governance (`docs/performance.md`).
 - Automated backend-to-frontend API contract generation chain: OpenAPI export script (`scripts/export_openapi_schema.py`), frontend typegen script (`frontend/scripts/generate-api-types.mjs`), generated contract artifacts (`frontend/src/types/generated/openapi.json`, `api.generated.ts`, `api-contracts.ts`), and npm commands (`typegen`, `typegen:check`).
 - Backend OpenAPI schema regression tests (`tests/test_api_contract_schema.py`) that pin key frontend contract fields (`Session.subagent_sessions/statistics`, `ToolErrorRecord.tool_call_id/summary/detail_snippet`, `SubagentType.aprompt_suggestion`) to prevent drift.
-- Shared parser normalization module with typed intermediate models (`NormalizedRecordIR`/`NormalizedMessageIR`) for timestamp coercion, message-content fallback, lineage extraction helpers, and bounded tool-result normalization (`agent_vis/parsers/normalization.py`).
+- Shared parser normalization module with typed intermediate models (`NormalizedRecordIR`/`NormalizedMessageIR`) for timestamp coercion, message-content fallback, lineage extraction helpers, and bounded tool-result normalization (`trajectory/parsers/normalization.py`).
 - Cross-ecosystem parser normalization regression tests (`tests/test_parser_normalization.py`) covering timestamp fallback parity, tool-result truncation semantics, and core text-message behavior alignment between Codex and Claude adapters.
 - Timeline long-message compaction flow: oversized user/assistant text messages now render in a truncated preview state with per-message `Expand` actions, and expose a full-content modal with keyboard support (Enter/ESC), overlay/button close paths, and focus-return behavior.
 - Frontend visual/readability regression coverage for Cross-Session analytics rendering and detail-roundtrip continuity (`frontend/tests/advanced-analytics-ux.spec.ts`).
@@ -138,8 +151,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Sync write path now runs inside a repository transaction boundary to batch SQLite commits and keep persistence atomic on unexpected write failures (`agent_vis/db/sync.py`, `agent_vis/db/repository.py`).
-- Character classification hotpath now uses an ASCII-first fast path with lower per-character overhead while preserving existing CJK/Latin/digit/whitespace/other semantics (`agent_vis/parsers/claude_code.py`).
+- Sync write path now runs inside a repository transaction boundary to batch SQLite commits and keep persistence atomic on unexpected write failures (`trajectory/db/sync.py`, `trajectory/db/repository.py`).
+- Character classification hotpath now uses an ASCII-first fast path with lower per-character overhead while preserving existing CJK/Latin/digit/whitespace/other semantics (`trajectory/parsers/claude_code.py`).
 - Analytics service now uses split data access paths: lightweight session-summary reads for `timeseries` and non-tool `distribution` dimensions, while statistics JSON is loaded on-demand for heavy aggregations.
 - Added short-TTL analytics response cache keyed by query parameters and automatic invalidation after sync completion to reduce repeated aggregation overhead.
 - Repository analytics helpers now support selective statistics fetch by session IDs (`SessionRepository.list_statistics_for_sessions`) to avoid full-table JSON decode work.
@@ -207,25 +220,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Session list API/TS models now expose both logical and physical session identifiers to make view-mode semantics explicit for frontend consumers.
 - Cross-session analytics API now exposes explicit dual-plane payloads: `control_plane` (ingestion/sync/file state) and `runtime_plane` (behavior/time/token/tool aggregates).
 - New control-plane file statistics in analytics overview include tracked-file parse status counts, tracked/trajectory byte totals, and last parsed timestamp.
-- New standalone local-state specification document for `~/.agent-vis` (`docs/agent-vis-home-layout.md`) covering directory tree, naming rules, permission guidance, and security notes (explicitly excluding migration strategy).
+- New standalone local-state specification document for `~/.trajectory` (`docs/trajectory-home-layout.md`) covering directory tree, naming rules, permission guidance, and security notes (explicitly excluding migration strategy).
 - New capability-manifest specification document (`docs/agent-capability-manifest.md`) defining schema fields, compatibility/versioning rules, Codex/Claude examples, and ecosystem onboarding checklist.
-- Frontend state persistence API: `GET/PUT /api/state/frontend-preferences` with local file storage at `~/.agent-vis/state/frontend-preferences.json` (locale/theme/density/session view/aggregation).
+- Frontend state persistence API: `GET/PUT /api/state/frontend-preferences` with local file storage at `~/.trajectory/state/frontend-preferences.json` (locale/theme/density/session view/aggregation).
 - One-time frontend migration flow from legacy `localStorage` keys to backend-backed state storage, including post-migration key cleanup and reload persistence.
 - Regression coverage for state unification:
   - backend API integration tests for frontend preference read/write, directory initialization, and env compatibility (`tests/test_api_integration.py`)
   - frontend smoke test for localStorage-to-state migration and persisted reload behavior (`frontend/tests/preferences-migration.spec.ts`).
 - New Telegram incremental report workflow:
-  - CLI command `agent-vis report telegram` with `--dry-run`
-  - TOML config loading from `~/.agent-vis/config/telegram.toml`
-  - incremental window state at `~/.agent-vis/state/report-state.json`
+  - CLI command `trajectory report telegram` with `--dry-run`
+  - TOML config loading from `~/.trajectory/config/telegram.toml`
+  - incremental window state at `~/.trajectory/state/report-state.json`
   - summary payload including new sessions, source distribution, bottleneck distribution, and tool error counts.
 - Telegram reporting docs with config template, state semantics, and security notes (`docs/telegram-report.md`).
 - Regression coverage for Telegram reporting:
   - report module tests for config validation, incremental windowing, Telegram API success/failure/timeout mocks, and failed-send timestamp rollback (`tests/test_telegram_reporting.py`)
   - CLI command dry-run integration test (`tests/test_cli_report_command.py`).
 - Agent capability manifest implementation:
-  - added manifest loader/validator and drift-warning helper (`agent_vis/parsers/capabilities.py`)
-  - added built-in manifests for `claude_code` and `codex` (`agent_vis/parsers/manifests/*.json`)
+  - added manifest loader/validator and drift-warning helper (`trajectory/parsers/capabilities.py`)
+  - added built-in manifests for `claude_code` and `codex` (`trajectory/parsers/manifests/*.json`)
   - added capability query endpoint `GET /api/capabilities`.
 - Sync pipeline now emits capability-aware parser warnings when observed statistics conflict with declared manifest support.
 - Regression coverage for capability manifest contract and API surface:
@@ -275,11 +288,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Canonical parser middle layer (`agent_vis.parsers.canonical`) with adapter contract (`TrajectoryEventAdapter`), neutral event models (`CanonicalEvent` / `CanonicalSession`), and ecosystem adapter registry.
+- Canonical parser middle layer (`trajectory.parsers.canonical`) with adapter contract (`TrajectoryEventAdapter`), neutral event models (`CanonicalEvent` / `CanonicalSession`), and ecosystem adapter registry.
 - Canonical conversion contract tests covering registry extension, source-to-canonical normalization, and canonical-to-message compatibility behavior.
 - New `CodexParser` with Codex rollout adapter for local files under `~/.codex/sessions/**/rollout-*.jsonl`.
 - Mixed-ecosystem API/session tests covering Codex fixture ingestion and `/api/sessions?ecosystem=` filtering.
-- Rule-based tool error taxonomy module (`agent_vis.parsers.error_taxonomy`) with versioned categories and `uncategorized` fallback for unmatched failures.
+- Rule-based tool error taxonomy module (`trajectory.parsers.error_taxonomy`) with versioned categories and `uncategorized` fallback for unmatched failures.
 - Session-level tool error timeline records (`timestamp`, `tool_name`, `category`, `matched_rule`, `preview`, `detail`) and per-category counters in `SessionStatistics`.
 - Regression fixtures/tests for taxonomy precision and fallback behavior (`tests/fixtures/error_taxonomy_examples.json`, `tests/test_error_taxonomy.py`).
 - Playwright smoke tests for tool error timeline rendering, expand/collapse details, and table scroll-container behavior on metrics dashboard.
@@ -308,7 +321,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-session source-segmentation coverage for ecosystem-specific breakdowns (`codex` vs `claude_code`) across backend integration and frontend smoke/visual tests.
 - Density mode controls (`comfortable` / `compact`) with persisted preference and root-level density tokens applied to overview/session layouts.
 - Playwright coverage for density mode across smoke, visual baseline, and accessibility keyboard interaction checks.
-- Global EN/ZH i18n layer for dashboard UI with persisted locale preference (`agent-vis:locale`) and key workflow coverage (app shell, session browser, date filter, sync panel, cross-session overview).
+- Global EN/ZH i18n layer for dashboard UI with persisted locale preference (`trajectory:locale`) and key workflow coverage (app shell, session browser, date filter, sync panel, cross-session overview).
 - Playwright smoke coverage for language switch behavior (`EN -> ZH`), key label assertions, and reload persistence (`tests/language-switch.spec.ts`).
 - Metric glossary framework (`MetricHelp`) with keyboard-accessible popovers, formula/input/notes fields, and bilingual (`EN/ZH`) definitions for leverage, yield, active ratio, token/s, and bottleneck.
 - Playwright smoke coverage for glossary interactions: tooltip hint presence, expandable details, keyboard activation, and Chinese-content rendering (`tests/metric-glossary.spec.ts`).
@@ -320,7 +333,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - API branding and metadata text to ecosystem-neutral naming (`Agent Trajectory Visualizer API`) instead of Claude-only wording.
-- CLI user-facing branding and examples now prefer `agent-vis` as canonical command.
+- CLI user-facing branding and examples now prefer `trajectory` as canonical command.
 - README (EN/CN) now documents the 1.0 breaking removal of legacy `claude_vis`/`claude-vis` interfaces.
 - Claude parser ingestion path now uses the canonical adapter pipeline (`JSONL -> CanonicalEvent -> MessageRecord`) without changing downstream statistics logic.
 - Session sync and service initialization now support mixed local roots (Claude + Codex), and session list responses now expose ecosystem metadata.
@@ -355,8 +368,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 
 - Legacy Python package namespace `claude_vis` and all compatibility wrappers.
-- Legacy CLI alias `claude-vis`; only `agent-vis` remains supported.
-- Dual-command installer behavior; install/uninstall scripts now manage canonical `agent-vis` only (while cleaning stale legacy alias files if present).
+- Legacy CLI alias `claude-vis`; only `trajectory` remains supported.
+- Dual-command installer behavior; install/uninstall scripts now manage canonical `trajectory` only (while cleaning stale legacy alias files if present).
 
 ### Fixed
 
