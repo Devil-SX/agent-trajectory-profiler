@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Record(BaseModel):
@@ -22,6 +22,7 @@ class Record(BaseModel):
     cache_write: int | None = Field(default=None, ge=0, le=9_007_199_254_740_991)
     reasoning: int | None = Field(default=None, ge=0, le=9_007_199_254_740_991)
     input_includes_cache: bool = False
+    input_includes_cache_write: bool | None = None
     output_includes_reasoning: bool = True
     consumption: str | None = Field(default=None, max_length=128)
     workspace: str | None = Field(default=None, max_length=200)
@@ -71,6 +72,14 @@ class Correction(BaseModel):
     project_name: str = Field(min_length=1, max_length=200)
 
 
+class PriceRates(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    input: float = Field(ge=0, le=9_007_199_254_740_991)
+    output: float = Field(ge=0, le=9_007_199_254_740_991)
+    cached: float = Field(ge=0, le=9_007_199_254_740_991)
+    cache_write: float = Field(ge=0, le=9_007_199_254_740_991)
+
+
 class Price(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     mutation_id: str = Field(min_length=16, max_length=128)
@@ -82,9 +91,26 @@ class Price(BaseModel):
     effective_from: datetime
     source_url: str = Field(min_length=8, max_length=500)
 
-    @field_validator("effective_from")
+    basis: Literal["effective_historical", "current_reference"] = "effective_historical"
+    verified_at: datetime | None = None
+    service_tier: Literal["standard"] = "standard"
+    context_scope: Literal["request", "session"] = "request"
+    long_context_threshold: int | None = Field(default=None, gt=0)
+    long_context: PriceRates | None = None
+
+    @model_validator(mode="after")
+    def complete_reference(self) -> "Price":
+        if self.basis == "current_reference" and self.verified_at is None:
+            raise ValueError("Current reference prices require verified_at")
+        if (self.long_context_threshold is None) != (self.long_context is None):
+            raise ValueError("Long context threshold and rates must be supplied together")
+        return self
+
+    @field_validator("effective_from", "verified_at")
     @classmethod
-    def price_zone(cls, value: datetime) -> datetime:
+    def price_zone(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
         if value.tzinfo is None:
             raise ValueError("Timezone is required")
         return value

@@ -308,6 +308,29 @@ class Domain:
                 continue
             seen.add(key)
             usages.append(record)
+
+        def context_length(record: dict[str, Any]) -> int | None:
+            if record["input"] is None:
+                return None
+            length = record["input"]
+            if not record["input_includes_cache"]:
+                if record["cached"] is None:
+                    return None
+                length += record["cached"]
+            if record.get("input_includes_cache_write") is False:
+                if record["cache_write"] is None:
+                    return None
+                length += record["cache_write"]
+            elif record["cache_write"] and record.get("input_includes_cache_write") is None:
+                return None
+            return int(length)
+
+        session_context: dict[tuple[str, str, str | None], int] = {}
+        for usage in usages:
+            length = context_length(usage)
+            if length is not None:
+                key = (usage["owner"], usage["session"], usage.get("model"))
+                session_context[key] = max(session_context.get(key, 0), length)
         groups: dict[str, dict[str, Any]] = {}
         days: dict[str, dict[str, Any]] = {}
         tasks: dict[str, dict[str, Any]] = {}
@@ -327,7 +350,10 @@ class Domain:
                     ("input", "output", "cached", "cache_write", "reasoning"), 0
                 ),
                 "estimated_usd": 0.0,
+                "known_subtotal_usd": 0.0,
+                "priced_calls": 0,
                 "unpriced_calls": 0,
+                "unknown_reason_counts": {},
                 "tool_seconds": 0.0,
                 "tool_errors": 0,
                 "active_seconds_estimate": 0.0,
@@ -383,30 +409,78 @@ class Domain:
             project = groups.setdefault(
                 record["project"], bucket(record["project"], record["project_name"])
             )
-            price = None
-            if record["timestamp"]:
-                for candidate in prices.get((record["owner"], record.get("model")), []):
-                    if datetime.fromisoformat(
-                        candidate["effective_from"]
-                    ) <= datetime.fromisoformat(record["timestamp"]):
+            candidates = prices.get((record["owner"], record.get("model")), [])
+            references = [p for p in candidates if p.get("basis") == "current_reference"]
+            price = max(
+                references, key=lambda p: datetime.fromisoformat(p["verified_at"]), default=None
+            )
+            if price is None and record["timestamp"]:
+                for candidate in candidates:
+                    if candidate.get(
+                        "basis", "effective_historical"
+                    ) == "effective_historical" and (
+                        datetime.fromisoformat(candidate["effective_from"])
+                        <= datetime.fromisoformat(record["timestamp"])
+                    ):
                         price = candidate
-            cost = None
-            can_price = all(record[field] is not None for field in ("input", "output", "cached"))
-            if record["ecosystem"] == "claude_code" and record["cache_write"] is None:
-                can_price = False
-            if price and can_price:
-                cached = record["cached"] or 0
-                net_input = (
-                    max(0, record["input"] - cached)
-                    if record["input_includes_cache"]
-                    else record["input"]
-                )
-                cost = (
-                    net_input * price["input"]
-                    + record["output"] * price["output"]
-                    + cached * price["cached"]
-                    + (record["cache_write"] or 0) * price["cache_write"]
-                ) / 1_000_000
+            reasons = []
+            subtotal = 0.0
+            if not price:
+                reasons.append("missing_price" if record["timestamp"] else "missing_timestamp")
+            else:
+                rates = price
+                context = context_length(record)
+                if price.get("context_scope") == "session":
+                    context = session_context.get(
+                        (record["owner"], record["session"], record.get("model"))
+                    )
+                threshold = price.get("long_context_threshold")
+                if threshold and context is None:
+                    reasons.append("missing_context_length")
+                elif threshold and context > threshold:
+                    rates = price["long_context"]
+                if "missing_context_length" not in reasons:
+                    for field in ("input", "output", "cached", "cache_write"):
+                        value = record[field]
+                        if value is None:
+                            if rates[field] != 0:
+                                reasons.append("missing_" + field)
+                            continue
+                        if field == "input":
+                            if record["input_includes_cache"]:
+                                if record["cached"] is None:
+                                    if rates["input"] != 0:
+                                        reasons.append("missing_cached")
+                                    continue
+                                value -= record["cached"]
+                            write_included = record.get("input_includes_cache_write")
+                            if (
+                                write_included is None
+                                and record["input_includes_cache"]
+                                and record["cache_write"] is None
+                                and rates["cache_write"] != 0
+                            ):
+                                reasons.append("missing_cache_write")
+                                continue
+                            if write_included is True:
+                                if record["cache_write"] is None:
+                                    if rates["input"] != 0:
+                                        reasons.append("missing_cache_write")
+                                    continue
+                                value -= record["cache_write"]
+                            elif (
+                                write_included is None
+                                and record["cache_write"]
+                                and rates["cache_write"]
+                            ):
+                                reasons.append("input_cache_write_semantics")
+                                continue
+                            if value < 0:
+                                reasons.append("invalid_cache_counts")
+                                continue
+                        subtotal += value * rates[field] / 1_000_000
+            reasons = sorted(set(reasons))
+            cost = None if reasons else subtotal
             for target in (project, daily):
                 target["calls"] += 1
                 if record["input"] is None or record["output"] is None:
@@ -416,9 +490,14 @@ class Domain:
                         target["missing_counters"][field] += 1
                     else:
                         target[field] += record[field]
+                target["known_subtotal_usd"] += subtotal
+                for reason in reasons:
+                    counts = target["unknown_reason_counts"]
+                    counts[reason] = counts.get(reason, 0) + 1
                 if cost is None:
                     target["unpriced_calls"] += 1
                 else:
+                    target["priced_calls"] += 1
                     target["estimated_usd"] += cost
             if record["task"] in tasks:
                 tasks[record["task"]]["calls"] += 1
@@ -520,6 +599,18 @@ class Domain:
                         "cause": "unknown",
                     }
                 )
+        for target in (*groups.values(), *days.values()):
+            target["cost_status"] = (
+                "complete"
+                if not target["unpriced_calls"]
+                else (
+                    "partial"
+                    if target["known_subtotal_usd"] > 0 or target["priced_calls"]
+                    else "unknown"
+                )
+            )
+            if target["unpriced_calls"]:
+                target["estimated_usd"] = None
         return {
             "schema": "trajectory-overview/1",
             "generated_at": now(),
@@ -540,8 +631,26 @@ class Domain:
                 "deduplicated_usage_records": duplicates,
                 "unknown_timestamps": sum(r["timestamp"] is None for r in records),
             },
+            "pricing": {
+                "currency": "USD",
+                "unit": "per million tokens",
+                "prices": [
+                    {key: value for key, value in price.items() if key != "mutation_id"}
+                    for versions in prices.values()
+                    for price in versions
+                ],
+                "reference_assumptions": (
+                    "Standard API reference rates; actual subscription bills, discounts, "
+                    "service tiers and region adjustments are not recorded. Context tiers use "
+                    "observed input length per request or maximum recorded session input; "
+                    "incomplete session history can understate the applicable tier. "
+                    "Current reference prices revalue historical usage, not historical bills. "
+                    "Known subtotal excludes unknown components and is not a complete estimate."
+                ),
+            },
             "methodology": {
-                "cost": "API-equivalent estimate, USD; missing prices remain unknown",
+                "cost": "API-equivalent estimate, USD; missing rates or counters remain unknown; "
+                "current reference rates revalue history and do not represent actual bills",
                 "time": (
                     "Per-session event gaps up to 30 minutes, excluding gaps ending at requests; "
                     "estimated agent activity, not human work time"

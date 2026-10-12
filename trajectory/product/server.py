@@ -89,7 +89,10 @@ OPERATIONS: list[dict[str, Any]] = [
         "path": "/api/prices",
         "scope": "configure",
         "input": Price,
-        "effect": "Audit a dated price version; subsequent reads use that version",
+        "effect": (
+            "Audit account-scoped historical or verified current reference rates, "
+            "with optional context tiers"
+        ),
     },
 ]
 

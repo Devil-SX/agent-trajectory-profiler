@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Verified current API reference prices with provenance and request or session context tiers.
+- Known cost subtotals, complete-estimate coverage and explicit missing cost component reasons.
+
+### Fixed
+
+- Keep incomplete costs unknown and subtract included cache writes before charging ordinary input.
+
 ## [2.0.1] - 2026-10-06
 
 ### Added
