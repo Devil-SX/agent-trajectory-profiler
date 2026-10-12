@@ -6,14 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-12
+
 ### Added
 
+- Dashboard cards and daily comparisons for verified human interactions and non-whitespace input characters, with explicit missing text and unknown-origin gaps.
 - Recorded human interactions and text character counts by project, day and task, with explicit missing-origin and missing-text coverage.
 - Provider interaction identity deduplication that preserves human originals over inherited copies.
 
 ### Fixed
 
 - Return pricing assumptions as a list for consistent dashboard rendering.
+
+Code stats vs v2.1.0: total 110597 lines, +339 (-24) = +315, 0.29% change.
 
 ## [2.1.0] - 2026-10-12
 
