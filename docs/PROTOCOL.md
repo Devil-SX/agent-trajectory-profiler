@@ -41,3 +41,30 @@ component unknown. Zero writes do not require an inclusion assumption.
 Source: [OpenAI prompt caching guide](https://developers.openai.com/api/docs/guides/prompt-caching),
 verified 2026-10-12. Reference estimates exclude actual subscription bills,
 region adjustments, discounts and unrecorded service tiers.
+
+## Recorded human input
+
+Only request records may provide `input_origin` (`human`, `agent`, `system`,
+`unknown`), `input_chars` or `interaction_id`. Missing origin remains unknown;
+a request is not automatically evidence of human input. Character counts use
+non-whitespace Unicode code points from textual input, without transmitting the
+text. Images and other attachments have no inferred character count.
+
+Project, daily and task aggregates include `human_interactions`,
+`human_input_chars`, `missing_human_input_chars`, `unknown_origin_interactions`,
+`agent_interactions` and `system_interactions`. A human request with missing text
+count contributes one interaction and one missing-count record. Explicit zero
+characters are known zero. Human-input totals measure recorded submissions and
+text, and do not estimate elapsed human work time. Date filters follow the same
+Asia/Shanghai calendar as usage metrics; undated input remains in the unknown day.
+
+`interaction_id` is a digest of provider message identity and revision, never the
+message body. Explicit human originals take precedence over inherited system or
+Agent copies sharing an identity. A new edit revision denotes a new submission.
+The server deduplicates request identities per account and ecosystem separately
+from usage consumption identities. If the producer lacks a reliable provider
+identity, IDs are deduplicated within collector and source only; cross-source
+copies may remain and are not claimed as distinct verified human submissions.
+Stable event IDs and source replacement retain counts across retries and replays.
+Historical records need producer replay with the new fields before origin and
+character coverage can become complete.

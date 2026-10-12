@@ -335,10 +335,24 @@ class Domain:
         days: dict[str, dict[str, Any]] = {}
         tasks: dict[str, dict[str, Any]] = {}
 
+        def human_metrics() -> dict[str, int]:
+            return dict.fromkeys(
+                (
+                    "human_interactions",
+                    "human_input_chars",
+                    "missing_human_input_chars",
+                    "unknown_origin_interactions",
+                    "agent_interactions",
+                    "system_interactions",
+                ),
+                0,
+            )
+
         def bucket(key: str, name: str) -> dict[str, Any]:
             return {
                 "id": key,
                 "name": name,
+                **human_metrics(),
                 "input": 0,
                 "output": 0,
                 "cached": 0,
@@ -390,6 +404,7 @@ class Domain:
                     "ended": record["timestamp"],
                     "calls": 0,
                     "errors": 0,
+                    **human_metrics(),
                     "source": record["source"],
                     "source_line": record["source_line"],
                 },
@@ -401,6 +416,50 @@ class Domain:
                     project_name=record["project_name"],
                     evidence=record["evidence"],
                 )
+        request_seen: set[tuple[str, ...]] = set()
+        request_duplicates = 0
+        requests = sorted(
+            (r for r in records if r["kind"] == "request"),
+            key=lambda r: (
+                r.get("input_origin") == "human",
+                r.get("input_chars") is not None,
+                r["timestamp"] or "",
+                r["source_line"],
+            ),
+            reverse=True,
+        )
+        for record in requests:
+            if record["kind"] != "request" or not included(record):
+                continue
+            # Interaction identity hashes provider message identity and revision, never the text.
+            request_identity = (
+                (record["owner"], record["ecosystem"], record["interaction_id"])
+                if record.get("interaction_id")
+                else (record["owner"], record["collector"], record["source"], record["id"])
+            )
+            if request_identity in request_seen:
+                request_duplicates += 1
+                continue
+            request_seen.add(request_identity)
+            day = date_for(record)
+            targets = (
+                groups[record["project"]],
+                days.setdefault(day, bucket(day, day)),
+                tasks[record["task"]],
+            )
+            origin = record.get("input_origin")
+            for target in targets:
+                if origin == "human":
+                    target["human_interactions"] += 1
+                    chars = record.get("input_chars")
+                    if chars is None:
+                        target["missing_human_input_chars"] += 1
+                    else:
+                        target["human_input_chars"] += chars
+                elif origin in ("agent", "system"):
+                    target[origin + "_interactions"] += 1
+                else:
+                    target["unknown_origin_interactions"] += 1
         for record in usages:
             if not included(record):
                 continue
@@ -629,6 +688,11 @@ class Domain:
                 "unknown_events": sum(r["unknown"] for r in sources),
                 "latest_received": max((r["received"] for r in sources), default=None),
                 "deduplicated_usage_records": duplicates,
+                "deduplicated_request_records": request_duplicates,
+                "request_deduplication": "Account, ecosystem and provider message identity "
+                "when present; "
+                "otherwise account, collector, source and stable projection ID; "
+                "cross-source copies without a provider message identity are not deduplicated",
                 "unknown_timestamps": sum(r["timestamp"] is None for r in records),
             },
             "pricing": {
@@ -639,16 +703,23 @@ class Domain:
                     for versions in prices.values()
                     for price in versions
                 ],
-                "reference_assumptions": (
+                "reference_assumptions": [
                     "Standard API reference rates; actual subscription bills, discounts, "
-                    "service tiers and region adjustments are not recorded. Context tiers use "
-                    "observed input length per request or maximum recorded session input; "
-                    "incomplete session history can understate the applicable tier. "
-                    "Current reference prices revalue historical usage, not historical bills. "
-                    "Known subtotal excludes unknown components and is not a complete estimate."
-                ),
+                    "service tiers and region adjustments are not recorded.",
+                    "Context tiers use observed input length per request or maximum recorded "
+                    "session input; incomplete session history can understate the applicable tier.",
+                    "Current reference prices revalue historical usage, not historical bills.",
+                    "Known subtotal excludes unknown components and is not a complete estimate.",
+                ],
             },
             "methodology": {
+                "human_input": (
+                    "Human interactions require an explicit human origin on request records. "
+                    "Characters are non-whitespace Unicode code points in textual input only; "
+                    "images and other non-text attachments are not counted. Unknown origins "
+                    "and missing human character counts are reported separately. "
+                    "These counts measure recorded input, not elapsed human working time."
+                ),
                 "cost": "API-equivalent estimate, USD; missing rates or counters remain unknown; "
                 "current reference rates revalue history and do not represent actual bills",
                 "time": (

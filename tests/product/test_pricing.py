@@ -75,7 +75,8 @@ def test_current_reference_partial_cost_preserves_unknown_cache_write(tmp_path: 
     assert row["unknown_reason_counts"] == {"missing_cache_write": 1}
     assert row["cost_status"] == "partial"
     assert result["pricing"]["prices"][0]["basis"] == "current_reference"
-    assert "historical bills" in result["pricing"]["reference_assumptions"]
+    assert isinstance(result["pricing"]["reference_assumptions"], list)
+    assert any("historical bills" in item for item in result["pricing"]["reference_assumptions"])
 
 
 def test_no_cache_write_charge_can_price_missing_counter(tmp_path: Path) -> None:

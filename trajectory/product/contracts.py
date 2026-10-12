@@ -15,6 +15,9 @@ class Record(BaseModel):
     ecosystem: Literal["codex", "claude_code"]
     timestamp: datetime | None
     kind: Literal["request", "usage", "tool_start", "tool_end", "notice"]
+    input_origin: Literal["human", "agent", "system", "unknown"] | None = None
+    interaction_id: str | None = Field(default=None, min_length=16, max_length=128)
+    input_chars: int | None = Field(default=None, ge=0, le=9_007_199_254_740_991, strict=True)
     model: str | None = Field(default=None, max_length=200)
     input: int | None = Field(default=None, ge=0, le=9_007_199_254_740_991)
     output: int | None = Field(default=None, ge=0, le=9_007_199_254_740_991)
@@ -27,6 +30,19 @@ class Record(BaseModel):
     consumption: str | None = Field(default=None, max_length=128)
     workspace: str | None = Field(default=None, max_length=200)
     references: list[str] = Field(default_factory=list, max_length=32)
+
+    @model_validator(mode="after")
+    def request_input_only(self) -> "Record":
+        if self.kind != "request" and (
+            self.input_origin is not None
+            or self.input_chars is not None
+            or self.interaction_id is not None
+        ):
+            raise ValueError(
+                "Interaction identity, input origin and character counts "
+                "are only valid on request records"
+            )
+        return self
 
     @field_validator("references")
     @classmethod

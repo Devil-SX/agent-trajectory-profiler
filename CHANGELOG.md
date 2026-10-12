@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Recorded human interactions and text character counts by project, day and task, with explicit missing-origin and missing-text coverage.
+- Provider interaction identity deduplication that preserves human originals over inherited copies.
+
+### Fixed
+
+- Return pricing assumptions as a list for consistent dashboard rendering.
+
 ## [2.1.0] - 2026-10-12
 
 ### Added
