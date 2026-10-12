@@ -2,7 +2,7 @@
 
 Trajectory analyzes Agent usage by project: daily tokens, estimated activity time, API-equivalent cost and evidence of slow or failed tools. Human users and Agents use the same authenticated HTTP service.
 
-Open `/trajectory/` on your BatCave host. The dashboard shows collection coverage, missing usage or prices, project totals and anomalies. Unknown values remain unknown. Activity estimates do not represent human working hours; API-equivalent estimates do not represent a subscription bill.
+Open `/trajectory/` on your BatCave host. The dashboard shows collection coverage, daily token and activity charts, project comparisons, partial API cost estimates, exact detail tables and anomalies. Date filters use Shanghai time. Project filtering applies to project summaries and evidence; daily charts require all projects because the HTTP overview does not publish per-project daily aggregates. Names come from the live Ops service catalogue and icons reuse the shared Ops assets. Unknown values remain unknown. Activity estimates do not represent human working hours; API-equivalent estimates do not represent a subscription bill.
 
 Sparkstead uploads supported log metadata through the open `trajectory-batch/1` protocol. In Sparkstead Settings > Trajectory, enable background collection and configure the batch HTTP URL, origin-bound credential file and remote sync toggle. Collection runs in a worker and persists checkpoints with pending batches. Raw prompts, tool arguments, code and credentials stay local. Sparkstead has no local analysis interface.
 

@@ -6,14 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-12
+
 ### Added
 
+- Interactive token, activity, cost and project charts with missing-data states and exact detail tables.
+- Service names discovered from the live Ops catalogue and shared Ops service icons.
 - Verified current API reference prices with provenance and request or session context tiers.
 - Known cost subtotals, complete-estimate coverage and explicit missing cost component reasons.
 
 ### Fixed
 
 - Keep incomplete costs unknown and subtract included cache writes before charging ordinary input.
+
+Code stats vs 2.0.1 source 4eeecd4: total 110279 lines, +474 (-47) = +427, 0.39% change. No prior version tag is present.
 
 ## [2.0.1] - 2026-10-06
 
