@@ -75,3 +75,39 @@ python3 -m unittest discover -s tests/client -v
 Tests cover durable replay, bad receipts, append/replacement generations, byte
 chunking independent of JSON line size, and competing writers. They do not contact
 production or modify native collector data.
+
+## Automatic source discovery and native Windows identity
+
+For a Windows-owned live collector, configure `legacy_node` with the native Windows
+Node executable and `legacy_state_windows` with its Windows database path. Every
+invocation queries collector/source IDs through a read-only native SQLite connection;
+stdout is parsed internally and no source contents or credentials are read. This
+avoids the WSL mount's SQLite WAL locking incompatibility without copying live DBs.
+
+Dynamic source roots supplement the optional explicit `sources` list:
+
+```json
+{
+  "legacy_node": "/mnt/c/Program Files/nodejs/node.exe",
+  "legacy_state_windows": "C:\\Users\\USER\\AppData\\Roaming\\agent-watchboard\\trajectory\\collector.db",
+  "roots": [{
+    "local_root": "/home/USER/.codex/sessions",
+    "legacy_root": "\\\\wsl.localhost\\Ubuntu-22.04\\home\\USER\\.codex\\sessions",
+    "ecosystem": "codex"
+  }]
+}
+```
+
+New files are deferred until the existing collector has registered their canonical
+source ID. Its next scan makes them eligible; no second source identity is created.
+The state is private, endpoint-bound and collector-bound; changing the target or
+collector fails rather than silently reusing offsets against another destination.
+
+The example user service and timer under `tools/systemd/` schedule this same CLI.
+Install the script at `~/.local/lib/trajectory/trajectory_source_sync.py`, the shared
+configuration at `~/.config/trajectory/source-sync.json`, and both units at
+`~/.config/systemd/user/`. Enable with `systemctl --user enable --now
+trajectory-source-sync.timer`. Manual calls must use the same configuration/state.
+The timer starts one-shot jobs after the preceding job finishes; the OS lock also
+protects against concurrent Agent calls. This does not restart or reconfigure
+Sparkstead. The timer runs on the log-owning machine, not the remote BatCave server.

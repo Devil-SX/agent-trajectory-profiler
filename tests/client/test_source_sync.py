@@ -81,6 +81,28 @@ class SourceSyncTests(unittest.TestCase):
                 with sync.process_lock(self.root / 'state.lock'):
                     self.fail('Second writer acquired same lock')
 
+    def test_dynamic_roots_keep_existing_source_identity_and_defer_new_files(self):
+        identity = self.root / 'identity.json'
+        legacy_root = r"\\wsl.localhost\Ubuntu\home\user\sessions"
+        legacy_path = legacy_root + r"\session.jsonl"
+        identity.write_text(json.dumps({'collector': 'collector',
+            'sources': [sync.source_id('collector', legacy_path)]}))
+        (self.root / 'new.jsonl').write_text('{}')
+        collector, specs = sync.validate_manifest({
+            'legacy_identity_snapshot': str(identity),
+            'roots': [{'local_root': str(self.root), 'legacy_root': legacy_root,
+                       'ecosystem': 'codex'}]})
+        self.assertEqual(collector, 'collector')
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0]['legacy_path'], legacy_path)
+        data = json.loads(identity.read_text())
+        data['sources'].append(sync.source_id('collector', legacy_root + r"\new.jsonl"))
+        identity.write_text(json.dumps(data))
+        self.assertEqual(len(sync.validate_manifest({
+            'legacy_identity_snapshot': str(identity),
+            'roots': [{'local_root': str(self.root), 'legacy_root': legacy_root,
+                       'ecosystem': 'codex'}]})[1]), 2)
+
     def test_state_cannot_silently_change_endpoint_or_collector(self):
         self.state.bind('collector', 'https://example.com/trajectory/api/source-chunks')
         self.state.bind('collector', 'https://example.com/trajectory/api/source-chunks')

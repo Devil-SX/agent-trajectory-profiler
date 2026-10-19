@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import subprocess
+import ntpath
 import sys
 import time
 import urllib.error
@@ -168,8 +170,27 @@ def legacy_identity(path: Path) -> tuple[str, set[str]]:
         return row[0], {r[0] for r in db.execute("SELECT id FROM sources")}
 
 
+def native_node_identity(executable: str, database: str) -> tuple[str, set[str]]:
+    # Execute on the OS owning the live WAL; never copy the DB or request a writer.
+    code = """
+const {DatabaseSync}=require('node:sqlite');
+const d=new DatabaseSync(process.argv[1],{readOnly:true});
+try {console.log(JSON.stringify({collector:d.prepare(
+  "SELECT value FROM metadata WHERE key='collector'").get().value,
+  sources:d.prepare('SELECT id FROM sources').all().map(x=>x.id)}));}
+finally {d.close();}
+"""
+    result = subprocess.run([executable, "--no-warnings", "-e", code, database],
+                            cwd="/mnt/c/Windows/System32" if os.name != "nt" else None,
+                            capture_output=True, timeout=15, check=True)
+    identity = json.loads(result.stdout)
+    return identity["collector"], set(identity["sources"])
+
+
 def validate_manifest(config: dict) -> tuple[str, list[dict]]:
-    if config.get("legacy_state"):
+    if config.get("legacy_node"):
+        collector, known = native_node_identity(config["legacy_node"], config["legacy_state_windows"])
+    elif config.get("legacy_state"):
         collector, known = legacy_identity(Path(config["legacy_state"]))
     elif config.get("legacy_identity_snapshot"):
         # Snapshot must be exported through readonly SQLite on its native OS.
@@ -177,7 +198,27 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
         collector, known = identity["collector"], set(identity["sources"])
     else:
         raise ValueError("Existing collector identity and source membership are required")
-    specs = config["sources"]
+    specs = list(config.get("sources", []))
+    for root in config.get("roots", []):
+        local_root = Path(root["local_root"])
+        legacy_root = root["legacy_root"]
+        for path in sorted(local_root.rglob("*.jsonl")):
+            relative = path.relative_to(local_root)
+            legacy_path = (ntpath.join(legacy_root, *relative.parts)
+                           if "\\" in legacy_root or ":" in legacy_root
+                           else str(Path(legacy_root).joinpath(relative)))
+            # The legacy worker may not have discovered the newest file yet.
+            # Defer that file, rather than invent an independent source identity.
+            if source_id(collector, legacy_path) in known:
+                specs.append({"path": str(path), "legacy_path": legacy_path,
+                              "ecosystem": root["ecosystem"]})
+    unique = {}
+    for spec in specs:
+        identity = source_id(collector, spec["legacy_path"])
+        if identity in unique and unique[identity] != spec:
+            raise ValueError("Conflicting local paths for the same source")
+        unique[identity] = spec
+    specs = list(unique.values())
     for spec in specs:
         if spec["ecosystem"] not in {"codex", "claude_code"}:
             raise ValueError("Unsupported ecosystem")

@@ -1,0 +1,13 @@
+[Unit]
+Description=Trajectory shared native source synchronization
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.local/lib/trajectory/trajectory_source_sync.py --config %h/.config/trajectory/source-sync.json --max-chunks 100
+UMask=0077
+NoNewPrivileges=true
+# Native Windows readonly SQLite may be invoked to inspect the existing collector.
+# All HTTP calls still use the registered machine-account credential.
+TimeoutStartSec=3600
