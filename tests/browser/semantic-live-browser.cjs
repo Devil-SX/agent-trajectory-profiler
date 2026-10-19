@@ -31,7 +31,7 @@ const stamp=session=>Date.parse(session.started_at||session.last_activity_at||''
       const response=await context.request.get(new URL('/trajectory/api/'+path,base).href,{headers,timeout:90000});
       assert.equal(response.status(),200,'Authenticated real API did not return 200');
       const data=await response.json();
-      timings.push({endpoint:path.startsWith('sessions?')||path==='sessions'?'sessions':'analysis',elapsed_ms:Date.now()-started});
+      timings.push({endpoint:path.startsWith('analysis-batches')?'batch':path.startsWith('sessions?')||path==='sessions'?'sessions':'analysis',elapsed_ms:Date.now()-started});
       return data;
     };
     const healthResponse=await context.request.get(new URL('/trajectory/health',base).href,{headers,timeout:90000});
@@ -64,9 +64,11 @@ const stamp=session=>Date.parse(session.started_at||session.last_activity_at||''
       await page.click('#sessions-refresh');
       const button=page.locator('[data-session-id='+JSON.stringify(session.id)+']');
       await button.waitFor({state:'visible'});
-      await button.click();
+      const observed=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname.endsWith('/sessions/'+encodeURIComponent(session.id)+'/analysis'));
+      await button.click();const response=await observed;assert.equal(response.status(),200);const shown=await response.json();
+      await page.waitForFunction(expected=>document.querySelector('.analysis-title')?.textContent===expected,title(shown.session));return shown;
     };
-    await openSession(selected);
+    detail=await openSession(selected);
     assert.equal(await page.inputValue('#session-status'),'analyzed');
     await page.waitForSelector('#analysis-view .task-select');
     assert.equal(await page.locator('#analysis-view .task-select').count(),detail.tasks.length);
@@ -84,6 +86,31 @@ const stamp=session=>Date.parse(session.started_at||session.last_activity_at||''
         assert((await page.locator('#analysis-content').textContent()).includes('用量采集尚未完成'));
       }
     }
+    const assertAnalysisCost=async(shown)=>{
+      const provenance=shown.provenance||{},quote=shown.analysis_cost;
+      const panel=page.locator('details').filter({has:page.locator('summary').filter({hasText:'本次分析调用与开销'})});
+      if(!provenance.model&&!quote)return {checked:false,reason:'no_model_provenance'};
+      assert.equal(await panel.count(),1);
+      if(!await panel.evaluate(n=>n.open))await panel.locator('summary').click();
+      const text=await panel.innerText();
+      if(provenance.model)assert(text.includes('模型 '+provenance.model));
+      const effort=provenance.reasoning_effort||provenance.effort;
+      if(effort)assert(text.includes('推理强度 '+effort));
+      if(quote){
+        assert(text.includes('分析 API 等价成本'));
+        assert.equal(quote.actual_charge,null);assert.equal(quote.actual_charge_currency,null);
+        assert(text.includes('实际扣费未知'));
+        if(quote.cost_status==='complete')assert(text.includes(quote.estimated_usd.toLocaleString('zh-CN',{maximumFractionDigits:6})+' USD'));
+        if(quote.cost_status==='partial')assert(text.includes('已知小计，有计价缺口'));
+        if(quote.cost_status==='unknown')assert(text.includes('分析 API 等价成本 未知'));
+      }
+      const calls=provenance.analysis_usage||[];
+      if(calls.length){const visibleCalls=await panel.locator('tbody tr').count();if(['running','queued'].includes(shown.status))assert(visibleCalls>=calls.length);else assert.equal(visibleCalls,calls.length);}
+      return {checked:true,model:provenance.model,reasoning_effort:effort,calls:calls.length,cost_status:quote?.cost_status,estimated_usd:quote?.estimated_usd,known_subtotal_usd:quote?.known_subtotal_usd,actual_charge:quote?.actual_charge};
+    };
+    if(process.env.EXPECTED_MODEL)assert.equal(detail.provenance?.model,process.env.EXPECTED_MODEL);
+    if(process.env.EXPECTED_REASONING_EFFORT)assert.equal(detail.provenance?.reasoning_effort||detail.provenance?.effort,process.env.EXPECTED_REASONING_EFFORT);
+    const analysisCostCheck=await assertAnalysisCost(detail);
     const refresh=page.getByRole('button',{name:'刷新分析',exact:true});
     assert.equal(await refresh.count(),1);await refresh.click();
     await page.waitForSelector('#analysis-view .task-select');
@@ -104,9 +131,9 @@ const stamp=session=>Date.parse(session.started_at||session.last_activity_at||''
     assert(evidence.available===true,'Original evidence not yet available for current source revision');
     assert(typeof evidence.text==='string'&&evidence.text.length>0);
     await page.waitForFunction(id=>Array.from(document.querySelectorAll('.raw-evidence-button')).find(button=>button.dataset.operationId===id)?.textContent==='重新读取原始记录',operation.id);
-    await page.screenshot({path:output+'/semantic-live-desktop.png',fullPage:true});
+    await page.screenshot({path:output+'/semantic-live-desktop.png',fullPage:false});
     await page.setViewportSize({width:390,height:844});
-    await page.screenshot({path:output+'/semantic-live-mobile.png',fullPage:true});
+    await page.screenshot({path:output+'/semantic-live-mobile.png',fullPage:false});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     let partialCollectionCheck={checked:false,reason:'no_content_available_session_with_partial_collection'};
     const partialSession=listing.sessions.find(s=>s.content_available===true&&s.collection?.status==='partial'&&s.id!==selected.id);
@@ -117,12 +144,34 @@ const stamp=session=>Date.parse(session.started_at||session.last_activity_at||''
       await openSession(partialSession,'all');
       await page.waitForFunction(()=>document.querySelector('#analysis-content')?.textContent.includes('用量采集尚未完成'));
       assert((await page.locator('#analysis-content .analysis-summary').textContent()).includes('已知小计'));
-      await page.screenshot({path:output+'/semantic-live-collection-partial.png',fullPage:true});
+      await page.screenshot({path:output+'/semantic-live-collection-partial.png',fullPage:false});
       partialCollectionCheck={checked:true,session_id:partialSession.id,collection:partialDetail.coverage.collection};
+    }
+    let batchProgressCheck={checked:false,reason:'no_batch_available'},runningCostCheck={checked:false,reason:'no_running_task_with_model_usage'};
+    const batchListing=await api('analysis-batches');
+    const batch=(batchListing.batches||[]).find(b=>!process.env.EXPECTED_BATCH_ID||b.batch_id===process.env.EXPECTED_BATCH_ID);
+    if(process.env.EXPECTED_BATCH_ID)assert(batch,'Expected real batch not found');
+    if(batch){
+      const panel=page.locator('.batch-panel');await panel.waitFor();
+      const details=panel.locator('details');if(!await details.evaluate(n=>n.open))await details.locator('summary').click();
+      // The UI automatically selects the newest visible account batch.
+      const visible=(batchListing.batches||[])[0];
+      for(const item of visible.items||[]){
+        if(item.session?.display_title)assert((await panel.innerText()).includes(item.session.display_title));
+      }
+      const running=(batch.items||[]).find(i=>['running','queued'].includes(i.status)&&i.progress?.analysis_usage?.length);
+      if(running){
+        const shown=await openSession({id:running.session_id},'all');
+        if(shown.progress?.analysis_usage?.length||shown.provenance?.analysis_usage?.length){
+          runningCostCheck={...await assertAnalysisCost(shown),session_id:running.session_id,status:shown.status,progress:shown.progress?{completed_chunks:shown.progress.completed_chunks,total_chunks:shown.progress.total_chunks}:null};
+          await page.screenshot({path:output+'/semantic-live-running-cost.png',fullPage:false});
+        }
+      }
+      batchProgressCheck={checked:true,batch_id:batch.batch_id,status:batch.status,total:batch.total,counts:batch.counts};
     }
     assert.deepEqual(errors,[]);assert.deepEqual(mutations,[]);
     await api('sessions');await api('sessions/'+encodeURIComponent(selected.id)+'/analysis');
-    const summary={result:'passed',version:health.version,session_id:selected.id,session_title:title(detail.session),collection:detail.coverage.collection,partial_collection_check:partialCollectionCheck,api_timings:timings,origin:base.origin,checked_at:new Date().toISOString(),sessions:listing.sessions.length,tasks:detail.tasks.length,operations:detail.operations.length,flame_frames:frames,evidence_available:evidence.available,evidence_truncated:evidence.truncated,analysis_status:detail.status,read_only:true,blocked_telemetry_requests:blockedTelemetry,cost_status:detail.session.metrics?.cost_status,known_subtotal_usd:detail.session.metrics?.known_subtotal_usd,recorded_tokens:detail.session.metrics?.recorded_tokens,page_errors:errors};
+    const summary={result:'passed',version:health.version,session_id:selected.id,session_title:title(detail.session),collection:detail.coverage.collection,partial_collection_check:partialCollectionCheck,analysis_cost_check:analysisCostCheck,batch_progress_check:batchProgressCheck,running_cost_check:runningCostCheck,api_timings:timings,origin:base.origin,checked_at:new Date().toISOString(),sessions:listing.sessions.length,tasks:detail.tasks.length,operations:detail.operations.length,flame_frames:frames,evidence_available:evidence.available,evidence_truncated:evidence.truncated,analysis_status:detail.status,read_only:true,blocked_telemetry_requests:blockedTelemetry,cost_status:detail.session.metrics?.cost_status,known_subtotal_usd:detail.session.metrics?.known_subtotal_usd,recorded_tokens:detail.session.metrics?.recorded_tokens,page_errors:errors};
     fs.writeFileSync(output+'/semantic-live-result.json',JSON.stringify(summary,null,2),{mode:0o600});
     console.log(JSON.stringify(summary));
   } finally {await browser.close();}
