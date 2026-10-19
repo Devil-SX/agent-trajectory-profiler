@@ -32,7 +32,7 @@ const server=http.createServer(async(req,res)=>{
  if(url.pathname==='/trajectory/api/analysis-batches')return res.end(JSON.stringify({batches:[]}));
  if(url.pathname==='/trajectory/api/analysis-batches/batch-test'){batchReads++;return res.end(JSON.stringify(batch))}
  const match=url.pathname.match(/\/sessions\/([^/]+)\/analysis$/);
- if(match){const session=sessions.find(s=>s.id===match[1]);return res.end(JSON.stringify({session,status:session.analysis_status,coverage:{content_available:true},provenance:{model:'glm-test',reasoning_effort:'high',backend:'jindu',cost:null,chunks:2,analysis_usage:[{chunk:1,attempt:1,elapsed_seconds:1.2,valid:true,usage:{prompt_tokens:100,completion_tokens:20}}]},tasks:session.has_analysis?[{id:'root',title:'优化 CPM',metrics:{input:100,known_subtotal_usd:0.1,cost_status:'complete'},segments:[]}]:[],operations:[]}))}
+ if(match){const session=sessions.find(s=>s.id===match[1]);return res.end(JSON.stringify({session,status:session.analysis_status,coverage:{content_available:true},analysis_cost:session.id==='complete'?{cost_status:'partial',known_subtotal_usd:0.123,calls:[{price:{source_url:'https://docs.z.ai/guides/overview/pricing',verified_at:'2026-10-19T04:00:00Z'}}]}:null,provenance:{model:'glm-test',reasoning_effort:'high',backend:'jindu',cost:null,chunks:2,analysis_usage:[{chunk:1,attempt:1,elapsed_seconds:1.2,valid:true,usage:{prompt_tokens:100,completion_tokens:20}}]},tasks:session.has_analysis?[{id:'root',title:'优化 CPM',metrics:{input:100,known_subtotal_usd:0.1,cost_status:'complete'},segments:[]}]:[],operations:[]}))}
  if(req.url.endsWith('.svg')){res.setHeader('content-type','image/svg+xml');return res.end('<svg xmlns="http://www.w3.org/2000/svg"/>')}
  res.setHeader('content-type','text/html');res.end(html);
 });
@@ -52,7 +52,7 @@ const server=http.createServer(async(req,res)=>{
  await page.locator('[data-session-id="child"]').click();
  await page.getByRole('button',{name:'查看父会话',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.analysis-title')?.textContent==='分析 CPM 优化');
- assert((await page.locator('#analysis-content').innerText()).includes('已有摘要，不新增模型请求'));await page.getByText('本次分析调用与开销',{exact:true}).click();assert((await page.locator('#analysis-content').innerText()).includes('推理强度 high'));assert((await page.locator('#analysis-content').innerText()).includes('分析费用尚未计价'));
+ assert((await page.locator('#analysis-content').innerText()).includes('已有摘要，不新增模型请求'));await page.getByText('本次分析调用与开销',{exact:true}).click();assert((await page.locator('#analysis-content').innerText()).includes('推理强度 high'));assert((await page.locator('#analysis-content').innerText()).includes('0.123 USD，已知小计，有计价缺口'));assert((await page.locator('#analysis-content').innerText()).includes('实际扣费未知'));assert.equal(await page.getByRole('link',{name:'参考价格来源',exact:true}).getAttribute('href'),'https://docs.z.ai/guides/overview/pricing');
  await page.reload();await page.waitForSelector('[data-session-id="complete"]');
  assert.equal(await page.inputValue('#session-status'),'analyzed');assert.equal(await page.locator('.session-button').count(),2);
  await page.selectOption('#session-status','busy');await page.waitForSelector('[data-session-id="running"]');assert.equal(await page.locator('.session-button').count(),1);

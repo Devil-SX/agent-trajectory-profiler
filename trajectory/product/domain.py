@@ -13,6 +13,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from trajectory.product.contracts import Batch, Correction, Price
+from trajectory.product.costing import quote_record, select_price, usage_record
 from trajectory.product.projects import classify_records
 
 
@@ -269,6 +270,85 @@ class Domain:
             )
         return result
 
+    def analysis_cost(self, owner: str, provenance: dict[str, Any]) -> dict[str, Any]:
+        """Read-only API-equivalent valuation from the same account price registry."""
+        with self.connect() as db:
+            prices: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            for row in db.execute(
+                "SELECT model,body FROM prices WHERE owner=? ORDER BY effective", (owner,)
+            ):
+                prices[row["model"]].append(json.loads(row["body"]))
+        calls = provenance.get("analysis_usage")
+        calls = calls if isinstance(calls, list) else []
+        quoted: list[dict[str, Any]] = []
+        seen: dict[str, dict[str, Any]] = {}
+        reasons: dict[str, int] = defaultdict(int)
+        subtotal = 0.0
+        for call in calls:
+            if not isinstance(call, dict):
+                reasons["invalid_call_usage"] += 1
+                continue
+            usage = call.get("usage")
+            usage = usage if isinstance(usage, dict) else {}
+            call_id = call.get("call_id")
+            if isinstance(call_id, str) and call_id:
+                if call_id in seen:
+                    if seen[call_id] != usage:
+                        reasons["conflicting_call_usage"] += 1
+                    continue
+                seen[call_id] = usage
+            model = call.get("model") or provenance.get("model")
+            model = model if isinstance(model, str) else ""
+            timestamp = call.get("created_at") or provenance.get("created_at")
+            timestamp = timestamp if isinstance(timestamp, str) else None
+            record = usage_record(usage, timestamp)
+            price = select_price(prices.get(model, []), timestamp)
+            amount, gaps = quote_record(record, price, record["input"])
+            # A session-wide price tier cannot be guessed from one analysis request.
+            if (
+                price
+                and price.get("context_scope") == "session"
+                and price.get("long_context_threshold")
+            ):
+                amount, gaps = quote_record(record, price, None)
+            subtotal += amount
+            for gap in gaps:
+                reasons[gap] += 1
+            quoted.append(
+                {
+                    "call_id": call_id,
+                    "chunk": call.get("chunk"),
+                    "attempt": call.get("attempt"),
+                    "model": model,
+                    "estimated_usd": None if gaps else amount,
+                    "known_subtotal_usd": amount,
+                    "cost_status": (
+                        "partial" if gaps and amount else "unknown" if gaps else "complete"
+                    ),
+                    "unknown_reasons": gaps,
+                    "price": (
+                        {key: value for key, value in price.items() if key != "mutation_id"}
+                        if price
+                        else None
+                    ),
+                }
+            )
+        if not quoted:
+            reasons["missing_usage"] += 1
+        complete = bool(quoted) and not reasons
+        return {
+            "basis": "api_equivalent_reference",
+            "currency": "USD",
+            "estimated_usd": subtotal if complete else None,
+            "known_subtotal_usd": subtotal,
+            "cost_status": "complete" if complete else "partial" if subtotal else "unknown",
+            "actual_charge": None,
+            "actual_charge_currency": None,
+            "actual_charge_status": "unknown",
+            "unknown_reason_counts": dict(reasons),
+            "calls": quoted,
+        }
+
     def overview(
         self, owner: str | None, since: str = "", until: str = "", *, contributions: bool = False
     ) -> dict[str, Any]:
@@ -288,9 +368,11 @@ class Domain:
                 value = self._calculate_overview(owner, since, until, contributions=True)
                 self._overview_key, self._overview_value = key, value
             value = self._overview_value
-            return dict(value) if contributions else {
-                name: item for name, item in value.items() if name != "event_contributions"
-            }
+            return (
+                dict(value)
+                if contributions
+                else {name: item for name, item in value.items() if name != "event_contributions"}
+            )
 
     def _calculate_overview(
         self, owner: str | None, since: str = "", until: str = "", *, contributions: bool = False
@@ -517,76 +599,13 @@ class Domain:
                 record["project"], bucket(record["project"], record["project_name"])
             )
             candidates = prices.get((record["owner"], record.get("model")), [])
-            references = [p for p in candidates if p.get("basis") == "current_reference"]
-            price = max(
-                references, key=lambda p: datetime.fromisoformat(p["verified_at"]), default=None
-            )
-            if price is None and record["timestamp"]:
-                for candidate in candidates:
-                    if candidate.get(
-                        "basis", "effective_historical"
-                    ) == "effective_historical" and (
-                        datetime.fromisoformat(candidate["effective_from"])
-                        <= datetime.fromisoformat(record["timestamp"])
-                    ):
-                        price = candidate
-            reasons = []
-            subtotal = 0.0
-            if not price:
-                reasons.append("missing_price" if record["timestamp"] else "missing_timestamp")
-            else:
-                rates = price
-                context = context_length(record)
-                if price.get("context_scope") == "session":
-                    context = session_context.get(
-                        (record["owner"], record["session"], record.get("model"))
-                    )
-                threshold = price.get("long_context_threshold")
-                if threshold and context is None:
-                    reasons.append("missing_context_length")
-                elif threshold and context > threshold:
-                    rates = price["long_context"]
-                if "missing_context_length" not in reasons:
-                    for field in ("input", "output", "cached", "cache_write"):
-                        value = record[field]
-                        if value is None:
-                            if rates[field] != 0:
-                                reasons.append("missing_" + field)
-                            continue
-                        if field == "input":
-                            if record["input_includes_cache"]:
-                                if record["cached"] is None:
-                                    if rates["input"] != 0:
-                                        reasons.append("missing_cached")
-                                    continue
-                                value -= record["cached"]
-                            write_included = record.get("input_includes_cache_write")
-                            if (
-                                write_included is None
-                                and record["input_includes_cache"]
-                                and record["cache_write"] is None
-                                and rates["cache_write"] != 0
-                            ):
-                                reasons.append("missing_cache_write")
-                                continue
-                            if write_included is True:
-                                if record["cache_write"] is None:
-                                    if rates["input"] != 0:
-                                        reasons.append("missing_cache_write")
-                                    continue
-                                value -= record["cache_write"]
-                            elif (
-                                write_included is None
-                                and record["cache_write"]
-                                and rates["cache_write"]
-                            ):
-                                reasons.append("input_cache_write_semantics")
-                                continue
-                            if value < 0:
-                                reasons.append("invalid_cache_counts")
-                                continue
-                        subtotal += value * rates[field] / 1_000_000
-            reasons = sorted(set(reasons))
+            price = select_price(candidates, record["timestamp"])
+            context = context_length(record)
+            if price and price.get("context_scope") == "session":
+                context = session_context.get(
+                    (record["owner"], record["session"], record.get("model"))
+                )
+            subtotal, reasons = quote_record(record, price, context)
             cost = None if reasons else subtotal
             for target in (project, daily, *([event_bucket(record)] if contributions else [])):
                 target["calls"] += 1
