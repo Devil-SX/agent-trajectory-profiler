@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Avoid reconstructing existing metric buckets while preserving ledger traversal, attribution, deduplication, pricing and unknown values.
 - Freeze each model job’s packed input durably before dispatch, bind it to the pinned raw IR, and require exact legacy checkpoint identity before recovery. Ledger synchronization no longer changes a resumed model request; paid windows, raw reviews and usage remain intact.
 
-Code stats vs v3.4.2: total 20815 text lines (baseline 20097), +785 (-67) = +718, 3.57% text-line change.
+Code stats vs v3.4.2: total 20811 text lines (baseline 20097), +781 (-67) = +714, 3.55% text-line change.
 
 ## [3.4.2] - 2026-10-19
 
