@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.2.3] - 2026-10-19
+
 ### Fixed
 
-- Find sessions by canonical and native identifiers consistently through the shared search API.
+- Exclude injected instructions from session names, migrate existing metadata, and use directory and date when an effective prompt is unavailable.
+- Keep text search authoritative in the authenticated API, including canonical and native session identifiers, and ignore stale browser responses.
+- Show missing interaction measurements as unknown, expose request coverage, and preserve explicitly recorded origin counts without changing tokens or costs.
 
-- Exclude injected agent instructions from session names, refresh legacy metadata indexes, and use directory and date when no effective prompt is available.
+Code stats vs v3.2.2: total 15663 text lines (baseline 15099), +624 (-60) = +564, 3.74% text-line change.
 
 ## [3.2.2] - 2026-10-19
 
