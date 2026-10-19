@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Atomically persist model checkpoints and remove temporary parser inputs while preserving the authoritative source archive.
 - Verify concurrent delivery, source/price cache invalidation and preservation of human task edits.
 
-Code stats vs v3.0.0: total 11025 text lines (baseline 10202), +949 (-126) = +823, 8.07% text-line change.
+Code stats vs v3.0.0: total 11230 text lines (baseline 10202), +1164 (-136) = +1028, 10.08% text-line change.
 
 ## [3.0.0] - 2026-10-19
 
