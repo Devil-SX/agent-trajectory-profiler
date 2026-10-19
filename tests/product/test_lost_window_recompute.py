@@ -290,3 +290,156 @@ def test_known_gateway_usage_requires_separate_reconciliation(tmp_path, monkeypa
     with pytest.raises(AnalysisResumeError, match="receipt_usage_reconciliation_required"):
         store.recompute_lost_window("owner", job["id"], value, {}, verifier=lambda *a: proof)
     assert store.resume_context(job)["generation"] == 0
+
+
+def test_audited_lost_call_allows_later_invalid_resume_but_never_new_uncertainty(
+    tmp_path, monkeypatch
+):
+    store, job, batch, progress, value, proof = lost(tmp_path, monkeypatch)
+    original_unknown = copy.deepcopy(progress["analysis_usage"][-1])
+    store.recompute_lost_window(
+        "owner", job["id"], value, {"account_id": "owner"}, verifier=lambda *a: proof
+    )
+    assert store.claim_job()["id"] == job["id"]
+    progress["completed_chunks"] = 10
+    progress["analysis_usage"].extend(
+        [
+            {
+                "chunk": 10,
+                "attempt": 3,
+                "call_id": "trajectory:" + hashlib.sha256(f"{job['id']}:9:2".encode()).hexdigest(),
+                "receipt_id": "recomputed-good",
+                "valid": True,
+                "usage": {"prompt_tokens": 8},
+            },
+            {
+                "chunk": 11,
+                "attempt": 4,
+                "call_id": "trajectory:" + hashlib.sha256(f"{job['id']}:10:3".encode()).hexdigest(),
+                "receipt_id": "received-invalid",
+                "valid": False,
+                "usage": {"prompt_tokens": 9},
+            },
+        ]
+    )
+    store.job_progress(job, progress)
+    store.finish_job(job, "Model operation coverage is incomplete or duplicated")
+    detail = store.detail("owner", job["session"])
+    item = store.batch_detail("owner", batch["batch_id"])["items"][0]
+    assert detail["resume"] == item["resume"]
+    assert detail["resume"]["eligible"] is True
+    receipt = store.resume_analysis("owner", job["id"], mutation())
+    assert receipt["resume_generation"] == 2
+    assert receipt["completed_chunks"] == 10
+    context = store.resume_context(job)
+    assert len(context["authorized_recomputations"]) == 1
+    assert context["prior_progress"]["analysis_usage"][1] == original_unknown
+    assert context["prior_progress"]["analysis_usage"] == progress["analysis_usage"]
+    assert store.claim_job()["id"] == job["id"]
+    progress["completed_chunks"] = 11
+    progress["analysis_usage"].append(
+        {
+            "chunk": 12,
+            "attempt": 5,
+            "call_id": "trajectory:" + hashlib.sha256(f"{job['id']}:11:4".encode()).hexdigest(),
+            "failed": True,
+            "usage": {},
+        }
+    )
+    store.job_progress(job, progress)
+    store.finish_job(job, "Jindu call failed or result uncertain; reconcile call ID before retry")
+    detail = store.detail("owner", job["session"])
+    item = store.batch_detail("owner", batch["batch_id"])["items"][0]
+    assert detail["resume"] == item["resume"]
+    assert detail["resume"]["reason"] == "prior_call_uncertain"
+    with pytest.raises(AnalysisResumeError, match="prior_call_uncertain"):
+        store.resume_analysis("owner", job["id"], mutation())
+    assert store.resume_context(job)["prior_progress"]["analysis_usage"][1] == original_unknown
+
+
+@pytest.mark.parametrize(
+    "field,wrong",
+    [
+        ("job_id", "other-job"),
+        ("chunk", 9),
+        ("attempt", 2),
+        ("receipt_id", "other-receipt"),
+        ("accept_possible_duplicate_charge", False),
+    ],
+)
+def test_unmatched_audited_decision_cannot_exempt_old_unknown(tmp_path, monkeypatch, field, wrong):
+    store, job, _, progress, value, proof = lost(tmp_path, monkeypatch)
+    store.recompute_lost_window("owner", job["id"], value, {}, verifier=lambda *a: proof)
+    assert store.claim_job()
+    progress["analysis_usage"].append(
+        {
+            "chunk": 10,
+            "attempt": 3,
+            "call_id": "received-invalid",
+            "valid": False,
+            "receipt_id": "received",
+            "usage": {"prompt_tokens": 1},
+        }
+    )
+    store.job_progress(job, progress)
+    store.finish_job(job, "Model operation coverage is incomplete or duplicated")
+    with store.domain.connect() as db:
+        row = db.execute(
+            "SELECT body FROM semantic_job_resumes WHERE job=?", (job["id"],)
+        ).fetchone()
+        body = json.loads(row[0])
+        body["authorized_recomputation"][field] = wrong
+        db.execute(
+            "UPDATE semantic_job_resumes SET body=? WHERE job=?", (json.dumps(body), job["id"])
+        )
+    assert store.detail("owner", job["session"])["resume"]["eligible"] is False
+    with pytest.raises(AnalysisResumeError, match="prior_call_uncertain"):
+        store.resume_analysis("owner", job["id"], mutation())
+
+
+@pytest.mark.parametrize("at_end", [True, False])
+def test_received_decode_error_flags_are_not_uncertain(tmp_path, monkeypatch, at_end):
+    store, job, batch, _, progress = failed_job(tmp_path, monkeypatch)
+    received = progress["analysis_usage"][-1]
+    received.pop("valid")
+    received.update(failed=True, uncertain=False, retryable=True)
+    if not at_end:
+        progress["analysis_usage"].append(
+            {
+                "chunk": 10,
+                "attempt": 2,
+                "call_id": "second-received-invalid",
+                "valid": False,
+                "receipt_id": "second-receipt",
+                "usage": {"prompt_tokens": 12},
+            }
+        )
+    store.job_progress(job, progress)
+    store.finish_job(job, "Model output was not valid task JSON")
+    detail = store.detail("owner", job["session"])
+    item = store.batch_detail("owner", batch["batch_id"])["items"][0]
+    assert detail["resume"] == item["resume"]
+    assert detail["resume"]["eligible"] is True
+    receipt = store.resume_analysis("owner", job["id"], mutation())
+    assert receipt["job_id"] == job["id"]
+    assert (
+        store.resume_context(job)["prior_progress"]["analysis_usage"] == progress["analysis_usage"]
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"uncertain": True},
+        {"receipt_id": ""},
+        {"usage": {}},
+    ],
+)
+def test_decode_error_without_received_evidence_still_blocks(tmp_path, monkeypatch, change):
+    store, job, _, _, progress = failed_job(tmp_path, monkeypatch)
+    last = progress["analysis_usage"][-1]
+    last.pop("valid")
+    last.update({"failed": True, "uncertain": False, "retryable": True, **change})
+    store.job_progress(job, progress)
+    with pytest.raises(AnalysisResumeError, match="prior_call_uncertain"):
+        store.resume_analysis("owner", job["id"], mutation())

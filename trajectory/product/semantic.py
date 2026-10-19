@@ -394,22 +394,62 @@ class SemanticStore:
             )
 
     @staticmethod
-    def resume_eligibility(job: dict[str, Any], progress: dict[str, Any], generation: int) -> str:
+    def resume_eligibility(
+        job: dict[str, Any],
+        progress: dict[str, Any],
+        generation: int,
+        authorized_recomputations: list[dict[str, Any]] | None = None,
+    ) -> str:
         if job["kind"] != "analyze" or job["status"] != "failed":
             return "analysis_not_failed"
         if generation >= 3:
             return "resume_limit_reached"
         calls = progress.get("analysis_usage", [])
-        if "result uncertain" in job.get("message", "") or any(
-            call.get("failed") or call.get("state") in {"prepared", "uncertain"} for call in calls
+
+        def acknowledged(call: dict[str, Any]) -> bool:
+            return any(
+                ack.get("job_id") == job["id"]
+                and ack.get("accept_possible_duplicate_charge") is True
+                and ack.get("receipt_state") == "uncertain_terminal"
+                and ack.get("call_id") == call.get("call_id")
+                and ack.get("chunk") == call.get("chunk")
+                and ack.get("attempt") == call.get("attempt")
+                and (not call.get("receipt_id") or ack.get("receipt_id") == call["receipt_id"])
+                for ack in authorized_recomputations or []
+            )
+
+        def received_invalid(call: dict[str, Any]) -> bool:
+            return bool(
+                (
+                    call.get("valid") is False
+                    or (
+                        call.get("failed") is True
+                        and call.get("uncertain") is False
+                        and call.get("retryable") is True
+                    )
+                )
+                and call.get("receipt_id")
+                and isinstance(call.get("usage"), dict)
+                and call["usage"]
+            )
+
+        unknown = [
+            call
+            for call in calls
+            if call.get("state") in {"prepared", "uncertain"}
+            or call.get("uncertain") is True
+            or call.get("failed")
+            and not (
+                call.get("uncertain") is False
+                and call.get("retryable") is True
+                and received_invalid(call)
+            )
+        ]
+        if any(not acknowledged(call) for call in unknown) or (
+            "result uncertain" in job.get("message", "") and not unknown
         ):
             return "prior_call_uncertain"
-        if not calls or not (
-            calls[-1].get("valid") is False
-            and calls[-1].get("receipt_id")
-            and isinstance(calls[-1].get("usage"), dict)
-            and calls[-1]["usage"]
-        ):
+        if not calls or not received_invalid(calls[-1]):
             return "received_invalid_result_required"
         if progress.get("state") != "failed":
             return "failed_progress_required"
@@ -417,18 +457,31 @@ class SemanticStore:
 
     def resume_state(
         self,
+        db: Any,
         job: dict[str, Any] | None,
         progress: dict[str, Any],
         current_source_revision: str,
     ) -> dict[str, Any]:
-        generation = job.get("resume_generation", 0) if job else 0
+        generation = (
+            db.execute(
+                "SELECT COALESCE(max(generation),0) FROM semantic_job_resumes WHERE job=?",
+                (job["id"],),
+            ).fetchone()[0]
+            if job
+            else 0
+        )
+        acknowledgments = self._audited_recomputations(db, job) if job else []
         reason = (
-            self.resume_eligibility(job, progress, generation) if job else "analysis_not_failed"
+            self.resume_eligibility(job, progress, generation, acknowledgments)
+            if job
+            else "analysis_not_failed"
         )
         if reason == "eligible" and job:
             if job["source_revision"] != current_source_revision:
                 reason = "analysis_source_changed"
-            elif not job.get("execution_job"):
+            elif not db.execute(
+                "SELECT 1 FROM semantic_job_execution WHERE job=?", (job["id"],)
+            ).fetchone():
                 reason = "execution_identity_missing"
         return {
             "eligible": reason == "eligible",
@@ -438,6 +491,43 @@ class SemanticStore:
             "completed_chunks": progress.get("completed_chunks", 0),
             "max_generations": 3,
         }
+
+    @staticmethod
+    def _audited_recomputations(db: Any, job: dict[str, Any]) -> list[dict[str, Any]]:
+        """Only the canonical persisted operator decisions can exempt old uncertainty."""
+        result = []
+        for row in db.execute(
+            "SELECT generation,body FROM semantic_job_resumes WHERE job=? ORDER BY generation",
+            (job["id"],),
+        ):
+            body = json.loads(row["body"])
+            ack = body.get("authorized_recomputation", {})
+            proof = body.get("receipt_verification", {})
+            receipt = proof.get("receipt", {})
+            decision = body.get("operator_decision", {})
+            chunk, attempt = ack.get("chunk"), ack.get("attempt")
+            if not (
+                body.get("policy") == "explicit_operator_recompute_missing_response"
+                and ack.get("job_id") == job["id"]
+                and ack.get("resume_generation") == row["generation"]
+                and ack.get("accept_possible_duplicate_charge") is True
+                and decision.get("accept_possible_duplicate_charge") is True
+                and ack.get("authorization_id") == decision.get("mutation_id")
+                and ack.get("receipt_state") == "uncertain_terminal"
+                and receipt.get("state") == "uncertain"
+                and receipt.get("id") == decision.get("receipt_id") == ack.get("receipt_id")
+                and receipt.get("request_id") == decision.get("call_id") == ack.get("call_id")
+                and isinstance(chunk, int)
+                and chunk > 0
+                and isinstance(attempt, int)
+                and attempt > 0
+                and ack.get("call_id")
+                == "trajectory:"
+                + hashlib.sha256(f"{job['id']}:{chunk-1}:{attempt-1}".encode()).hexdigest()
+            ):
+                continue
+            result.append(ack)
+        return result
 
     def resume_context(self, job: dict[str, Any]) -> dict[str, Any]:
         with self.domain.connect() as db:
@@ -449,14 +539,7 @@ class SemanticStore:
             progress = db.execute(
                 "SELECT body FROM semantic_job_progress WHERE job=?", (job["id"],)
             ).fetchone()
-            recomputations = [
-                json.loads(item[0])["authorized_recomputation"]
-                for item in db.execute(
-                    "SELECT body FROM semantic_job_resumes WHERE job=? ORDER BY generation",
-                    (job["id"],),
-                )
-                if "authorized_recomputation" in json.loads(item[0])
-            ]
+            recomputations = self._audited_recomputations(db, job)
         return {
             "authorized_recomputations": recomputations,
             "generation": row["generation"] if row else 0,
@@ -481,13 +564,14 @@ class SemanticStore:
                 "SELECT body FROM semantic_job_progress WHERE job=?", (job_id,)
             ).fetchone()
             progress = json.loads(progress_row[0]) if progress_row else {}
-            generation = db.execute(
-                "SELECT COALESCE(max(generation),0) FROM semantic_job_resumes " "WHERE job=?",
-                (job_id,),
-            ).fetchone()[0]
-            reason = self.resume_eligibility(dict(row), progress, generation)
-            if reason != "eligible":
-                raise AnalysisResumeError(reason)
+            current = db.execute(
+                "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
+                (owner, row["session"]),
+            ).fetchone()
+            state = self.resume_state(db, dict(row), progress, current[0] if current else "")
+            if not state["eligible"]:
+                raise AnalysisResumeError(state["reason"])
+            generation = state["generation"]
             return self._continue_analysis(db, owner, row, progress, generation, value, body)
 
     def recompute_lost_window(
@@ -924,7 +1008,7 @@ class SemanticStore:
                         "elapsed_seconds": elapsed,
                         "progress": progress,
                         "resume": self.resume_state(
-                            dict(row), progress, row["current_source_revision"]
+                            db, dict(row), progress, row["current_source_revision"]
                         ),
                         "analysis_usage": provenance.get(
                             "analysis_usage", progress.get("analysis_usage", [])
@@ -1288,7 +1372,10 @@ class SemanticStore:
                 if job
                 else None
             )
-        progress = json.loads(progress_row[0]) if progress_row else {}
+            progress = json.loads(progress_row[0]) if progress_row else {}
+            resume = self.resume_state(
+                db, dict(job) if job else None, progress, record["source_revision"]
+            )
         current_analysis = (
             analysis is not None and analysis["source_revision"] == record["source_revision"]
         )
@@ -1402,9 +1489,7 @@ class SemanticStore:
             },
             "status": status,
             "progress": progress,
-            "resume": self.resume_state(
-                dict(job) if job else None, progress, record["source_revision"]
-            ),
+            "resume": resume,
             "has_analysis": analysis is not None,
             "analysis_current": current_analysis,
             "message": job["message"] if job and status == "failed" else "",
