@@ -58,3 +58,14 @@ Built worker SHA-256:
 The private isolated test directory retains `real-source-acceptance.json` as the
 verification receipt. The source gap must also remain visible in service analysis
 results; native acceptance alone does not certify the integrated web release.
+
+
+### Targeted collection and root registration follow-up
+
+The same isolated remote source-sync suite now passes 23 tests. New coverage
+checks explicit machine-bound registration before admitting an unanchored Pi root,
+failed authentication without approval, unchanged legacy membership, exact mapping
+and endpoint binding, source/native-session selectors and original pending-body
+replay even when selectors exclude that pending source. Ruff and Black pass with
+the repository configuration. The installed collector configuration and its
+live checkpoint/outbox were inspected read-only and were not changed by these tests.

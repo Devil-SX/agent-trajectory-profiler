@@ -103,8 +103,8 @@ canonical source ID. A root may explicitly set `allow_new_sources: true` after i
 local/legacy mapping has at least one currently registered deterministic source-ID
 anchor. The uploader then derives new source IDs from the same collector and
 exact legacy-root spelling without waiting for Sparkstead. When Sparkstead later
-discovers those files, it computes the identical ID. An unanchored root is rejected;
-this option does not authorize arbitrary explicit source paths or a new collector.
+discovers those files, it computes the identical ID. An unanchored root requires explicit authenticated registration as described below;
+`allow_new_sources` alone does not authorize arbitrary paths or a new collector.
 Resolved source paths must remain inside their declared local root.
 The state is private, endpoint-bound and collector-bound; changing the target or
 collector fails rather than silently reusing offsets against another destination.
@@ -163,3 +163,42 @@ its native `~/.pi/agent/sessions` tree and the exact path spelling registered by
 the existing collector. It follows the same registered-root anchor checks,
 checkpoint/outbox and process lock as other ecosystems. Adding a Pi root never
 resets existing Codex/Claude state or creates another collector identity.
+
+## Registering a new ecosystem root
+
+When an ecosystem has no legacy source anchor, first add its exact local/legacy
+mapping to the shared owner-private configuration with `allow_new_sources: true`.
+Then explicitly register that configured local root:
+
+```sh
+python3 tools/trajectory_source_sync.py --config /private/source-sync.json --register-root /home/user/.pi/agent/sessions
+```
+
+Registration verifies a native machine identity and upload permission through
+authenticated Help, then makes a `source-progress` read for a real file in the root. The server verifies the current native machine, its permission and the
+collector's owner binding. Only a successful response authorizes the exact
+`local_root`, `legacy_root` and `ecosystem` mapping in the existing shared SQLite
+state, recording the machine account, client and credential SHA-256 fingerprint.
+It does not create a remote source or invent a legacy anchor. Changed
+mappings or another endpoint/collector require their own explicit registration.
+Normal uploads continue to verify credentials and the server binding on every
+request. Never edit the legacy identity snapshot or add a fabricated source ID.
+
+## Selecting sessions without resetting delivery
+
+`--source CANONICAL_SOURCE_SHA256` and `--only-session NATIVE_SESSION_UUID` are
+repeatable and combine as a union. Session UUID matching uses the original source
+filename, without reading the entire log or generating a summary. They restrict
+only preparation of new chunks. Every existing pending outbox body is still sent
+first, unchanged, even if it belongs to another source. Neither option changes
+state binding, generation, mutation ID or checkpoint ownership.
+
+```sh
+python3 tools/trajectory_source_sync.py --config /private/source-sync.json --only-session 01a0f312-da54-77e1-99da-92e1d2b5568b --max-chunks 100
+python3 tools/trajectory_source_sync.py --config /private/source-sync.json --source CANONICAL_SOURCE_SHA256 --status
+```
+
+Status reports the selected source identities, names and sizes. An invocation
+without selectors retains normal all-source discovery. If an automatic timer also
+runs without selectors it retains its configured discovery scope; selection on a
+manual invocation does not silently reconfigure that timer.

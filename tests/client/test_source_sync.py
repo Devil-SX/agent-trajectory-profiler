@@ -388,6 +388,74 @@ class SourceSyncTests(unittest.TestCase):
             [spec["legacy_path"] for spec in specs], sorted(spec["legacy_path"] for spec in specs)
         )
 
+    def test_selectors_scope_new_work_by_source_or_native_session(self):
+        native = "01a0f312-da54-77e1-99da-92e1d2b5568b"
+        selected = {**self.spec, "path": str(self.root / (native + ".jsonl"))}
+        specs = [self.spec, selected]
+        self.assertEqual(sync.select_sources("collector", specs, sessions=[native]), [selected])
+        source = sync.source_id("collector", self.spec["legacy_path"])
+        self.assertEqual(sync.select_sources("collector", specs, sources=[source]), specs)
+        self.assertEqual(sync.select_sources("collector", specs, sources=["0" * 64]), [])
+        with self.assertRaises(ValueError):
+            sync.select_sources("collector", specs, sources=["wrong"])
+        with self.assertRaises(ValueError):
+            sync.select_sources("collector", specs, sessions=["not-a-uuid"])
+
+    @patch.object(
+        sync,
+        "remote_identity",
+        return_value={"account_id": "machine-account", "machine_client": "registered-client"},
+    )
+    def test_explicit_new_ecosystem_root_requires_authenticated_machine_binding(
+        self, identity_check
+    ):
+        identity = self.root / "identity.json"
+        identity.write_text(json.dumps({"collector": "collector", "sources": []}))
+        root = {
+            "local_root": str(self.root),
+            "legacy_root": r"C:\pi\sessions",
+            "ecosystem": "pi",
+            "allow_new_sources": True,
+        }
+        config = {
+            "legacy_identity_snapshot": str(identity),
+            "url": "https://service/trajectory/api/source-chunks",
+            "credential": "/private/test",
+            "state": str(self.root / "state.sqlite"),
+            "roots": [root],
+        }
+        with self.assertRaisesRegex(ValueError, "anchor"):
+            sync.validate_manifest(config)
+        with (
+            patch.object(sync, "credentials", return_value="test-key"),
+            patch.object(sync, "remote_progress", side_effect=PermissionError("unbound machine")),
+        ):
+            with self.assertRaises(PermissionError):
+                sync.register_root(config, str(self.root))
+        self.assertEqual(sync.registered_roots(config, "collector"), set())
+        with (
+            patch.object(sync, "credentials", return_value="test-key"),
+            patch.object(
+                sync, "remote_progress", return_value={"generation": None, "next_offset": 0}
+            ) as progress,
+        ):
+            result = sync.register_root(config, str(self.root))
+        progress.assert_called_once_with(
+            config,
+            "collector",
+            sync.source_id("collector", r"C:\pi\sessions\session.jsonl"),
+            "test-key",
+        )
+        self.assertTrue(result["registered"])
+        self.assertEqual(sync.validate_manifest(config)[1][0]["ecosystem"], "pi")
+        self.assertEqual(json.loads(identity.read_text())["sources"], [])
+        root["legacy_root"] = r"D:\another"
+        with self.assertRaisesRegex(ValueError, "anchor"):
+            sync.validate_manifest(config)
+        config["url"] = "https://other/trajectory/api/source-chunks"
+        with self.assertRaisesRegex(ValueError, "another endpoint"):
+            sync.validate_manifest(config)
+
     def test_pending_body_replays_before_newer_source_is_prepared(self):
         self.state.prepare("collector", self.spec)
         original = self.state.next()[1]
@@ -444,6 +512,7 @@ class SourceSyncTests(unittest.TestCase):
                     "sources": [new_spec, self.spec],
                 },
                 1,
+                sources=[sync.source_id("collector", new_spec["legacy_path"])],
             )
         finally:
             server.shutdown()

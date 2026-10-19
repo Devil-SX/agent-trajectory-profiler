@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Authorize new ecosystem roots through the existing authenticated machine/collector binding and select individual native sessions without dropping pending uploads.
 - Parse Pi native sessions through the unified worker, retaining branch, source usage and directory metadata.
 
 ### Fixed

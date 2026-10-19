@@ -10,6 +10,7 @@ import hashlib
 import json
 import ntpath
 import os
+import re
 import sqlite3
 import stat
 import subprocess
@@ -279,7 +280,7 @@ finally {d.close();}
     return identity["collector"], set(identity["sources"])
 
 
-def validate_manifest(config: dict) -> tuple[str, list[dict]]:
+def collector_identity(config: dict) -> tuple[str, set[str]]:
     if config.get("legacy_node"):
         collector, known = native_node_identity(
             config["legacy_node"], config["legacy_state_windows"]
@@ -292,6 +293,37 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
         collector, known = identity["collector"], set(identity["sources"])
     else:
         raise ValueError("Existing collector identity and source membership are required")
+    return collector, known
+
+
+def root_identity(root: dict) -> str:
+    return digest(
+        json.dumps(
+            {key: root[key] for key in ("local_root", "legacy_root", "ecosystem")}, sort_keys=True
+        ).encode()
+    )
+
+
+def registered_roots(config: dict, collector: str) -> set[str]:
+    path = Path(config.get("state", ""))
+    if not config.get("state") or not path.is_file():
+        return set()
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as db:
+        binding = db.execute("SELECT value FROM metadata WHERE key='binding'").fetchone()
+        expected = json.dumps({"collector": collector, "url": config["url"]}, sort_keys=True)
+        if binding is None:
+            return set()
+        if binding[0] != expected:
+            raise ValueError("Root registration state belongs to another endpoint or collector")
+        return {
+            row[0].removeprefix("registered-root:")
+            for row in db.execute("SELECT key FROM metadata WHERE key LIKE 'registered-root:%'")
+        }
+
+
+def validate_manifest(config: dict) -> tuple[str, list[dict]]:
+    collector, known = collector_identity(config)
+    approved = registered_roots(config, collector)
     specs = list(config.get("sources", []))
     anchored_new_sources = set()
     for root in config.get("roots", []):
@@ -318,9 +350,10 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
         if not isinstance(allow_new, bool):
             raise ValueError("allow_new_sources must be a boolean")
         anchors = sum(source_id(collector, spec["legacy_path"]) in known for spec in discovered)
-        if allow_new and not anchors:
+        if allow_new and not anchors and root_identity(root) not in approved:
             raise ValueError(
-                "New-source discovery requires a registered source anchor in this root"
+                "New-source discovery requires a registered source anchor "
+                "or authenticated root registration"
             )
         for spec in discovered:
             identity = source_id(collector, spec["legacy_path"])
@@ -347,6 +380,117 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
             raise ValueError("Source file is unavailable")
     specs.sort(key=lambda spec: (-Path(spec["path"]).stat().st_mtime_ns, spec["legacy_path"]))
     return collector, specs
+
+
+def select_sources(collector: str, specs: list[dict], sources=(), sessions=()) -> list[dict]:
+    """Scope new preparation only. The persisted outbox is never filtered."""
+    if not sources and not sessions:
+        return specs
+    for source in sources:
+        if not re.fullmatch(r"[0-9a-f]{64}", source):
+            raise ValueError("Source selector must be a SHA-256 source ID")
+    for session in sessions:
+        if str(uuid.UUID(session)) != session.lower():
+            raise ValueError("Session selector must be a native UUID")
+    return [
+        spec
+        for spec in specs
+        if source_id(collector, spec["legacy_path"]) in sources
+        or any(
+            re.search(
+                r"(?<![0-9a-f])" + re.escape(session) + r"(?![0-9a-f])",
+                Path(spec["path"]).stem,
+                re.IGNORECASE,
+            )
+            for session in sessions
+        )
+    ]
+
+
+def remote_identity(config: dict, token: str) -> dict:
+    parsed = urllib.parse.urlsplit(config["url"])
+    path = parsed.path.rsplit("/api/", 1)[0] + "/help"
+    url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+    request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+    with http_opener(config).open(request, timeout=config.get("timeout", 30)) as response:
+        raw = response.read(1024 * 1024 + 1)
+    if len(raw) > 1024 * 1024:
+        raise ValueError("Oversized Help response")
+    data = json.loads(raw)
+    caller = data.get("caller", {})
+    if (
+        not isinstance(caller, dict)
+        or not caller.get("account_id")
+        or not caller.get("machine_client")
+    ):
+        raise ValueError("Root registration requires a native machine identity")
+    if "upload" not in data.get("scopes", []):
+        raise ValueError("Root registration requires upload permission")
+    return caller
+
+
+def register_root(config: dict, local_root: str) -> dict:
+    """Explicitly authorize one exact mapping using the existing machine binding.
+
+    The authenticated read verifies the machine/collector/owner relation remotely.
+    It does not create a remote source, a legacy anchor or another collector.
+    """
+    collector, _ = collector_identity(config)
+    registered_roots(config, collector)  # reject an already mismatched shared-state binding
+    matches = [root for root in config.get("roots", []) if root["local_root"] == local_root]
+    if len(matches) != 1:
+        raise ValueError("Registration requires exactly one configured root")
+    root = matches[0]
+    if root.get("allow_new_sources") is not True:
+        raise ValueError("Root registration requires explicit new-source discovery")
+    local = Path(local_root)
+    legacy = root["legacy_root"]
+    if not local.is_absolute() or not (ntpath.isabs(legacy) or Path(legacy).is_absolute()):
+        raise ValueError("Source roots must be absolute")
+    if root["ecosystem"] not in {"codex", "claude_code", "pi"}:
+        raise ValueError("Unsupported ecosystem")
+    # Use an actual source as the binding probe, never fabricate a source anchor.
+    probe = next(iter(sorted(local.rglob("*.jsonl"))), None)
+    if probe is None or not probe.is_file() or not probe.resolve().is_relative_to(local.resolve()):
+        raise ValueError("Registered root requires an in-root native source file")
+    relative = probe.relative_to(local)
+    legacy_path = (
+        ntpath.join(legacy, *relative.parts)
+        if "\\" in legacy or ":" in legacy
+        else str(Path(legacy).joinpath(relative))
+    )
+    source = source_id(collector, legacy_path)
+    token = credentials(Path(config["credential"]), config["url"])
+    state_path = Path(config["state"])
+    with process_lock(state_path.with_suffix(".lock")):
+        # A successful source-progress response proves current native machine and
+        # collector binding. Credential revocation remains enforced on every HTTP call.
+        caller = remote_identity(config, token)
+        remote_progress(config, collector, source, token)
+        state = SyncState(state_path)
+        try:
+            state.bind(collector, config["url"])
+            approval = {
+                "root": root_identity(root),
+                "collector": collector,
+                "url": config["url"],
+                "verified_source": source,
+                "verified_at": time.time(),
+                "account_id": caller["account_id"],
+                "machine_client": caller["machine_client"],
+                "credential_sha256": digest(token.encode()),
+            }
+            with state.db:
+                state.db.execute(
+                    "INSERT OR REPLACE INTO metadata VALUES(?,?)",
+                    (
+                        "registered-root:" + root_identity(root),
+                        json.dumps(approval, sort_keys=True),
+                    ),
+                )
+        finally:
+            state.close()
+    return {"registered": True, "collector": collector, "root_id": root_identity(root)}
 
 
 def remote_progress(config: dict, collector: str, source: str, token: str) -> dict:
@@ -385,8 +529,9 @@ def guard_new_sources(state: SyncState, config: dict, collector: str, specs: lis
             )
 
 
-def sync_once(config: dict, max_chunks: int = 100) -> dict:
+def sync_once(config: dict, max_chunks: int = 100, sources=(), sessions=()) -> dict:
     collector, specs = validate_manifest(config)
+    specs = select_sources(collector, specs, sources, sessions)
     state_path = Path(config["state"])
     sent = 0
     uploaded_bytes = 0
@@ -430,13 +575,15 @@ def sync_once(config: dict, max_chunks: int = 100) -> dict:
                 "uploaded_bytes": uploaded_bytes,
                 "pending": state.next() is not None,
                 "collector": collector,
+                "selected_sources": len(specs),
             }
         finally:
             state.close()
 
 
-def describe(config: dict) -> dict:
+def describe(config: dict, sources=(), sessions=()) -> dict:
     collector, specs = validate_manifest(config)
+    specs = select_sources(collector, specs, sources, sessions)
     parsed = urllib.parse.urlsplit(config["url"])
     help_url = f"{parsed.scheme}://{parsed.netloc}/trajectory/help"
     token = credentials(Path(config["credential"]), config["url"])
@@ -457,6 +604,15 @@ def describe(config: dict) -> dict:
         "scopes": help_data.get("scopes"),
         "collector": collector,
         "source_count": len(specs),
+        "selected_sources": [
+            {
+                "source": source_id(collector, spec["legacy_path"]),
+                "ecosystem": spec["ecosystem"],
+                "source_name": Path(spec["path"]).name,
+                "source_bytes": Path(spec["path"]).stat().st_size,
+            }
+            for spec in specs
+        ],
         "progress": progress,
     }
 
@@ -466,19 +622,60 @@ def main() -> int:
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--max-chunks", type=int, default=100)
     parser.add_argument(
+        "--source",
+        action="append",
+        default=[],
+        help="Prepare only this canonical source ID; repeatable",
+    )
+    parser.add_argument(
+        "--only-session",
+        action="append",
+        default=[],
+        help="Prepare only this native UUID in source filenames; repeatable",
+    )
+    parser.add_argument(
+        "--register-root",
+        help="Authorize an exact configured root through the current machine binding",
+    )
+    parser.add_argument(
         "--watch", type=float, help="Repeat every N seconds; same lock/state as one-shot"
     )
     parser.add_argument("--status", "--describe", action="store_true", dest="describe")
     args = parser.parse_args()
     if args.max_chunks < 1 or args.watch is not None and args.watch < 1:
         parser.error("Chunk limit and interval must be positive")
+    if args.register_root:
+        if args.watch or args.describe or args.source or args.only_session:
+            parser.error("Root registration cannot be combined with sync selectors or watch/status")
+        try:
+            print(
+                json.dumps(register_root(json.loads(args.config.read_text()), args.register_root))
+            )
+        except (OSError, ValueError, sqlite3.Error, urllib.error.URLError) as error:
+            print(
+                json.dumps({"error": type(error).__name__, "registered": False, "retryable": True}),
+                file=sys.stderr,
+            )
+            return 1
+        return 0
     if args.describe:
-        print(json.dumps(describe(json.loads(args.config.read_text()))))
+        print(
+            json.dumps(
+                describe(json.loads(args.config.read_text()), args.source, args.only_session)
+            )
+        )
         return 0
     while True:
         try:
             print(
-                json.dumps(sync_once(json.loads(args.config.read_text()), args.max_chunks)),
+                json.dumps(
+                    sync_once(
+                        json.loads(args.config.read_text()),
+                        args.max_chunks,
+                        args.source,
+                        args.only_session,
+                    )
+                ),
                 flush=True,
             )
         except RecoveryRequired as error:
