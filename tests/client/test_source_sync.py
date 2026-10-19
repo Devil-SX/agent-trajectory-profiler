@@ -81,6 +81,14 @@ class SourceSyncTests(unittest.TestCase):
                 with sync.process_lock(self.root / 'state.lock'):
                     self.fail('Second writer acquired same lock')
 
+    def test_state_cannot_silently_change_endpoint_or_collector(self):
+        self.state.bind('collector', 'https://example.com/trajectory/api/source-chunks')
+        self.state.bind('collector', 'https://example.com/trajectory/api/source-chunks')
+        with self.assertRaises(ValueError):
+            self.state.bind('collector', 'https://other.example/trajectory/api/source-chunks')
+        with self.assertRaises(ValueError):
+            self.state.bind('other-collector', 'https://example.com/trajectory/api/source-chunks')
+
     def test_redirect_is_never_followed(self):
         with self.assertRaises(ValueError):
             sync.NoRedirect().redirect_request(None, None, None, None, None, None)

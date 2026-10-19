@@ -88,12 +88,21 @@ class SyncState:
         self.db.executescript("""
             PRAGMA journal_mode=WAL;
             PRAGMA synchronous=FULL;
+            CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS sources(
               source TEXT PRIMARY KEY, generation TEXT, prefix_size INTEGER,
               prefix TEXT, offset INTEGER);
             CREATE TABLE IF NOT EXISTS outbox(
               id INTEGER PRIMARY KEY, body TEXT NOT NULL, bytes INTEGER NOT NULL);
         """)
+
+    def bind(self, collector: str, url: str):
+        binding = json.dumps({"collector": collector, "url": url}, sort_keys=True)
+        with self.db:
+            previous = self.db.execute("SELECT value FROM metadata WHERE key='binding'").fetchone()
+            if previous and previous[0] != binding:
+                raise ValueError("Sync state belongs to another endpoint or collector")
+            self.db.execute("INSERT OR IGNORE INTO metadata VALUES('binding',?)", (binding,))
 
     def close(self):
         self.db.close()
@@ -187,6 +196,7 @@ def sync_once(config: dict, max_chunks: int = 100) -> dict:
     with process_lock(state_path.with_suffix(".lock")):
         state = SyncState(state_path)
         try:
+            state.bind(collector, config["url"])
             token = credentials(Path(config["credential"]), config["url"])
             opener = urllib.request.build_opener(NoRedirect)
             while sent < max_chunks:
