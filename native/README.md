@@ -31,7 +31,10 @@ This upstream API parses complete snapshots, O(source size) per changed
 snapshot. The service should debounce appends and cache by
 `(source_id, source_sha256, parser_version)`; a replay needs no parsing. It must
 not invoke parsing for each upload chunk. JSONL incomplete final records are
-held for the next snapshot, and malformed complete records fail the job rather
+held as raw bytes for the next snapshot. File input is read as bytes; only the
+prefix through the last complete newline is UTF-8 decoded, so a half-written
+Unicode character in the pending suffix does not fail parsing. Gemini's full
+JSON document must be valid UTF-8 in its entirety. Malformed complete records fail the job rather
 than disappearing silently. Source identity and operation IDs are stable on
 replay; cross-session inherited context still requires source-native lineage
 and the service's consumption identity rules, rather than content-only dedup.

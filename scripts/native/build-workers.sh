@@ -20,6 +20,11 @@ cargo build --locked --release --manifest-path "$upstream_root/agentpprof/Cargo.
 install -m 755 "$task_root/native/session-worker/target/release/trajectory-session-worker" "$artifact_root/trajectory-session-worker"
 install -m 755 "$upstream_root/agentpprof/target/release/agentpprof" "$artifact_root/agentpprof"
 install -m 644 "$upstream_root/LICENSE" "$artifact_root/AGENTSIGHT-LICENSE"
-cat > "$artifact_root/native-components.json" <<EOF
-{"schema":1,"agent_session":"0.5.17","agentpprof_revision":"$upstream_revision","agentpprof_version":"0.2.37","protocol":"trajectory.agent-session/1"}
-EOF
+python3 - "$artifact_root" "$upstream_revision" <<'PY'
+import hashlib,json,pathlib,subprocess,sys
+root=pathlib.Path(sys.argv[1])
+health=json.loads(subprocess.check_output([str(root/'trajectory-session-worker')],input=b'{"id":1,"op":"health"}\n'))['result']
+manifest={"schema":1,"agent_session":"0.5.17","agentpprof_revision":sys.argv[2],"agentpprof_version":"0.2.37","protocol":"trajectory.agent-session/1","worker_version":health['worker_version']}
+manifest['sha256']={name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in ('trajectory-session-worker','agentpprof')}
+(root/'native-components.json').write_text(json.dumps(manifest)+'\n')
+PY

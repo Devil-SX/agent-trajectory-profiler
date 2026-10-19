@@ -8,10 +8,11 @@ needed. Zig's release SHA-256 was checked against its download manifest.
 
 Results:
 
-- `cargo test --locked`: 6 passed. Covers Codex cache normalization,
+- `cargo test --locked`: 8 passed (worker 0.1.1). Covers Codex cache normalization,
   cumulative-usage replay, inherited fork-context exclusion, Claude cache
   write/read categories, source byte identity and partial append handling,
-  and malformed complete-record rejection.
+  malformed complete-record rejection, half-UTF-8 pending bytes with successful
+  later append, and invalid UTF-8 in complete records/full JSON documents.
 - `cargo build --locked --release`: passed for the worker and pinned research
   AgentPProf CLI.
 - `ruff check scripts/native/verify-workers.py`: passed remotely.
@@ -24,7 +25,7 @@ Built artifacts are under the task's `artifacts` directory:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| trajectory-session-worker | fdadb29d0fcfa27c82bd78740f0ccd0897e27f99cecd33059b35e97c00cc68fd |
+| trajectory-session-worker | 07b8119926aa7c5398067b7e6379d72c21153ec2c236151caa7d9e54e79832ba |
 | agentpprof | 88724f4a29029f8f94142bb5e1d3ec5682fe4d0020cdcf43b2d2042cd6b2a21a |
 
 The profile test used synthetic data only. Real multi-session accounting,

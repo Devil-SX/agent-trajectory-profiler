@@ -35,7 +35,7 @@ fn digest(bytes: &[u8]) -> String {
 fn parse(request: &Request) -> Result<Value, String> {
     if request.op == "health" {
         return Ok(
-            json!({"schema": SCHEMA, "parser": {"name":"agent-session", "version":"0.5.17"}}),
+            json!({"schema": SCHEMA, "worker_version":env!("CARGO_PKG_VERSION"), "parser": {"name":"agent-session", "version":"0.5.17"}}),
         );
     }
     if request.op != "parse" {
@@ -48,24 +48,30 @@ fn parse(request: &Request) -> Result<Value, String> {
         return Err("unsupported agent".into());
     }
     // JSONL appends can stop in the middle of an encoded Unicode character or
-    // JSON record. The transport owns UTF-8 decoding; we consume complete lines.
+    // JSON record. Decode only complete records; pending bytes remain archived.
     let file_content = request
         .input_file
         .as_ref()
-        .map(std::fs::read_to_string)
+        .map(std::fs::read)
         .transpose()
         .map_err(|_| "cannot read internal input_file")?;
     if file_content.is_some() && !request.content.is_empty() {
         return Err("content and input_file are mutually exclusive".into());
     }
-    let source = file_content.as_deref().unwrap_or(&request.content);
+    let source = file_content
+        .as_deref()
+        .unwrap_or(request.content.as_bytes());
     let is_document = request.agent == "gemini";
-    let complete_bytes = if is_document || source.ends_with('\n') {
+    let complete_bytes = if is_document || source.ends_with(b"\n") {
         source.len()
     } else {
-        source.rfind('\n').map_or(0, |i| i + 1)
+        source
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(0, |i| i + 1)
     };
-    let content = &source[..complete_bytes];
+    let content = std::str::from_utf8(&source[..complete_bytes])
+        .map_err(|_| "invalid UTF-8 in complete source records")?;
     let mut records = Vec::new();
     let mut offset = 0;
     if is_document {
@@ -160,7 +166,7 @@ fn parse(request: &Request) -> Result<Value, String> {
     }
     operations.sort_by_key(|value| value["timestamp_ms"].as_i64().unwrap_or(i64::MAX));
     Ok(
-        json!({"schema":SCHEMA,"parser":{"name":"agent-session","version":"0.5.17"},
+        json!({"schema":SCHEMA,"worker_version":env!("CARGO_PKG_VERSION"),"parser":{"name":"agent-session","version":"0.5.17"},
         "source_id":request.source_id,"source_sha256":digest(content.as_bytes()),
         "complete_bytes":complete_bytes,"pending_bytes":source.len()-complete_bytes,
         "session":session,"source_records":records,"operations":operations,
@@ -257,6 +263,49 @@ mod tests {
     }
 
     #[test]
+    fn file_partial_utf8_is_pending_until_record_append_completes() {
+        let path =
+            std::env::temp_dir().join(format!("trajectory-worker-utf8-{}", std::process::id()));
+        let mut file_request = request("");
+        file_request.input_file = Some(path.to_string_lossy().into_owned());
+        let prefix = format!(
+            "{SOURCE}{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\""
+        );
+        let mut bytes = prefix.as_bytes().to_vec();
+        bytes.extend_from_slice(&"继续".as_bytes()[..1]);
+        std::fs::write(&path, &bytes).unwrap();
+        let partial = parse(&file_request).unwrap();
+        assert_eq!(partial["complete_bytes"], SOURCE.len());
+        assert_eq!(partial["pending_bytes"], bytes.len() - SOURCE.len());
+        assert_eq!(partial["source_sha256"], digest(SOURCE.as_bytes()));
+        bytes.extend_from_slice(&"继续".as_bytes()[1..]);
+        bytes.extend_from_slice(b"\"}]}}\n");
+        std::fs::write(&path, &bytes).unwrap();
+        let completed = parse(&file_request).unwrap();
+        assert_eq!(completed["complete_bytes"], bytes.len());
+        assert_eq!(completed["pending_bytes"], 0);
+        assert_eq!(completed["source_records"].as_array().unwrap().len(), 5);
+        assert_eq!(completed["session"]["events"]["prompts"][1]["text"], "继续");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn invalid_utf8_in_complete_record_or_document_fails() {
+        let path = std::env::temp_dir().join(format!(
+            "trajectory-worker-invalid-utf8-{}",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"{\"text\":\"\xe7\"}\n").unwrap();
+        let mut file_request = request("");
+        file_request.input_file = Some(path.to_string_lossy().into_owned());
+        assert!(parse(&file_request).unwrap_err().contains("UTF-8"));
+        file_request.agent = "gemini".into();
+        std::fs::write(&path, b"{\"text\":\"\xe7").unwrap();
+        assert!(parse(&file_request).unwrap_err().contains("UTF-8"));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn repeated_cumulative_usage_does_not_double_count() {
         let usage = SOURCE.lines().last().unwrap();
         let output = parse(&request(&format!("{SOURCE}{usage}\n"))).unwrap();
@@ -268,9 +317,20 @@ mod tests {
     fn inherited_fork_context_is_not_a_new_human_prompt() {
         let inherited = "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"inherited\"}]}}\n";
         let boundary = SOURCE.find('\n').unwrap() + 1;
-        let fork = format!("{}{}{}", &SOURCE[..boundary], inherited, &SOURCE[boundary..]);
+        let fork = format!(
+            "{}{}{}",
+            &SOURCE[..boundary],
+            inherited,
+            &SOURCE[boundary..]
+        );
         let output = parse(&request(&fork)).unwrap();
-        assert_eq!(output["session"]["events"]["prompts"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            output["session"]["events"]["prompts"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(output["source_records"].as_array().unwrap().len(), 5);
     }
 
@@ -285,6 +345,12 @@ mod tests {
         let output = parse(&source).unwrap();
         assert_eq!(output["session"]["usage"]["cache_creation_tokens"], 7);
         assert_eq!(output["session"]["usage"]["cache_read_tokens"], 4);
-        assert!(output["operations"].as_array().unwrap().iter().all(|operation| operation["metrics"] == json!({})));
+        assert!(
+            output["operations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|operation| operation["metrics"] == json!({}))
+        );
     }
 }
