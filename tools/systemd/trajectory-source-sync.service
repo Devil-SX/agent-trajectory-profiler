@@ -7,6 +7,8 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/usr/bin/python3 %h/.local/lib/trajectory/trajectory_source_sync.py --config %h/.config/trajectory/source-sync.json --max-chunks 100
 UMask=0077
+Nice=10
+IOSchedulingClass=idle
 NoNewPrivileges=true
 # Native Windows readonly SQLite may be invoked to inspect the existing collector.
 # All HTTP calls still use the registered machine-account credential.

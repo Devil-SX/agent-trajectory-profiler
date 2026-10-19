@@ -111,3 +111,26 @@ trajectory-source-sync.timer`. Manual calls must use the same configuration/stat
 The timer starts one-shot jobs after the preceding job finishes; the OS lock also
 protects against concurrent Agent calls. This does not restart or reconfigure
 Sparkstead. The timer runs on the log-owning machine, not the remote BatCave server.
+
+## Prefix integrity and checkpoint loss
+
+Each checkpoint stores SHA-256 of the entire queued byte prefix, not a fixed-size
+file header. Source mutation after byte 1024 is therefore detected. Successful
+validation also records `(dev, ino, size, mtime_ns, ctime_ns)` in the same SQLite
+transaction. A completed file with an unchanged full fingerprint needs no reread;
+changed files receive full-prefix validation. During a multi-chunk invocation,
+validated hash state is reused only while the full fingerprint remains unchanged.
+The client rejects files that change while a prefix is being validated.
+
+Before starting any source without local state, the uploader performs authenticated
+GET `/trajectory/api/source-progress?collector=...&source=...`. If a remote generation
+already exists, it exits with `recovery_required` instead of generating a new source
+generation or trusting the remote offset without content verification. The current
+progress interface does not provide the prefix digest needed for automatic state
+reconstruction. Restore a verified checkpoint backup; do not delete state as a
+retry mechanism. Old checkpoints containing only a partial prefix hash are also
+rejected and require explicit verified recovery.
+
+Competing invocations report `state=busy` and exit successfully for rescheduling.
+They do not emit a traceback or acquire a second writer. The example unit runs at
+Nice 10 with idle I/O scheduling priority.

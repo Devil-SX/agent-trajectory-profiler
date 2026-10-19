@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Single native-source uploader for agents and Sparkstead schedulers (stdlib only)."""
+
 from __future__ import annotations
 
 import argparse
@@ -7,18 +8,18 @@ import base64
 import contextlib
 import hashlib
 import json
+import ntpath
 import os
-from pathlib import Path
 import sqlite3
 import stat
 import subprocess
-import ntpath
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from pathlib import Path
 
 CHUNK_BYTES = 512 * 1024
 OUTBOX_BYTES = 32 * 1024 * 1024
@@ -30,6 +31,10 @@ def digest(value: bytes) -> str:
 
 def source_id(collector: str, legacy_path: str) -> str:
     return digest((collector + ":" + legacy_path).encode())
+
+
+class RecoveryRequired(ValueError):
+    """Checkpoint cannot be reconciled without explicit verified recovery."""
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -63,13 +68,18 @@ def process_lock(path: Path):
     with path.open("a+b") as handle:
         if os.name == "nt":
             import msvcrt
+
             if handle.tell() == 0:
                 handle.write(b"0")
                 handle.flush()
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                raise BlockingIOError("Shared source-sync lock is busy") from None
         else:
             import fcntl
+
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         try:
             yield
@@ -85,6 +95,7 @@ class SyncState:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(path)
+        self.hash_cache = {}
         if os.name != "nt":
             path.chmod(0o600)
         self.db.executescript("""
@@ -112,30 +123,90 @@ class SyncState:
     def prepare(self, collector: str, spec: dict) -> bool:
         source = source_id(collector, spec["legacy_path"])
         row = self.db.execute("SELECT * FROM sources WHERE source=?", (source,)).fetchone()
-        size = Path(spec["path"]).stat().st_size
-        if not size:
+        info = Path(spec["path"]).stat()
+        fingerprint = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        size = info.st_size
+        key = "verified-prefix:" + source
+        saved = self.db.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
+        if (
+            row
+            and row[2] == row[4]
+            and saved
+            and tuple(json.loads(saved[0])) == fingerprint
+            and row[4] == size
+        ):
             return False
-        prefix_size = row[2] if row else min(size, 1024)
+        if row and row[2] != row[4]:
+            raise RecoveryRequired(
+                "Legacy checkpoint lacks full-prefix integrity; explicit recovery required"
+            )
         with open(spec["path"], "rb") as stream:
-            prefix = digest(stream.read(prefix_size))
-            reset = bool(row and (size < row[4] or prefix != row[3]))
+            cached = self.hash_cache.get(source)
+            if row and cached and cached[0] == fingerprint and cached[1] == row[4]:
+                hasher = cached[2].copy()
+                stream.seek(row[4])
+                remaining = 0
+            else:
+                hasher = hashlib.sha256()
+                remaining = row[4] if row else 0
+            while remaining:
+                block = stream.read(min(CHUNK_BYTES, remaining))
+                if not block:
+                    break
+                hasher.update(block)
+                remaining -= len(block)
+            reset = bool(row and (remaining or hasher.hexdigest() != row[3]))
             generation = row[1] if row and not reset else str(uuid.uuid4())
             offset = row[4] if row and not reset else 0
-            if offset >= size:
+            if not reset and offset >= size:
+                after = os.fstat(stream.fileno())
+                verified = (
+                    after.st_dev,
+                    after.st_ino,
+                    after.st_size,
+                    after.st_mtime_ns,
+                    after.st_ctime_ns,
+                )
+                if verified != fingerprint:
+                    raise ValueError("Source changed during prefix validation; retry required")
+                with self.db:
+                    self.db.execute(
+                        "INSERT OR REPLACE INTO metadata VALUES(?,?)",
+                        (key, json.dumps(fingerprint)),
+                    )
+                self.hash_cache[source] = (fingerprint, offset, hasher.copy())
                 return False
             if reset:
-                prefix_size = min(size, 1024)
                 stream.seek(0)
-                prefix = digest(stream.read(prefix_size))
-            stream.seek(offset)
-            content = stream.read(min(CHUNK_BYTES, size - offset))
+                hasher = hashlib.sha256()
+            content = stream.read(min(CHUNK_BYTES, max(0, size - offset)))
+            if not content and not size:
+                return False
+            hasher.update(content)
+            prefix_size = offset + len(content)
+            prefix = hasher.hexdigest()
+            after = os.fstat(stream.fileno())
+            if (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ) != fingerprint:
+                raise ValueError("Source changed during prefix validation; retry required")
         body = {
             "schema_id": "trajectory-source-chunk/1",
-            "mutation_id": str(uuid.uuid4()), "collector": collector,
-            "source": source, "ecosystem": spec["ecosystem"],
-            "generation": generation, "start": offset, "end": offset + len(content),
-            "source_bytes": size, "content": base64.b64encode(content).decode(),
-            "sha256": digest(content), "source_name": Path(spec["path"]).name,
+            "mutation_id": str(uuid.uuid4()),
+            "collector": collector,
+            "source": source,
+            "ecosystem": spec["ecosystem"],
+            "generation": generation,
+            "start": offset,
+            "end": offset + len(content),
+            "source_bytes": size,
+            "content": base64.b64encode(content).decode(),
+            "sha256": digest(content),
+            "source_name": Path(spec["path"]).name,
         }
         encoded = json.dumps(body, separators=(",", ":"))
         pending = self.db.execute("SELECT coalesce(sum(bytes),0) FROM outbox").fetchone()[0]
@@ -143,8 +214,14 @@ class SyncState:
             return False
         with self.db:
             self.db.execute("INSERT INTO outbox(body,bytes) VALUES(?,?)", (encoded, len(encoded)))
-            self.db.execute("INSERT OR REPLACE INTO sources VALUES(?,?,?,?,?)", (
-                source, generation, prefix_size, prefix, offset + len(content)))
+            self.db.execute(
+                "INSERT OR REPLACE INTO sources VALUES(?,?,?,?,?)",
+                (source, generation, prefix_size, prefix, offset + len(content)),
+            )
+            self.db.execute(
+                "INSERT OR REPLACE INTO metadata VALUES(?,?)", (key, json.dumps(fingerprint))
+            )
+        self.hash_cache[source] = (fingerprint, offset + len(content), hasher.copy())
         return True
 
     def next(self):
@@ -152,10 +229,12 @@ class SyncState:
 
     def acknowledge(self, row, receipt: dict):
         body = json.loads(row[1])
-        if (receipt.get("durable") is not True
-                or receipt.get("mutation_id") != body["mutation_id"]
-                or receipt.get("accepted_bytes") != body["end"] - body["start"]
-                or receipt.get("next_offset") != body["end"]):
+        if (
+            receipt.get("durable") is not True
+            or receipt.get("mutation_id") != body["mutation_id"]
+            or receipt.get("accepted_bytes") != body["end"] - body["start"]
+            or receipt.get("next_offset") != body["end"]
+        ):
             raise ValueError("Invalid durable source receipt")
         with self.db:
             self.db.execute("DELETE FROM outbox WHERE id=?", (row[0],))
@@ -180,16 +259,22 @@ try {console.log(JSON.stringify({collector:d.prepare(
   sources:d.prepare('SELECT id FROM sources').all().map(x=>x.id)}));}
 finally {d.close();}
 """
-    result = subprocess.run([executable, "--no-warnings", "-e", code, database],
-                            cwd="/mnt/c/Windows/System32" if os.name != "nt" else None,
-                            capture_output=True, timeout=15, check=True)
+    result = subprocess.run(
+        [executable, "--no-warnings", "-e", code, database],
+        cwd="/mnt/c/Windows/System32" if os.name != "nt" else None,
+        capture_output=True,
+        timeout=15,
+        check=True,
+    )
     identity = json.loads(result.stdout)
     return identity["collector"], set(identity["sources"])
 
 
 def validate_manifest(config: dict) -> tuple[str, list[dict]]:
     if config.get("legacy_node"):
-        collector, known = native_node_identity(config["legacy_node"], config["legacy_state_windows"])
+        collector, known = native_node_identity(
+            config["legacy_node"], config["legacy_state_windows"]
+        )
     elif config.get("legacy_state"):
         collector, known = legacy_identity(Path(config["legacy_state"]))
     elif config.get("legacy_identity_snapshot"):
@@ -204,14 +289,17 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
         legacy_root = root["legacy_root"]
         for path in sorted(local_root.rglob("*.jsonl")):
             relative = path.relative_to(local_root)
-            legacy_path = (ntpath.join(legacy_root, *relative.parts)
-                           if "\\" in legacy_root or ":" in legacy_root
-                           else str(Path(legacy_root).joinpath(relative)))
+            legacy_path = (
+                ntpath.join(legacy_root, *relative.parts)
+                if "\\" in legacy_root or ":" in legacy_root
+                else str(Path(legacy_root).joinpath(relative))
+            )
             # The legacy worker may not have discovered the newest file yet.
             # Defer that file, rather than invent an independent source identity.
             if source_id(collector, legacy_path) in known:
-                specs.append({"path": str(path), "legacy_path": legacy_path,
-                              "ecosystem": root["ecosystem"]})
+                specs.append(
+                    {"path": str(path), "legacy_path": legacy_path, "ecosystem": root["ecosystem"]}
+                )
     unique = {}
     for spec in specs:
         identity = source_id(collector, spec["legacy_path"])
@@ -229,6 +317,44 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
     return collector, specs
 
 
+def remote_progress(config: dict, collector: str, source: str, token: str) -> dict:
+    parsed = urllib.parse.urlsplit(config["url"])
+    path = parsed.path.rsplit("/", 1)[0] + "/source-progress"
+    query = urllib.parse.urlencode({"collector": collector, "source": source})
+    url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, query, ""))
+    request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+    with urllib.request.build_opener(NoRedirect).open(
+        request, timeout=config.get("timeout", 30)
+    ) as response:
+        raw = response.read(16385)
+    if len(raw) > 16384:
+        raise ValueError("Oversized source-progress response")
+    result = json.loads(raw)
+    if (
+        not isinstance(result, dict)
+        or "generation" not in result
+        or type(result.get("next_offset")) is not int
+        or result["next_offset"] < 0
+        or result["generation"] is not None
+        and not isinstance(result["generation"], str)
+    ):
+        raise ValueError("Invalid source-progress response")
+    return result
+
+
+def guard_new_sources(state: SyncState, config: dict, collector: str, specs: list, token: str):
+    for spec in specs:
+        source = source_id(collector, spec["legacy_path"])
+        if state.db.execute("SELECT 1 FROM sources WHERE source=?", (source,)).fetchone():
+            continue
+        progress = remote_progress(config, collector, source, token)
+        # Even an empty existing generation needs verified explicit reconciliation.
+        if progress.get("generation") is not None or progress["next_offset"] != 0:
+            raise RecoveryRequired(
+                "Remote source exists without local checkpoint; explicit recovery required"
+            )
+
+
 def sync_once(config: dict, max_chunks: int = 100) -> dict:
     collector, specs = validate_manifest(config)
     state_path = Path(config["state"])
@@ -239,17 +365,28 @@ def sync_once(config: dict, max_chunks: int = 100) -> dict:
         try:
             state.bind(collector, config["url"])
             token = credentials(Path(config["credential"]), config["url"])
+
+            def prepare_source(spec):
+                guard_new_sources(state, config, collector, [spec], token)
+                return state.prepare(collector, spec)
+
             opener = urllib.request.build_opener(NoRedirect)
             while sent < max_chunks:
                 row = state.next()
                 if row is None:
                     # Finish one source before starting the next; replay remains ordered.
-                    if not any(state.prepare(collector, spec) for spec in specs):
+                    if not any(prepare_source(spec) for spec in specs):
                         break
                     row = state.next()
-                request = urllib.request.Request(config["url"], data=row[1].encode(),
-                    headers={"Authorization": "Bearer " + token,
-                             "Content-Type": "application/json"}, method="POST")
+                request = urllib.request.Request(
+                    config["url"],
+                    data=row[1].encode(),
+                    headers={
+                        "Authorization": "Bearer " + token,
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
                 with opener.open(request, timeout=config.get("timeout", 30)) as response:
                     raw = response.read(16385)
                     if len(raw) > 16384:
@@ -258,8 +395,12 @@ def sync_once(config: dict, max_chunks: int = 100) -> dict:
                 state.acknowledge(row, receipt)
                 sent += 1
                 uploaded_bytes += receipt["accepted_bytes"]
-            return {"chunks": sent, "uploaded_bytes": uploaded_bytes,
-                    "pending": state.next() is not None, "collector": collector}
+            return {
+                "chunks": sent,
+                "uploaded_bytes": uploaded_bytes,
+                "pending": state.next() is not None,
+                "collector": collector,
+            }
         finally:
             state.close()
 
@@ -276,18 +417,27 @@ def describe(config: dict) -> dict:
     progress = []
     if state_path.exists():
         with sqlite3.connect(state_path.resolve().as_uri() + "?mode=ro", uri=True) as db:
-            progress = [{"source": row[0], "generation": row[1], "offset": row[2]}
-                        for row in db.execute("SELECT source,generation,offset FROM sources")]
-    return {"version": help_data.get("version"), "caller": help_data.get("caller"),
-            "scopes": help_data.get("scopes"), "collector": collector,
-            "source_count": len(specs), "progress": progress}
+            progress = [
+                {"source": row[0], "generation": row[1], "offset": row[2]}
+                for row in db.execute("SELECT source,generation,offset FROM sources")
+            ]
+    return {
+        "version": help_data.get("version"),
+        "caller": help_data.get("caller"),
+        "scopes": help_data.get("scopes"),
+        "collector": collector,
+        "source_count": len(specs),
+        "progress": progress,
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--max-chunks", type=int, default=100)
-    parser.add_argument("--watch", type=float, help="Repeat every N seconds; same lock/state as one-shot")
+    parser.add_argument(
+        "--watch", type=float, help="Repeat every N seconds; same lock/state as one-shot"
+    )
     parser.add_argument("--status", "--describe", action="store_true", dest="describe")
     args = parser.parse_args()
     if args.max_chunks < 1 or args.watch is not None and args.watch < 1:
@@ -297,7 +447,22 @@ def main() -> int:
         return 0
     while True:
         try:
-            print(json.dumps(sync_once(json.loads(args.config.read_text()), args.max_chunks)), flush=True)
+            print(
+                json.dumps(sync_once(json.loads(args.config.read_text()), args.max_chunks)),
+                flush=True,
+            )
+        except RecoveryRequired as error:
+            print(
+                json.dumps(
+                    {"error": "recovery_required", "reason": str(error), "retryable": False}
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        except BlockingIOError:
+            print(json.dumps({"state": "busy", "retryable": True}), flush=True)
+            if args.watch is None:
+                return 0
         except (OSError, ValueError, sqlite3.Error, urllib.error.URLError) as error:
             # Never include exception message, response body, URL or source content.
             print(json.dumps({"error": type(error).__name__, "retryable": True}), file=sys.stderr)
