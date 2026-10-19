@@ -10,12 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Continue failed analyses from saved windows through the workbench and the same authenticated, idempotent API, preserving job and batch identity and all measured usage.
 - Persist private model-call journals before dispatch and decoding, and migrate unfinished checkpoints without replaying successful windows.
+- Offer a separate explicit lost-window operation that verifies the native Jindu receipt and records acceptance of possible additional charging, without erasing the original unknown usage.
 
 ### Changed
 
 - Retain at most two compact ledger snapshots so account and global views can alternate without evicting each other; source contributions remain uncached.
 - Use compact window-local membership indices with precise validation feedback, and allow in-flight analysis to park at durable window boundaries during maintenance.
 - Wait longer than the gateway's upstream request deadline and retain the request timeout in call provenance.
+- Show failed batch progress separately from successful results and keep continuation decisions consistent across the API and workbench.
 
 Code stats vs v3.2.3: total 17283 text lines (baseline 15663), +1749 (-129) = +1620, 10.34% text-line change.
 

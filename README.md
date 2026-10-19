@@ -33,3 +33,9 @@ windows in the workbench. The same authenticated resume operation appears in
 Help. Continuation keeps the original job and batch, reuses completed windows,
 and retains unsuccessful call usage. Uncertain calls remain blocked for receipt
 reconciliation. Refreshing the page does not restart paid analysis.
+
+If a verified terminal call has lost its response, an operator can make a
+separate explicit decision through the Help-discovered lost-window operation.
+This can incur an additional charge for that window. The service preserves the
+original unknown usage and the recorded decision; ordinary recovery never makes
+this decision automatically.

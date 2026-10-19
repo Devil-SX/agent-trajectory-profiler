@@ -118,6 +118,16 @@ worker gate parks active analysis at the next durable window boundary after its
 current request finishes; reopening the gate continues that same checkpoint
 without consuming another failure-recovery authorization.
 
+Lost responses have a separate explicit operator operation. Before authorizing
+another attempt, the service uses its own native Jindu read key to verify the
+exact call, receipt, account, route, model and terminal uncertain state. The
+operator must acknowledge possible duplicate charging. A transaction rechecks
+the original job snapshot and persists the verification proof, actor, decision
+and continuation generation. The original uncertain record and unknown usage
+remain intact. Later continuations inherit only those audited authorizations;
+they cannot bypass a different unknown call. This path currently rejects known
+provider usage because reconciling that measurement requires a separate policy.
+
 ## Analysis workbench and scheduling
 
 The single workbench preserves directory, activity-time, search and analysis-state filters.
