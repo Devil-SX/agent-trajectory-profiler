@@ -80,6 +80,8 @@ def test_filters_use_real_analysis_and_original_dates_before_pagination(tmp_path
     )
     assert len(store.sessions("owner", until="2026-10-06")["sessions"]) == 1
     assert store.sessions("owner", q="网站")["sessions"][0]["id"] == b
+    assert [row["id"] for row in store.sessions("owner", q=b)["sessions"]] == [b]
+    assert {row["id"] for row in store.sessions("owner", q=a)["sessions"]} == {a, c}
     assert store.sessions("other")["sessions"] == []
 
 

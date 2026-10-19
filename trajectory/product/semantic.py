@@ -1185,6 +1185,11 @@ class SemanticStore:
             haystack = " ".join(
                 str(item.get(k) or "")
                 for k in (
+                    "id",
+                    "parent_session_id",
+                    "agent",
+                    "project",
+                    "project_name",
                     "title",
                     "display_title",
                     "cwd",
