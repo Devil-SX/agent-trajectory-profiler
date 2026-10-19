@@ -13,7 +13,7 @@ import json
 import os
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from trajectory.product.contracts import (
     AnalysisBatchRequest,
@@ -1498,7 +1498,7 @@ class SemanticStore:
                 key = self._detail_revision(owner, sid, source_revision)
                 if key is None:
                     break
-                result = self._detail_cache.get(
+                result: dict[str, Any] = self._detail_cache.get(
                     key, lambda: self._detail(owner, sid, source_revision=source_revision)
                 )
                 if key == self._detail_revision(owner, sid, source_revision):
@@ -1511,7 +1511,7 @@ class SemanticStore:
         detail = self.detail(owner, sid, source_revision=source_revision)
         for operation in detail["operations"]:
             if operation["id"] == oid:
-                return operation
+                return cast(dict[str, Any], operation)
         raise ValueError("Unknown operation")
 
     def _detail(
