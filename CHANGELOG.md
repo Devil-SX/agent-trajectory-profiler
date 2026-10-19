@@ -4,7 +4,7 @@ All notable changes to **BatCave Trajectory** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [3.3.0] - 2026-10-19
 
 ### Added
 
@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Retain at most two compact ledger snapshots so account and global views can alternate without evicting each other; source contributions remain uncached.
 - Use compact window-local membership indices with precise validation feedback, and allow in-flight analysis to park at durable window boundaries during maintenance.
 - Wait longer than the gateway's upstream request deadline and retain the request timeout in call provenance.
+
+Code stats vs v3.2.3: total 17283 text lines (baseline 15663), +1749 (-129) = +1620, 10.34% text-line change.
 
 ## [3.2.3] - 2026-10-19
 
