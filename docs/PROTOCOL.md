@@ -93,6 +93,15 @@ explicit `allow_new_sources` root first requires an exact registered identity
 anchor, then derives new session IDs with that same path/hash rule; later
 Sparkstead discovery generates the same IDs. Unverified roots remain rejected.
 
+Retry diagnostics expose a code location and, for a source that changes during
+prefix validation, its canonical source ID with code
+`source_changed_during_validation`. That race leaves the checkpoint and outbox
+unchanged; the next scheduled run validates it again. Other failures retain the
+generic `sync_operation_failed` code and the CLI function/line where they arose.
+Diagnostics never include exception messages, source paths, credentials or bodies.
+The `selected_sources` count describes the current invocation's discovery scope;
+without CLI selectors or a root allowlist, automatic sync can include other sessions.
+
 The measured-event batch and source-content stream represent different data.
 Only the existing domain usage ledger can contribute token, price, tool-duration
 or human-input totals. Uploading raw bytes, reparsing or rerunning presentation

@@ -38,6 +38,29 @@ class RecoveryRequired(ValueError):
     """Checkpoint cannot be reconciled without explicit verified recovery."""
 
 
+class SourceValidationRace(ValueError):
+    """The readonly source changed before a chunk could be prepared safely."""
+
+    def __init__(self, source: str):
+        super().__init__("Source changed during prefix validation; retry required")
+        self.source = source
+
+
+def safe_error(error: BaseException) -> dict:
+    """Log code locations and canonical IDs, never exception messages or source paths."""
+    result = {"error": type(error).__name__, "retryable": True}
+    if isinstance(error, SourceValidationRace):
+        result.update(code="source_changed_during_validation", source_id=error.source)
+    else:
+        result["code"] = "sync_operation_failed"
+    trace = error.__traceback__
+    while trace is not None:
+        if trace.tb_frame.f_code.co_filename == __file__:
+            result["site"] = {"function": trace.tb_frame.f_code.co_name, "line": trace.tb_lineno}
+        trace = trace.tb_next
+    return result
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         raise ValueError("Sync redirects are prohibited")
@@ -178,7 +201,7 @@ class SyncState:
                     after.st_ctime_ns,
                 )
                 if verified != fingerprint:
-                    raise ValueError("Source changed during prefix validation; retry required")
+                    raise SourceValidationRace(source)
                 with self.db:
                     self.db.execute(
                         "INSERT OR REPLACE INTO metadata VALUES(?,?)",
@@ -203,7 +226,7 @@ class SyncState:
                 after.st_mtime_ns,
                 after.st_ctime_ns,
             ) != fingerprint:
-                raise ValueError("Source changed during prefix validation; retry required")
+                raise SourceValidationRace(source)
         body = {
             "schema_id": "trajectory-source-chunk/1",
             "mutation_id": str(uuid.uuid4()),
@@ -663,8 +686,10 @@ def main() -> int:
                 json.dumps(register_root(json.loads(args.config.read_text()), args.register_root))
             )
         except (OSError, ValueError, sqlite3.Error, urllib.error.URLError) as error:
+            diagnostic = safe_error(error)
+            diagnostic["registered"] = False
             print(
-                json.dumps({"error": type(error).__name__, "registered": False, "retryable": True}),
+                json.dumps(diagnostic),
                 file=sys.stderr,
             )
             return 1
@@ -703,7 +728,7 @@ def main() -> int:
                 return 0
         except (OSError, ValueError, sqlite3.Error, urllib.error.URLError) as error:
             # Never include exception message, response body, URL or source content.
-            print(json.dumps({"error": type(error).__name__, "retryable": True}), file=sys.stderr)
+            print(json.dumps(safe_error(error)), file=sys.stderr)
             if args.watch is None:
                 return 1
         if args.watch is None:

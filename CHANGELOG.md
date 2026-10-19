@@ -4,6 +4,12 @@ All notable changes to **BatCave Trajectory** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Identify source-sync validation races and safe error locations without logging private messages, paths or source contents, preserving the shared checkpoint and outbox.
+
 ## [3.4.0] - 2026-10-19
 
 ### Added

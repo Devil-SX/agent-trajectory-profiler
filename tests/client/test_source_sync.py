@@ -7,9 +7,10 @@ import json
 import tempfile
 import threading
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[2] / "tools" / "trajectory_source_sync.py"
@@ -213,6 +214,60 @@ class SourceSyncTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 with sync.process_lock(self.root / "state.lock"):
                     self.fail("Second writer acquired same lock")
+
+    def test_source_validation_race_preserves_checkpoint_and_pending_state(self):
+        for existing in (False, True):
+            with self.subTest(existing_checkpoint=existing):
+                self.state.db.execute("DELETE FROM sources")
+                self.state.db.execute("DELETE FROM metadata")
+                self.state.hash_cache.clear()
+                if existing:
+                    self.state.prepare("collector", self.spec)
+                    self.ack(self.state.next())
+                    self.path.write_bytes(self.path.read_bytes() + b"appended\n")
+                before = self.state.db.execute("SELECT * FROM sources").fetchall()
+                stat = self.path.stat()
+                changed = SimpleNamespace(
+                    st_dev=stat.st_dev,
+                    st_ino=stat.st_ino,
+                    st_size=stat.st_size + 1,
+                    st_mtime_ns=stat.st_mtime_ns,
+                    st_ctime_ns=stat.st_ctime_ns,
+                )
+                with patch.object(sync.os, "fstat", return_value=changed):
+                    with self.assertRaises(sync.SourceValidationRace) as caught:
+                        self.state.prepare("collector", self.spec)
+                diagnostic = sync.safe_error(caught.exception)
+                self.assertEqual(diagnostic["code"], "source_changed_during_validation")
+                self.assertEqual(
+                    diagnostic["source_id"], sync.source_id("collector", self.spec["legacy_path"])
+                )
+                self.assertEqual(before, self.state.db.execute("SELECT * FROM sources").fetchall())
+                self.assertIsNone(self.state.next())
+                self.assertTrue(self.state.prepare("collector", self.spec))
+                body = json.loads(self.state.next()[1])
+                if existing:
+                    self.assertEqual(body["generation"], before[0][1])
+                    self.assertEqual(body["start"], before[0][4])
+                self.ack(self.state.next())
+
+    def test_cli_diagnostics_never_log_exception_message_paths_or_secrets(self):
+        config = self.root / "config.json"
+        config.write_text("{}")
+        output = io.StringIO()
+        with (
+            patch.object(sync.sys, "argv", ["sync", "--config", str(config)]),
+            patch.object(
+                sync, "sync_once", side_effect=ValueError("SECRET https://private/source body")
+            ),
+            redirect_stderr(output),
+        ):
+            self.assertEqual(sync.main(), 1)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["code"], "sync_operation_failed")
+        self.assertEqual(result["site"]["function"], "main")
+        self.assertNotIn("SECRET", output.getvalue())
+        self.assertNotIn("private", output.getvalue())
 
     def test_dynamic_roots_keep_existing_source_identity_and_defer_new_files(self):
         identity = self.root / "identity.json"
