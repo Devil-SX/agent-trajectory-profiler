@@ -266,11 +266,17 @@ class SemanticStore:
         return result
 
     @staticmethod
-    def _queue(db: Any, owner: str, sid: str, kind: str, revision: str) -> str:
+    def _queue(
+        db: Any, owner: str, sid: str, kind: str, revision: str, *, refresh: bool = False
+    ) -> str:
         row = db.execute(
             "SELECT id FROM semantic_jobs WHERE owner=? AND session=? AND kind=? "
-            "AND source_revision=? AND status IN ('queued','running','complete')",
-            (owner, sid, kind, revision),
+            "AND source_revision=? AND (status IN ('queued','running') OR "
+            "(status='complete' AND ?=0 AND (kind='parse' OR EXISTS ("
+            "SELECT 1 FROM semantic_analyses a WHERE a.owner=semantic_jobs.owner "
+            "AND a.session=semantic_jobs.session "
+            "AND a.source_revision=semantic_jobs.source_revision))))",
+            (owner, sid, kind, revision, int(refresh)),
         ).fetchone()
         if row:
             return str(row[0])
@@ -297,6 +303,44 @@ class SemanticStore:
             ),
         )
         return identifier
+
+    def request_parse(self, owner: str, sid: str, value: AnalysisRequest) -> dict[str, Any]:
+        """Refresh normalized IR from the durable archive without uploading or model calls."""
+        body = value.model_dump_json() + ":parse:" + sid
+        with self.domain.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            prior = self.domain._prior(db, owner, value.mutation_id, body)
+            if prior:
+                return prior
+            source = None
+            for candidate in db.execute("SELECT * FROM source_archives WHERE owner=?", (owner,)):
+                if self.session_id(candidate["collector"], candidate["source"]) == sid:
+                    source = candidate
+                    break
+            if source is None or source["received_bytes"] != source["source_bytes"]:
+                raise ValueError("A complete account-owned source archive is required")
+            if db.execute(
+                "SELECT 1 FROM semantic_jobs WHERE owner=? AND session=? AND kind='analyze' "
+                "AND status IN ('queued','running')",
+                (owner, sid),
+            ).fetchone():
+                raise ValueError("Wait for active analysis before refreshing parser output")
+            revision = digest(source["generation"] + ":" + str(source["received_bytes"]))
+            job = self._queue(db, owner, sid, "parse", revision, refresh=True)
+            return self.domain._receipt(
+                db,
+                owner,
+                value.mutation_id,
+                body,
+                "session.parse",
+                {
+                    "job_id": job,
+                    "session_id": sid,
+                    "status": db.execute(
+                        "SELECT status FROM semantic_jobs WHERE id=?", (job,)
+                    ).fetchone()[0],
+                },
+            )
 
     def request_analysis(self, owner: str, sid: str, value: AnalysisRequest) -> dict[str, Any]:
         body = value.model_dump_json() + ":" + sid
@@ -563,6 +607,16 @@ class SemanticStore:
             ):
                 raise ValueError(
                     "Source changed during parsing; current revision remains authoritative"
+                )
+            previous = db.execute(
+                "SELECT body FROM semantic_sessions WHERE owner=? AND id=?", (owner, sid)
+            ).fetchone()
+            if previous and json.loads(previous["body"]).get("operations") != parsed.get(
+                "operations"
+            ):
+                db.execute(
+                    "UPDATE semantic_analyses SET source_revision=? WHERE owner=? AND session=?",
+                    ("parser-stale:" + revision, owner, sid),
                 )
             db.execute(
                 "INSERT OR REPLACE INTO semantic_sessions VALUES(?,?,?,?,?,?,?,?,?)",

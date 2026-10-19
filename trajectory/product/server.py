@@ -93,6 +93,14 @@ OPERATIONS: list[dict[str, Any]] = [
         "effect": "Read task hierarchy, measured costs and account-owned source evidence",
     },
     {
+        "id": "session_parse",
+        "method": "POST",
+        "path": "/api/sessions/{session_id}/parse",
+        "scope": "configure",
+        "input": AnalysisRequest,
+        "effect": "Idempotently refresh normalized IR from the durable source; no model usage",
+    },
+    {
         "id": "analysis_run",
         "method": "POST",
         "path": "/api/sessions/{session_id}/analysis",
@@ -512,6 +520,13 @@ def create_app(
                     return await asyncio.to_thread(semantic.ingest_source, principal.account, value)
                 if identifier == "analysis_batch_run":
                     return await asyncio.to_thread(semantic.request_batch, principal.account, value)
+                if identifier == "session_parse":
+                    return await asyncio.to_thread(
+                        semantic.request_parse,
+                        principal.account,
+                        request.path_params["session_id"],
+                        value,
+                    )
                 if identifier == "analysis_run":
                     return await asyncio.to_thread(
                         semantic.request_analysis,

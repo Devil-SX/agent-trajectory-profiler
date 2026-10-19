@@ -127,3 +127,18 @@ Opaque source and analysis revisions protect asynchronous results and human edit
 Evidence lookup verifies the active source revision before reading bounded raw
 bytes. Task edits mark an older profile artifact stale; the current browser derives
 task metrics from current membership rather than treating that artifact as current.
+
+## Batch analysis and normalized snapshot refresh
+
+Discover batch submission, status reads and parser refresh through authenticated
+Help. Requests share the individual-analysis queue and owner permissions. Reuse
+the exact mutation ID and request body when retrying a delivery. A batch includes
+stable session and job IDs, bounded concurrency and durable per-window progress.
+Different sessions may execute concurrently; windows within one session retain
+sequential continuation context. Removing the deployment worker gate prevents
+new claims and drains existing work before coordinator handover.
+
+Parser refresh reuses the durable archive and never calls a model. It rejects
+incomplete archives or sessions with active analysis. A changed normalized
+operation set makes prior task membership stale instead of attaching old IDs to
+new evidence. Source bytes and upload offsets remain unchanged.

@@ -1,9 +1,12 @@
 import base64
 import hashlib
+import json
 import uuid
 from pathlib import Path
 
-from trajectory.product.contracts import SourceChunk
+import pytest
+
+from trajectory.product.contracts import AnalysisRequest, SourceChunk
 from trajectory.product.domain import Domain
 from trajectory.product.semantic import SemanticStore, digest
 from trajectory.product.session_metadata import extract
@@ -122,3 +125,35 @@ def test_unified_ir_fallback_skips_injected_instructions_and_reads_lineage():
     assert value["display_title"] == "检查真实任务" and value["native_session_id"] == "native"
     assert value["parent_native_session_id"] == "parent" and value["agent_path"] == "/root/task"
     assert value["cwd"] is None and value["summary"] is None
+
+
+def test_parser_refresh_reuses_archive_and_invalidates_changed_membership(tmp_path):
+    store, add = seeded(tmp_path)
+    sid, revision = add(1, "/home/sdu/embodied", "任务", "2026-10-02")
+    original_job = store.claim_job()
+    assert original_job and original_job["kind"] == "parse"
+    store.finish_job(original_job)
+    store.save_analysis(
+        "owner",
+        sid,
+        revision,
+        {"tasks": [{"id": "root", "parent_id": None, "title": "任务", "operation_ids": ["op1"]}]},
+    )
+    request = AnalysisRequest(mutation_id=uuid.uuid4().hex)
+    with pytest.raises(ValueError):
+        store.request_parse("stranger", sid, request)
+    receipt = store.request_parse("owner", sid, request)
+    assert store.request_parse("owner", sid, request) == receipt
+    assert receipt["job_id"] != original_job["id"]
+    record = store.session_record("owner", sid)
+    parsed = json.loads(record["body"])
+    parsed["operations"][0]["id"] = "new-parser-op"
+    source, _ = store.archive("owner", sid)
+    store.save_session("owner", sid, source, revision, parsed)
+    detail = store.detail("owner", sid)
+    assert detail["status"] == "stale"
+    assert detail["has_analysis"] and not detail["tasks"]
+    analyze = store.request_analysis("owner", sid, AnalysisRequest(mutation_id=uuid.uuid4().hex))
+    assert analyze["status"] == "queued"
+    with pytest.raises(ValueError, match="active analysis"):
+        store.request_parse("owner", sid, AnalysisRequest(mutation_id=uuid.uuid4().hex))

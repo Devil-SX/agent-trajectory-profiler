@@ -72,3 +72,27 @@ alignment with separately delivered source bytes.
 Semantic analysis calls Jindu's authenticated chat-completion route through an independent native machine account. Jindu owns upstream credentials, route policy and the invocation ledger. Trajectory stores only the Jindu API base, route, machine Key and model selection. Supplier-direct and Responses transports have been removed; there is no direct fallback.
 
 Each job, chunk and attempt determines a stable X-Jindu-Call-ID. The stored analysis provenance contains route, call ID, receipt ID, per-request elapsed time and reported usage, including failed bounded repairs. Only received model output that fails structural validation permits one repair with a distinct attempt ID. HTTP errors, disconnects and uncertain outcomes stop the job for reconciliation rather than automatically creating another charge. Existing completed analyses retain their historical provenance.
+
+## Analysis workbench and scheduling
+
+The single workbench preserves directory, activity-time, search and analysis-state filters.
+Its `analyzed` state requires an actual stored analysis; a measured-only `partial`
+session is not an analysis. Display metadata comes from the canonical worker and
+bounded migration of old IR. The original first user message supplies a title;
+existing abstracts are reused, and no model call generates a display abstract.
+Session ordering uses original activity time, never import time.
+
+Batch and individual submissions share the same owner-bound job queue and stable
+mutation receipts. The runtime owns an exclusive coordinator lease and dispatches
+independent sessions to a bounded pool. Within a session, model windows remain
+sequential so task identities can continue across windows. Successful windows are
+fsynced before checkpoint replacement, and execution configuration is pinned.
+A standby gate stops new claims while active sessions drain naturally; a second
+coordinator cannot steal a live lease. Unknown gateway outcomes require receipt
+reconciliation before a fresh paid invocation.
+
+An authenticated parser refresh reads the existing archive without uploading it
+again or calling a model. Changed normalized operations invalidate the current
+analysis membership while retaining its historical body. Concurrent queued or
+running analysis prevents refresh. A later analysis request cannot reuse an old
+completed job whose result is stale.
