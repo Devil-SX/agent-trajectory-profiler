@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Separate source collection progress from price coverage, and label partial collection as known subtotals.
 - Share one analytical snapshot across public summaries and task attribution, invalidated by committed usage, price and correction changes.
-- Detect complete-prefix rewrites, refuse silent recovery after checkpoint loss, and support explicit direct HTTPS transport for the shared synchronizer.
+- Detect complete-prefix rewrites, refuse silent recovery after checkpoint loss, support explicit direct HTTPS transport, and discover new sessions through verified root identities without waiting for the foreground collector.
 - Atomically persist model checkpoints and remove temporary parser inputs while preserving the authoritative source archive.
 - Verify concurrent delivery, source/price cache invalidation and preservation of human task edits.
 

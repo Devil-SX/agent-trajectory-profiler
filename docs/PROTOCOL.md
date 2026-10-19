@@ -88,7 +88,10 @@ generation. The current API has no prefix digest for automatic recovery. A new
 server origin/collector requires a different state binding. Full-prefix hashing detects
 rewrites: a new generation begins at zero; an old generation cannot be reactivated.
 Existing Sparkstead source IDs are discovered through its read-only source
-registry, with the original collector ID and exact legacy path mapping.
+registry, with the original collector ID and exact legacy path mapping. An
+explicit `allow_new_sources` root first requires an exact registered identity
+anchor, then derives new session IDs with that same path/hash rule; later
+Sparkstead discovery generates the same IDs. Unverified roots remain rejected.
 
 The measured-event batch and source-content stream represent different data.
 Only the existing domain usage ledger can contribute token, price, tool-duration
