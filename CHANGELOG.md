@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.4.3] - 2026-10-19
+
+### Fixed
+
+- Coalesce session filters across status, search, project and dates; retain the complete scope on reload and reject stale results without clearing the current selection or pagination.
+- Avoid reconstructing existing metric buckets while preserving ledger traversal, attribution, deduplication, pricing and unknown values.
+
+Code stats vs v3.4.2: total 20304 text lines (baseline 20097), +249 (-42) = +207, 1.03% text-line change.
+
 ## [3.4.2] - 2026-10-19
 
 ### Fixed
