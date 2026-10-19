@@ -644,21 +644,30 @@ class SemanticStore:
             )
 
     def backfill_metadata(self, owner: str, limit: int = 32) -> int:
-        """Migrate a bounded page of old canonical IR without model calls or source rewriting."""
+        """Migrate old IR one snapshot at a time, bounded by count and text budget."""
+        migrated = 0
+        read_chars = 0
         with self.domain.connect() as db:
             rows = db.execute(
-                "SELECT s.id,s.title,s.body FROM semantic_sessions s "
+                "SELECT s.id,s.title FROM semantic_sessions s "
                 "LEFT JOIN semantic_session_metadata m ON m.owner=s.owner AND m.session=s.id "
                 "WHERE s.owner=? AND m.session IS NULL ORDER BY s.updated DESC LIMIT ?",
                 (owner, limit),
-            ).fetchall()
+            )
             for row in rows:
-                metadata = extract_metadata(json.loads(row["body"]), row["title"])
+                snapshot = db.execute(
+                    "SELECT body FROM semantic_sessions WHERE owner=? AND id=?", (owner, row["id"])
+                ).fetchone()[0]
+                metadata = extract_metadata(json.loads(snapshot), row["title"])
                 db.execute(
                     "INSERT OR IGNORE INTO semantic_session_metadata VALUES(?,?,?,?)",
                     (owner, row["id"], json.dumps(metadata), stamp()),
                 )
-        return len(rows)
+                migrated += 1
+                read_chars += len(snapshot)
+                if read_chars >= 16 * 1024 * 1024:
+                    break
+        return migrated
 
     def session_record(self, owner: str, sid: str) -> dict[str, Any]:
         with self.domain.connect() as db:

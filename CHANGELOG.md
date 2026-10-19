@@ -25,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Reuse the source synchronizer checkpoint and outbox for Pi collection.
 - Drain active analysis jobs before coordinator lease handoff and prevent uncertain Jindu calls from being resubmitted under a new paid identity.
 
-Code stats vs v3.1.0: total 14084 text lines (baseline 11307), +2945 (-168) = +2777, 24.56% text-line change.
+Code stats vs v3.1.0: total 14093 text lines (baseline 11307), +2954 (-168) = +2786, 24.64% text-line change.
 
 ## [3.1.0] - 2026-10-19
 
