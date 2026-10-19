@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from trajectory.product.contracts import AnalysisRequest, SourceChunk, TaskEdit
+from trajectory.product.session_metadata import extract as extract_metadata
 
 if TYPE_CHECKING:
     from trajectory.product.domain import Domain
@@ -116,6 +117,9 @@ class SemanticStore:
                     id TEXT PRIMARY KEY,owner TEXT,session TEXT,kind TEXT,status TEXT,
                     source_revision TEXT,message TEXT,created TEXT,updated TEXT);
                 CREATE INDEX IF NOT EXISTS semantic_jobs_pending ON semantic_jobs(status,created);
+                CREATE TABLE IF NOT EXISTS semantic_session_metadata(
+                    owner TEXT,session TEXT,body TEXT,updated TEXT,
+                    PRIMARY KEY(owner,session));
             """)
 
     @staticmethod
@@ -211,6 +215,7 @@ class SemanticStore:
                     stamp(),
                 ),
             )
+
             if cursor == value.source_bytes:
                 revision = digest(value.generation + ":" + str(cursor))
                 self._queue(db, owner, sid, "parse", revision)
@@ -376,6 +381,28 @@ class SemanticStore:
                     stamp(),
                 ),
             )
+
+            db.execute(
+                "INSERT OR REPLACE INTO semantic_session_metadata VALUES(?,?,?,?)",
+                (owner, sid, json.dumps(extract_metadata(parsed, source["source_name"])), stamp()),
+            )
+
+    def backfill_metadata(self, owner: str, limit: int = 32) -> int:
+        """Migrate a bounded page of old canonical IR without model calls or source rewriting."""
+        with self.domain.connect() as db:
+            rows = db.execute(
+                "SELECT s.id,s.title,s.body FROM semantic_sessions s "
+                "LEFT JOIN semantic_session_metadata m ON m.owner=s.owner AND m.session=s.id "
+                "WHERE s.owner=? AND m.session IS NULL ORDER BY s.updated DESC LIMIT ?",
+                (owner, limit),
+            ).fetchall()
+            for row in rows:
+                metadata = extract_metadata(json.loads(row["body"]), row["title"])
+                db.execute(
+                    "INSERT OR IGNORE INTO semantic_session_metadata VALUES(?,?,?,?)",
+                    (owner, row["id"], json.dumps(metadata), stamp()),
+                )
+        return len(rows)
 
     def session_record(self, owner: str, sid: str) -> dict[str, Any]:
         with self.domain.connect() as db:
@@ -546,6 +573,7 @@ class SemanticStore:
                 "coverage": {"content_available": False, "collection": session["collection"]},
             }
         parsed = json.loads(record["body"])
+        metadata = extract_metadata(parsed, record["title"])
         operations = parsed.get("operations", [])
         if contributions is None:
             contributions = self.domain.overview(owner, contributions=True)["event_contributions"]
@@ -573,7 +601,7 @@ class SemanticStore:
         status = (
             "complete"
             if analysis and analysis["source_revision"] == record["source_revision"]
-            else "not_started"
+            else "stale" if analysis else "not_started"
         )
         if (
             job
@@ -644,6 +672,13 @@ class SemanticStore:
             "source_records are retained for provenance,",
         )
         warnings = [note for note in parser_notes if not str(note).startswith(generic_notes)]
+        if analysis and not current_analysis:
+            warnings.append(
+                "分析来自旧源版本；任务名称供参考，开销与证据仅覆盖仍可匹配的当前操作。"
+            )
+        parser_coverage = parsed.get("coverage") or {}
+        if parser_coverage.get("quarantined_records"):
+            warnings.append("部分损坏记录已隔离，原始字节保留；分析仅覆盖有效记录。")
         if not attribution["ledger_available"]:
             warnings.append("尚未收到对应的用量账本，开销和人类投入保持未知。")
         elif not attribution["usage_available"]:
@@ -652,6 +687,7 @@ class SemanticStore:
             warnings.append("部分用量按源记录位置估计归属，任务级开销不是精确调用对齐。")
         return {
             "session": {
+                **metadata,
                 "id": sid,
                 "title": record["title"],
                 "agent": record["agent"],
@@ -659,6 +695,8 @@ class SemanticStore:
                 "metrics": metrics,
             },
             "status": status,
+            "has_analysis": analysis is not None,
+            "analysis_current": current_analysis,
             "message": job["message"] if job and status == "failed" else "",
             "analysis_revision": analysis["revision"] if analysis else "",
             "source_revision": record["source_revision"],
@@ -669,6 +707,7 @@ class SemanticStore:
             "provenance": value.get("provenance", {}),
             "coverage": {
                 "parser": parsed.get("parser"),
+                "parser_coverage": parser_coverage,
                 "parser_notes": parser_notes,
                 "warnings": warnings,
                 "content_available": True,
@@ -680,8 +719,29 @@ class SemanticStore:
         }
 
     def sessions(
-        self, owner: str, project: str = "", since: str = "", until: str = ""
+        self,
+        owner: str,
+        project: str = "",
+        since: str = "",
+        until: str = "",
+        analysis_status: str = "all",
+        cwd: str = "",
+        sort: str = "last_activity_desc",
+        q: str = "",
+        limit: int = 0,
+        cursor: str = "",
     ) -> dict[str, Any]:
+        allowed = {"all", "analyzed", "not_started", "busy", "failed", "stale"}
+        if analysis_status not in allowed or sort not in {
+            "last_activity_desc",
+            "started_desc",
+            "directory",
+        }:
+            raise ValueError("Unsupported session filter or sort")
+        if not 0 <= limit <= 1000 or (cursor and not cursor.isdecimal()):
+            raise ValueError("Invalid session page")
+        offset = int(cursor or "0")
+        self.backfill_metadata(owner)
         contributions = self.domain.overview(owner, contributions=True)["event_contributions"]
         groups: dict[str, list[dict[str, Any]]] = {}
         for contribution in contributions:
@@ -705,6 +765,12 @@ class SemanticStore:
                     (owner,),
                 )
             }
+            metadata = {
+                row["session"]: json.loads(row["body"])
+                for row in db.execute(
+                    "SELECT session,body FROM semantic_session_metadata WHERE owner=?", (owner,)
+                )
+            }
             analyses = {
                 row["session"]: dict(row)
                 for row in db.execute(
@@ -720,17 +786,36 @@ class SemanticStore:
                     (owner,),
                 )
             ]
+            archives = {
+                (row["collector"], row["source"]): collection_progress(row)
+                for row in db.execute(
+                    "SELECT collector,source,received_bytes AS read_bytes,source_bytes,"
+                    "0 AS errors,0 AS unknown "
+                    "FROM source_archives WHERE owner=?",
+                    (owner,),
+                )
+            }
+        native_to_id = {
+            value["native_session_id"]: sid
+            for sid, value in metadata.items()
+            if value.get("native_session_id")
+        }
         recent_jobs = {row["session"]: row for row in jobs}
         items = []
         for sid in groups.keys() | records.keys():
             own = groups.get(sid, [])
             event = own[0]["record"] if own else {}
-            record = records.get(sid, {})
-            analysis = analyses.get(sid, {})
+            record, analysis, meta = (
+                records.get(sid, {}),
+                analyses.get(sid, {}),
+                metadata.get(sid, {}),
+            )
+            has_analysis = bool(analysis)
+            current = has_analysis and analysis["source_revision"] == record.get("source_revision")
             status = (
                 "complete"
-                if analysis and analysis["source_revision"] == record.get("source_revision")
-                else "not_started" if record else "partial"
+                if current
+                else "stale" if has_analysis else "not_started" if record else "partial"
             )
             job = recent_jobs.get(sid)
             if (
@@ -739,41 +824,104 @@ class SemanticStore:
                 and job["status"] in {"queued", "running", "failed"}
             ):
                 status = job["status"]
-            metrics = total_metrics(own)
-            collection = ledger_sources.get(
-                (
-                    record.get("collector") or event.get("collector"),
-                    record.get("source") or event.get("source"),
-                ),
-                collection_progress(None),
+            measured_time = max((c["record"].get("timestamp") or "" for c in own), default="")
+            last = meta.get("last_activity_at") or measured_time or None
+            key = (
+                record.get("collector") or event.get("collector"),
+                record.get("source") or event.get("source"),
             )
+            collection = ledger_sources.get(key) or archives.get(key) or collection_progress(None)
+            metrics = total_metrics(own)
             metrics["collection_status"] = collection["status"]
+            parent_native = meta.get("parent_native_session_id")
             item = {
                 "id": sid,
                 "title": record.get("title") or str(event.get("session", sid)),
+                "display_title": meta.get("display_title")
+                or ("会话 " + str(meta.get("native_session_id") or sid)[:8]),
+                "cwd": meta.get("cwd"),
+                "started_at": meta.get("started_at"),
+                "last_activity_at": last,
+                "first_user_message": meta.get("first_user_message"),
+                "summary": meta.get("summary"),
+                "native_session_id": meta.get("native_session_id") or event.get("session"),
+                "parent_session_id": native_to_id.get(parent_native),
+                "parent_native_session_id": parent_native,
+                "agent_path": meta.get("agent_path"),
                 "agent": record.get("agent") or event.get("ecosystem", "unknown"),
                 "project": event.get("project", "unassigned"),
                 "project_name": event.get("project_name", "未归属"),
-                "updated_at": record.get("updated")
-                or max((c["record"].get("timestamp") or "" for c in own), default=""),
+                "updated_at": record.get("updated") or measured_time,
                 "analysis_status": status,
+                "has_analysis": has_analysis,
+                "analysis_current": current,
                 "metrics": metrics,
                 "content_available": bool(record),
                 "collection": collection,
             }
             if project and item["project"] != project:
                 continue
-            day = (item["updated_at"] or "")[:10]
-            if day and ((since and day < since) or (until and day > until)):
+            day = (last or "")[:10]
+            if (since or until) and (not day or (since and day < since) or (until and day > until)):
+                continue
+            haystack = " ".join(
+                str(item.get(k) or "")
+                for k in (
+                    "title",
+                    "display_title",
+                    "cwd",
+                    "first_user_message",
+                    "summary",
+                    "native_session_id",
+                    "agent_path",
+                )
+            ).casefold()
+            if q and q.casefold() not in haystack:
                 continue
             items.append(item)
-        items.sort(key=lambda item: item["updated_at"] or "", reverse=True)
+        directories = sorted({str(item["cwd"]) for item in items if item["cwd"]})
+        if cwd:
+            items = [
+                i
+                for i in items
+                if i["cwd"] == cwd or str(i["cwd"] or "").startswith(cwd.rstrip("/") + "/")
+            ]
+
+        def matches(item: dict[str, Any], value: str) -> bool:
+            if value == "all":
+                return True
+            if value == "analyzed":
+                return bool(item["has_analysis"])
+            if value == "busy":
+                return item["analysis_status"] in {"queued", "running"}
+            if value == "stale":
+                return bool(item["has_analysis"]) and not item["analysis_current"]
+            if value == "not_started":
+                return not item["has_analysis"] and item["analysis_status"] in {
+                    "not_started",
+                    "partial",
+                }
+            return str(item["analysis_status"]) == value
+
+        counts = {value: sum(matches(item, value) for item in items) for value in allowed}
+        items = [i for i in items if matches(i, analysis_status)]
+        items.sort(key=lambda i: (str(i.get("last_activity_at") or ""), i["id"]), reverse=True)
+        if sort == "started_desc":
+            items.sort(key=lambda i: str(i.get("started_at") or ""), reverse=True)
+        elif sort == "directory":
+            items.sort(key=lambda i: str(i.get("cwd") or "\uffff").casefold())
+        total = len(items)
+        page = items[offset : offset + limit] if limit else items[offset:]
+        next_cursor = str(offset + len(page)) if limit and offset + len(page) < total else None
         return {
-            "sessions": items,
-            "next_cursor": None,
+            "sessions": page,
+            "next_cursor": next_cursor,
+            "total": total,
+            "status_counts": counts,
+            "directories": directories,
             "coverage": {
                 "content_sessions": len(records),
-                "total_sessions": len(items),
+                "total_sessions": total,
                 "message": "历史仅用量记录需补传执行内容后才能分段。",
             },
         }

@@ -434,6 +434,12 @@ def create_app(
                         request.query_params.get("project", ""),
                         request.query_params.get("since", ""),
                         request.query_params.get("until", ""),
+                        analysis_status=request.query_params.get("analysis_status", "all"),
+                        cwd=request.query_params.get("cwd", ""),
+                        sort=request.query_params.get("sort", "last_activity_desc"),
+                        q=request.query_params.get("q", ""),
+                        limit=int(request.query_params.get("limit", "0")),
+                        cursor=request.query_params.get("cursor", ""),
                     )
                 if identifier == "analysis_read":
                     return await asyncio.to_thread(
