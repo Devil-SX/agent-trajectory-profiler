@@ -82,8 +82,10 @@ is readable only by the registered machine bound to that collector.
 manual Agent calls and automatic scheduling. Both use the same private config,
 SQLite state and OS lock. A second caller returns without advancing state while
 the first holds the lock. The outbox holds the exact mutation/body until a matching
-durable receipt. Server progress repairs a missing local checkpoint; a new server
-origin/collector requires a different state binding. Full-prefix hashing detects
+durable receipt. A missing local checkpoint is checked against server progress; existing remote
+content requires explicit recovery and is never silently re-uploaded under a new
+generation. The current API has no prefix digest for automatic recovery. A new
+server origin/collector requires a different state binding. Full-prefix hashing detects
 rewrites: a new generation begins at zero; an old generation cannot be reactivated.
 Existing Sparkstead source IDs are discovered through its read-only source
 registry, with the original collector ID and exact legacy path mapping.

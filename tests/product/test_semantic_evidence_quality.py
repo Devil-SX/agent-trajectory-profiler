@@ -173,3 +173,56 @@ def test_merge_preserves_time_order_and_marks_profile_stale(seeded):
     split = store.detail("owner", sid, contributions=[])
     assert split["tasks"][0]["operation_ids"] == ["op-0"]
     assert split["tasks"][1]["operation_ids"] == ["op-1", "op-2", "op-3"]
+
+
+def test_background_result_cannot_overwrite_a_human_revision(seeded):
+    store, sid, revision, _ = seeded
+    initial = {
+        "tasks": [
+            {
+                "id": "root",
+                "parent_id": None,
+                "title": "Original",
+                "operation_ids": ["op-0", "op-1", "op-2", "op-3"],
+            }
+        ],
+        "provenance": {},
+    }
+    before = store.save_analysis("owner", sid, revision, initial)
+    store.edit_task(
+        "owner",
+        sid,
+        TaskEdit(
+            mutation_id=uuid.uuid4().hex,
+            analysis_revision=before,
+            action="rename",
+            task_id="root",
+            title="Human edit",
+        ),
+    )
+    with pytest.raises(ValueError, match="human edits preserved"):
+        store.save_analysis("owner", sid, revision, initial, expected_revision=before)
+    assert store.detail("owner", sid, contributions=[])["tasks"][0]["title"] == "Human edit"
+
+
+def test_overlapping_upload_callers_share_one_transactional_receipt(seeded):
+    from concurrent.futures import ThreadPoolExecutor
+
+    store, _, _, value = seeded
+    value = value.model_copy(update={"source": "b" * 64, "mutation_id": uuid.uuid4().hex})
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        receipts = list(pool.map(lambda _: store.ingest_source("machine", value), range(8)))
+    assert all(receipt == receipts[0] for receipt in receipts)
+    with store.domain.connect() as db:
+        assert (
+            db.execute("SELECT COUNT(*) FROM source_chunks WHERE source=?", ("b" * 64,)).fetchone()[
+                0
+            ]
+            == 1
+        )
+        assert (
+            db.execute("SELECT COUNT(*) FROM receipts WHERE id=?", (value.mutation_id,)).fetchone()[
+                0
+            ]
+            == 1
+        )
