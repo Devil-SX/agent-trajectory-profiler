@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.4.4] - 2026-10-19
+
+### Fixed
+
+- Clarify that historical task results and costs remain visible for their saved source version. Label existing-result refreshes accurately without triggering another analysis.
+
+Code stats vs v3.4.3: total 20819 text lines (baseline 20811), +15 (-7) = +8, 0.04% text-line change.
+
 ## [3.4.3] - 2026-10-19
 
 ### Fixed
