@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Preserve global consumption deduplication while avoiding unrelated usage-body decoding, and index operation attribution and task descendants instead of repeatedly scanning them.
 
 
+Code stats vs v3.4.4: total 21396 text lines (baseline 20819), +633 (-56) = +577, 2.77% text-line change.
+
 ## [3.4.4] - 2026-10-19
 
 ### Fixed
