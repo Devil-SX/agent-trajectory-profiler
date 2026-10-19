@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-20
+
+### Changed
+
+- Return operation metadata in analysis details and load execution text through the authenticated, revision-pinned `operation_read` interface. Update the dashboard and Help together; clients that need text must use the discovered operation.
+
+### Fixed
+
+- Reuse revision-bound source attribution and completed details with bounded memory and coalesced concurrent reads, without blocking on overview calculations.
+- Preserve global consumption deduplication while avoiding unrelated usage-body decoding, and index operation attribution and task descendants instead of repeatedly scanning them.
+
+
 ## [3.4.4] - 2026-10-19
 
 ### Fixed

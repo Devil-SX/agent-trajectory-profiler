@@ -1443,32 +1443,44 @@ class SemanticStore:
             db.execute("BEGIN")
             session = db.execute(
                 "SELECT collector,source,source_revision,updated FROM semantic_sessions "
-                "WHERE owner=? AND id=?", (owner, sid)
+                "WHERE owner=? AND id=?",
+                (owner, sid),
             ).fetchone()
             if session is None:
                 return None
             job = db.execute(
                 "SELECT id,status,updated FROM semantic_jobs WHERE owner=? AND session=? "
-                "AND kind='analyze' ORDER BY created DESC LIMIT 1", (owner, sid)
+                "AND kind='analyze' ORDER BY created DESC LIMIT 1",
+                (owner, sid),
             ).fetchone()
             # Active progress and failed-job recovery eligibility are always read fresh.
             if job and job["status"] != "complete":
                 return None
             heads = [tuple(session), tuple(job) if job else None]
             for query, params in (
-                ("SELECT revision,source_revision,updated FROM semantic_analyses "
-                 "WHERE owner=? AND session=?", (owner, sid)),
-                ("SELECT generation,received_bytes,source_bytes,updated FROM source_archives "
-                 "WHERE owner=? AND collector=? AND source=?", (owner, *tuple(session)[:2])),
-                ("SELECT revision,read_bytes,source_bytes,errors,unknown,received FROM sources "
-                 "WHERE owner=? AND collector=? AND source=?", (owner, *tuple(session)[:2])),
-                ("SELECT updated FROM semantic_session_metadata WHERE owner=? AND session=?",
-                 (owner, sid)),
-                ("SELECT rowid FROM audit WHERE operation IN ('ingest','price','correct') "
-                 "ORDER BY rowid DESC LIMIT 1", ()),
+                (
+                    "SELECT revision,source_revision,updated FROM semantic_analyses "
+                    "WHERE owner=? AND session=?",
+                    (owner, sid),
+                ),
+                (
+                    "SELECT generation,received_bytes,source_bytes,updated FROM source_archives "
+                    "WHERE owner=? AND collector=? AND source=?",
+                    (owner, *tuple(session)[:2]),
+                ),
+                (
+                    "SELECT revision,read_bytes,source_bytes,errors,unknown,received FROM sources "
+                    "WHERE owner=? AND collector=? AND source=?",
+                    (owner, *tuple(session)[:2]),
+                ),
+                (
+                    "SELECT updated FROM semantic_session_metadata WHERE owner=? AND session=?",
+                    (owner, sid),
+                ),
             ):
                 row = db.execute(query, params).fetchone()
                 heads.append(tuple(row) if row else None)
+            heads.append((self.domain.ledger_revision(db),))
         return (owner, sid, source_revision, *heads)
 
     def detail(

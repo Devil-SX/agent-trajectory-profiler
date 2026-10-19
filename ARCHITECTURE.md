@@ -31,6 +31,24 @@ The remote domain remains the authority for operation identity, durable source r
 
 Automatic collectors and Agent-invoked synchronization must use one source identity and durable checkpoint/outbox chain. Their transports may differ, but source revision and consumption deduplication remain shared; replacing the parser must not reset delivery state or duplicate existing usage. Old metadata-only input cannot produce semantic task labels without original execution evidence.
 
+## Derived read performance
+
+`read_cache.py` owns bounded, per-revision singleflight caching for derived source
+contributions and completed session details. It stores serialized values and
+returns independent objects; it is never a canonical store. Keys include owner,
+source and authoritative ledger/analysis/source heads. Active or failed jobs
+bypass detail caching. Source calculations use a separate two-slot scan bound,
+not the overview lock. Cross-source consumption winners are selected globally
+before unrelated bodies are discarded; source filtering must never resurrect a
+losing duplicate. Task membership, source lines and call IDs use indexes, with
+memoized descendant membership and operation-order segments.
+
+The authenticated analysis read returns operation metadata and `body_available`,
+without execution text. `operation_read` returns one complete operation pinned to
+the displayed `source_revision`; the browser requests it only on expansion. Raw
+byte evidence remains a separate bounded operation. Internal analysis workers
+continue to consume the complete canonical detail through the same store.
+
 ## Development validation
 
 Current Python requires 3.12 or newer; the wheel contains only the product packages declared in pyproject.toml. Current browser assertions are executable scripts under `tests/browser`, with dependencies isolated there. CI requires a remote isolated BatCave runner and uses disposable directories under `/home/saveer/BatCave/tests`, with no production database mounted. Missing runtime dependencies or test runners are explicit failures.
