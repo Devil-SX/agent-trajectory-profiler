@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-10-19
+
+### Fixed
+
+- Separate source collection progress from price coverage, and label partial collection as known subtotals.
+- Share one analytical snapshot across public summaries and task attribution, invalidated by committed usage, price and correction changes.
+- Detect complete-prefix rewrites, refuse silent recovery after checkpoint loss, and support explicit direct HTTPS transport for the shared synchronizer.
+- Atomically persist model checkpoints and remove temporary parser inputs while preserving the authoritative source archive.
+- Verify concurrent delivery, source/price cache invalidation and preservation of human task edits.
+
+Code stats vs v3.0.0: total 11025 text lines (baseline 10202), +949 (-126) = +823, 8.07% text-line change.
+
 ## [3.0.0] - 2026-10-19
 
 ### Added

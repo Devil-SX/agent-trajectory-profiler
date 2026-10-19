@@ -200,9 +200,11 @@ class SourceSyncTests(unittest.TestCase):
         config = self.root / "config.json"
         config.write_text("{}")
         output = io.StringIO()
-        with patch.object(sync.sys, "argv", ["sync", "--config", str(config)]), patch.object(
-            sync, "sync_once", side_effect=BlockingIOError
-        ), redirect_stdout(output):
+        with (
+            patch.object(sync.sys, "argv", ["sync", "--config", str(config)]),
+            patch.object(sync, "sync_once", side_effect=BlockingIOError),
+            redirect_stdout(output),
+        ):
             self.assertEqual(sync.main(), 0)
         self.assertEqual(json.loads(output.getvalue())["state"], "busy")
 

@@ -72,6 +72,26 @@ def total_metrics(items: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def collection_progress(row: Any) -> dict[str, Any]:
+    """Only the collector-reported ledger snapshot, not raw-generation alignment."""
+    if row is None:
+        return {
+            "status": "unknown",
+            "read_bytes": None,
+            "source_bytes": None,
+            "parse_errors": None,
+            "unknown_events": None,
+        }
+    read, size, errors = int(row["read_bytes"]), int(row["source_bytes"]), int(row["errors"])
+    return {
+        "status": "partial" if read < size or errors else "complete",
+        "read_bytes": read,
+        "source_bytes": size,
+        "parse_errors": errors,
+        "unknown_events": int(row["unknown"]),
+    }
+
+
 class SemanticStore:
     def __init__(self, domain: Domain):
         self.domain = domain
@@ -523,7 +543,7 @@ class SemanticStore:
                 "tasks": [],
                 "operations": [],
                 "unassigned_operation_ids": [],
-                "coverage": {"content_available": False},
+                "coverage": {"content_available": False, "collection": session["collection"]},
             }
         parsed = json.loads(record["body"])
         operations = parsed.get("operations", [])
@@ -531,6 +551,13 @@ class SemanticStore:
             contributions = self.domain.overview(owner, contributions=True)["event_contributions"]
         attribution = self._measure_operations(owner, record, operations, contributions)
         with self.domain.connect() as db:
+            collection = collection_progress(
+                db.execute(
+                    "SELECT read_bytes,source_bytes,errors,unknown FROM sources "
+                    "WHERE owner=? AND collector=? AND source=?",
+                    (owner, record["collector"], record["source"]),
+                ).fetchone()
+            )
             analysis = db.execute(
                 "SELECT * FROM semantic_analyses WHERE owner=? AND session=?", (owner, sid)
             ).fetchone()
@@ -577,6 +604,7 @@ class SemanticStore:
         for task in tasks:
             ids = members(task["id"], set())
             task["metrics"] = total_metrics([by_id[i]["metrics"] for i in ids if i in by_id])
+            task["metrics"]["collection_status"] = collection["status"]
             task["segments"] = []
             previous = -2
             for index, operation in enumerate(operations):
@@ -606,7 +634,16 @@ class SemanticStore:
                     and item["record"]["source"] == record["source"]
                 ]
             )
-        warnings = list(parsed.get("warnings", []))
+        metrics["collection_status"] = collection["status"]
+        for operation in operations:
+            operation["metrics"]["collection_status"] = collection["status"]
+        parser_notes = list(parsed.get("warnings", []))
+        generic_notes = (
+            "upstream IR usage zero does not establish source availability;",
+            "upstream parser accepts complete snapshots,",
+            "source_records are retained for provenance,",
+        )
+        warnings = [note for note in parser_notes if not str(note).startswith(generic_notes)]
         if not attribution["ledger_available"]:
             warnings.append("尚未收到对应的用量账本，开销和人类投入保持未知。")
         elif not attribution["usage_available"]:
@@ -632,11 +669,13 @@ class SemanticStore:
             "provenance": value.get("provenance", {}),
             "coverage": {
                 "parser": parsed.get("parser"),
+                "parser_notes": parser_notes,
                 "warnings": warnings,
                 "content_available": True,
                 "ledger_available": attribution["ledger_available"],
                 "usage_available": attribution["usage_available"],
                 "attribution": attribution,
+                "collection": collection,
             },
         }
 
@@ -650,6 +689,14 @@ class SemanticStore:
             sid = self.session_id(event["collector"], event["source"])
             groups.setdefault(sid, []).append(contribution)
         with self.domain.connect() as db:
+            ledger_sources = {
+                (row["collector"], row["source"]): collection_progress(row)
+                for row in db.execute(
+                    "SELECT collector,source,read_bytes,source_bytes,errors,unknown "
+                    "FROM sources WHERE owner=?",
+                    (owner,),
+                )
+            }
             records = {
                 row["id"]: dict(row)
                 for row in db.execute(
@@ -693,6 +740,14 @@ class SemanticStore:
             ):
                 status = job["status"]
             metrics = total_metrics(own)
+            collection = ledger_sources.get(
+                (
+                    record.get("collector") or event.get("collector"),
+                    record.get("source") or event.get("source"),
+                ),
+                collection_progress(None),
+            )
+            metrics["collection_status"] = collection["status"]
             item = {
                 "id": sid,
                 "title": record.get("title") or str(event.get("session", sid)),
@@ -704,6 +759,7 @@ class SemanticStore:
                 "analysis_status": status,
                 "metrics": metrics,
                 "content_available": bool(record),
+                "collection": collection,
             }
             if project and item["project"] != project:
                 continue

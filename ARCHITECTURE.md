@@ -58,3 +58,11 @@ revision so a profiler failure can be retried without charging the model again.
 The current parser rebuilds a changed complete snapshot; it does not claim an
 incremental parse algorithm. Large histories therefore require bounded delivery
 and measured capacity planning.
+
+The domain memoizes one analytical snapshot by owner, filters and committed
+ledger audit revision. Public summaries and semantic attribution share this
+calculation; concurrent callers coalesce. Usage, price and project-correction
+commits invalidate it, while raw uploads and request traces do not. Authorization
+is checked before every request and is never cached here. Source collection
+progress is distinct from price coverage and does not prove cross-generation
+alignment with separately delivered source bytes.

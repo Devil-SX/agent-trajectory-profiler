@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import threading
 from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -23,6 +24,9 @@ class Domain:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
+        self._overview_lock = threading.Lock()
+        self._overview_key: tuple[Any, ...] | None = None
+        self._overview_value: dict[str, Any] | None = None
         with self.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS request_traces(
@@ -268,7 +272,31 @@ class Domain:
     def overview(
         self, owner: str | None, since: str = "", until: str = "", *, contributions: bool = False
     ) -> dict[str, Any]:
+        # Public summaries and semantic attribution share the same computed snapshot.
+        # Only ledger mutations invalidate it; raw uploads and request traces do not.
         with self.connect() as db:
+            revision = db.execute(
+                "SELECT rowid FROM audit WHERE operation IN ('ingest','price','correct') "
+                "ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+        key = (owner, since, until, revision[0] if revision else 0)
+        with self._overview_lock:
+            if self._overview_key != key or self._overview_value is None:
+                # Keep one snapshot, so browsing many date filters cannot retain N ledgers.
+                self._overview_value = None
+                self._overview_key = None
+                value = self._calculate_overview(owner, since, until, contributions=True)
+                self._overview_key, self._overview_value = key, value
+            value = self._overview_value
+            return dict(value) if contributions else {
+                name: item for name, item in value.items() if name != "event_contributions"
+            }
+
+    def _calculate_overview(
+        self, owner: str | None, since: str = "", until: str = "", *, contributions: bool = False
+    ) -> dict[str, Any]:
+        with self.connect() as db:
+            db.execute("BEGIN")
             where, params = (" WHERE owner=?", (owner,)) if owner else ("", ())
             rows = db.execute(
                 "SELECT owner,collector,source,body FROM events" + where, params

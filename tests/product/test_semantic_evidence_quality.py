@@ -226,3 +226,20 @@ def test_overlapping_upload_callers_share_one_transactional_receipt(seeded):
             ]
             == 1
         )
+
+
+def test_failed_parser_removes_only_temporary_input_and_retains_archive(seeded, monkeypatch):
+    from trajectory.product.semantic_runtime import AnalysisRuntime
+
+    store, sid, _, _ = seeded
+    runtime = AnalysisRuntime(store)
+
+    def reject(*args):
+        raise ValueError("Fixture parse rejected")
+
+    monkeypatch.setattr(runtime, "parse", reject)
+    assert runtime.process_next()
+    assert not list(runtime.root.rglob("source.jsonl"))
+    assert b"".join(store.archive("owner", sid)[1]) == b"original\n"
+    with store.domain.connect() as db:
+        assert db.execute("SELECT status FROM semantic_jobs").fetchone()[0] == "failed"

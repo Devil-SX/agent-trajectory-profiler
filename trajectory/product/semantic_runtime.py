@@ -94,12 +94,16 @@ class AnalysisRuntime:
                     self.store.finish_job(job)
                     return True
                 source_file = directory / "source.jsonl"
-                with source_file.open("wb") as stream:
-                    for chunk in chunks:
-                        stream.write(chunk)
-                source_file.chmod(0o600)
-                parsed = self.parse(source_file, source, job)
-                self.store.save_session(job["owner"], job["session"], source, actual, parsed)
+                try:
+                    with source_file.open("wb") as stream:
+                        for chunk in chunks:
+                            stream.write(chunk)
+                    source_file.chmod(0o600)
+                    parsed = self.parse(source_file, source, job)
+                    self.store.save_session(job["owner"], job["session"], source, actual, parsed)
+                finally:
+                    # The domain archive is the authority; this is only parser input.
+                    source_file.unlink(missing_ok=True)
             else:
                 from trajectory.product.semantic_model import PROMPT_VERSION, segment
 
@@ -115,11 +119,23 @@ class AnalysisRuntime:
                     or result.get("provenance", {}).get("prompt_version") != PROMPT_VERSION
                 ):
                     result = segment(detail["operations"], detail["session"]["title"])
-                    with checkpoint.open("w") as out:
-                        json.dump(result, out, ensure_ascii=False)
-                        out.flush()
-                        os.fsync(out.fileno())
-                    checkpoint.chmod(0o600)
+                    temporary = checkpoint.with_name(".model-result-" + job["id"] + ".json")
+                    try:
+                        descriptor = os.open(
+                            temporary, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600
+                        )
+                        with os.fdopen(descriptor, "w") as out:
+                            json.dump(result, out, ensure_ascii=False)
+                            out.flush()
+                            os.fsync(out.fileno())
+                        os.replace(temporary, checkpoint)
+                        directory_fd = os.open(directory, os.O_DIRECTORY)
+                        try:
+                            os.fsync(directory_fd)
+                        finally:
+                            os.close(directory_fd)
+                    finally:
+                        temporary.unlink(missing_ok=True)
                 result["provenance"]["source_revision"] = job["source_revision"]
                 result["provenance"]["profiler"] = self.profile(directory, detail, result)
                 self.store.save_analysis(

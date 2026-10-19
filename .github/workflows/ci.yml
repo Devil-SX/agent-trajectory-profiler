@@ -41,8 +41,8 @@ jobs:
         run: |
           set -euo pipefail
           cd "$TRAJECTORY_TEST_WORKSPACE"
-          uv run --no-sync ruff check trajectory tests scripts
-          uv run --no-sync black --check trajectory tests scripts
+          uv run --no-sync ruff check trajectory tests scripts tools
+          uv run --no-sync black --check trajectory tests scripts tools
           uv run --no-sync mypy trajectory
       - name: Run current domain and client tests
         shell: bash
