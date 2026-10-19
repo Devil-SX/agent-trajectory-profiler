@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.2.2] - 2026-10-19
+
 ### Fixed
 
 - Record internal request failures with server-generated request IDs, exception types and traceback frame locations, excluding credentials, exception values and business content.
+
+Code stats vs v3.2.1: total 14979 text lines (baseline 14822), +160 (-3) = +157, 1.06% text-line change.
 
 ## [3.2.1] - 2026-10-19
 
