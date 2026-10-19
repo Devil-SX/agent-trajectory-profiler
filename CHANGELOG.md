@@ -4,6 +4,12 @@ All notable changes to **BatCave Trajectory** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Retain referenced parsed snapshots when newer source records are parsed, keeping saved task trees and revision-pinned evidence available without inventing historical execution measurements.
+
 ## [3.3.1] - 2026-10-19
 
 ### Fixed

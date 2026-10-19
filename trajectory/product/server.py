@@ -63,7 +63,8 @@ OPERATIONS: list[dict[str, Any]] = [
         "method": "GET",
         "path": "/api/sessions/{session_id}/operations/{operation_id}/evidence",
         "scope": "read",
-        "effect": "Read a bounded account-owned original source record for an operation",
+        "effect": "Read bounded account-owned source evidence; optional source_revision pins the "
+        "displayed immutable parsed snapshot and never starts parsing or analysis",
     },
     {
         "id": "source_append",
@@ -92,7 +93,8 @@ OPERATIONS: list[dict[str, Any]] = [
         "method": "GET",
         "path": "/api/sessions/{session_id}/analysis",
         "scope": "read",
-        "effect": "Read task hierarchy, measured costs and account-owned source evidence",
+        "effect": "Read account-owned hierarchy and evidence; optional source_revision pins a "
+        "retained snapshot. Default prefers active job input, then saved analysis input",
     },
     {
         "id": "session_parse",
@@ -501,7 +503,10 @@ def create_app(
                     )
                 if identifier == "analysis_read":
                     return await asyncio.to_thread(
-                        semantic.detail, principal.account, request.path_params["session_id"]
+                        semantic.detail,
+                        principal.account,
+                        request.path_params["session_id"],
+                        source_revision=request.query_params.get("source_revision") or None,
                     )
                 if identifier == "source_evidence":
                     return await asyncio.to_thread(
@@ -509,6 +514,7 @@ def create_app(
                         principal.account,
                         request.path_params["session_id"],
                         request.path_params["operation_id"],
+                        source_revision=request.query_params.get("source_revision") or None,
                     )
                 if identifier in ("overview", "platform"):
                     return await asyncio.to_thread(

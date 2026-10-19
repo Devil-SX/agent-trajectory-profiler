@@ -129,7 +129,7 @@ def test_unified_ir_fallback_skips_injected_instructions_and_reads_lineage():
     assert value["cwd"] is None and value["summary"] is None
 
 
-def test_parser_refresh_reuses_archive_and_invalidates_changed_membership(tmp_path):
+def test_parser_refresh_reuses_archive_but_rejects_referenced_membership_change(tmp_path):
     store, add = seeded(tmp_path)
     sid, revision = add(1, "/home/sdu/embodied", "任务", "2026-10-02")
     original_job = store.claim_job()
@@ -151,10 +151,13 @@ def test_parser_refresh_reuses_archive_and_invalidates_changed_membership(tmp_pa
     parsed = json.loads(record["body"])
     parsed["operations"][0]["id"] = "new-parser-op"
     source, _ = store.archive("owner", sid)
-    store.save_session("owner", sid, source, revision, parsed)
+    with pytest.raises(ValueError, match="explicit parser migration"):
+        store.save_session("owner", sid, source, revision, parsed)
     detail = store.detail("owner", sid)
-    assert detail["status"] == "stale"
-    assert detail["has_analysis"] and not detail["tasks"]
+    assert detail["status"] == "complete"
+    assert detail["has_analysis"] and detail["tasks"]
+    assert detail["source_revision"] == detail["analysis_source_revision"] == revision
+    assert detail["operations"][0]["id"] == "op1"
     analyze = store.request_analysis("owner", sid, AnalysisRequest(mutation_id=uuid.uuid4().hex))
     assert analyze["status"] == "queued"
     with pytest.raises(ValueError, match="active analysis"):

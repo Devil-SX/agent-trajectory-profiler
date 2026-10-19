@@ -113,6 +113,10 @@ class AnalysisResumeError(ValueError):
         self.code = code
 
 
+class IRSnapshotUnavailable(ValueError):
+    """The requested immutable parsed revision was never retained."""
+
+
 class SemanticStore:
     def __init__(self, domain: Domain):
         self.domain = domain
@@ -130,6 +134,10 @@ class SemanticStore:
                     owner TEXT,id TEXT,collector TEXT,source TEXT,title TEXT,agent TEXT,
                     source_revision TEXT,body TEXT,updated TEXT,
                     PRIMARY KEY(owner,id),UNIQUE(owner,collector,source));
+                CREATE TABLE IF NOT EXISTS semantic_ir_history(
+                    owner TEXT,id TEXT,collector TEXT,source TEXT,title TEXT,agent TEXT,
+                    source_revision TEXT,body TEXT,updated TEXT,body_sha256 TEXT,
+                    PRIMARY KEY(owner,id,source_revision));
                 CREATE TABLE IF NOT EXISTS semantic_analyses(
                     owner TEXT,session TEXT,revision TEXT,source_revision TEXT,
                     status TEXT,body TEXT,updated TEXT,PRIMARY KEY(owner,session));
@@ -1090,17 +1098,39 @@ class SemanticStore:
                     "received_bytes": current["received_bytes"],
                 },
             }
-            self.domain.import_native_measurements(db, owner, source, revision, parsed)
             previous = db.execute(
-                "SELECT body FROM semantic_sessions WHERE owner=? AND id=?", (owner, sid)
+                "SELECT * FROM semantic_sessions WHERE owner=? AND id=?", (owner, sid)
             ).fetchone()
-            if previous and json.loads(previous["body"]).get("operations") != parsed.get(
-                "operations"
-            ):
-                db.execute(
-                    "UPDATE semantic_analyses SET source_revision=? WHERE owner=? AND session=?",
-                    ("parser-stale:" + revision, owner, sid),
-                )
+            if previous:
+                referenced = db.execute(
+                    "SELECT 1 FROM semantic_analyses WHERE owner=? AND session=? "
+                    "AND source_revision=? "
+                    "UNION ALL SELECT 1 FROM semantic_jobs WHERE owner=? AND session=? "
+                    "AND source_revision=? AND kind='analyze' "
+                    "AND status IN ('queued','running','failed') LIMIT 1",
+                    (
+                        owner,
+                        sid,
+                        previous["source_revision"],
+                        owner,
+                        sid,
+                        previous["source_revision"],
+                    ),
+                ).fetchone()
+                if referenced and previous["source_revision"] == revision:
+                    if json.loads(previous["body"]).get("operations") != parsed.get("operations"):
+                        raise ValueError(
+                            "Referenced IR changed at the same source revision; "
+                            "explicit parser migration required"
+                        )
+                elif referenced:
+                    self._retain_ir(db, dict(previous))
+            if db.execute(
+                "SELECT 1 FROM semantic_ir_history WHERE owner=? AND id=? AND source_revision=?",
+                (owner, sid, revision),
+            ).fetchone():
+                raise ValueError("A historical IR revision cannot become mutable current input")
+            self.domain.import_native_measurements(db, owner, source, revision, parsed)
             db.execute(
                 "INSERT OR REPLACE INTO semantic_sessions VALUES(?,?,?,?,?,?,?,?,?)",
                 (
@@ -1162,14 +1192,91 @@ class SemanticStore:
                 break
         return migrated
 
-    def session_record(self, owner: str, sid: str) -> dict[str, Any]:
-        with self.domain.connect() as db:
+    @staticmethod
+    def _retain_ir(db: Any, record: dict[str, Any]) -> None:
+        old = db.execute(
+            "SELECT * FROM semantic_ir_history WHERE owner=? AND id=? AND source_revision=?",
+            (record["owner"], record["id"], record["source_revision"]),
+        ).fetchone()
+        if old:
+            if old["body"] != record["body"] or old["body_sha256"] != digest(record["body"]):
+                raise ValueError("Immutable IR history differs from referenced input")
+            return
+        fields = (
+            "owner",
+            "id",
+            "collector",
+            "source",
+            "title",
+            "agent",
+            "source_revision",
+            "body",
+            "updated",
+        )
+        db.execute(
+            "INSERT INTO semantic_ir_history VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (*[record[key] for key in fields], digest(record["body"])),
+        )
+
+    @staticmethod
+    def _resolve_ir(db: Any, owner: str, sid: str, revision: str | None = None) -> dict[str, Any]:
+        # Select only identity first: a historical read must not load both large IR bodies.
+        current = db.execute(
+            "SELECT s.collector,s.source,s.source_revision,EXISTS(SELECT 1 "
+            "FROM semantic_ir_history h WHERE h.owner=s.owner AND h.id=s.id "
+            "AND h.source_revision=s.source_revision) AS dual_authority "
+            "FROM semantic_sessions s WHERE s.owner=? AND s.id=?",
+            (owner, sid),
+        ).fetchone()
+        if current is None:
+            raise IRSnapshotUnavailable("Unknown session")
+        if current["dual_authority"]:
+            raise ValueError("IR revision has duplicate current and history authority")
+        if revision is None or current["source_revision"] == revision:
             row = db.execute(
                 "SELECT * FROM semantic_sessions WHERE owner=? AND id=?", (owner, sid)
             ).fetchone()
-        if not row:
-            raise ValueError("Unknown session")
-        return dict(row)
+            return {**dict(row), "historical_snapshot": False}
+        history = db.execute(
+            "SELECT * FROM semantic_ir_history WHERE owner=? AND id=? AND source_revision=?",
+            (owner, sid, revision),
+        ).fetchone()
+        if history is None:
+            raise IRSnapshotUnavailable("Requested parsed snapshot is unavailable")
+        if digest(history["body"]) != history["body_sha256"]:
+            raise ValueError("Immutable IR history integrity check failed")
+        if (history["collector"], history["source"]) != (current["collector"], current["source"]):
+            raise ValueError("Immutable IR history source identity changed")
+        return {**dict(history), "historical_snapshot": True}
+
+    def _display_ir(
+        self, db: Any, owner: str, sid: str, revision: str | None = None
+    ) -> dict[str, Any]:
+        if revision:
+            return self._resolve_ir(db, owner, sid, revision)
+        active = db.execute(
+            "SELECT source_revision FROM semantic_jobs WHERE owner=? AND session=? "
+            "AND kind='analyze' AND status IN ('queued','running','failed') "
+            "ORDER BY created DESC LIMIT 1",
+            (owner, sid),
+        ).fetchone()
+        analysis = db.execute(
+            "SELECT source_revision FROM semantic_analyses WHERE owner=? AND session=?",
+            (owner, sid),
+        ).fetchone()
+        target = active[0] if active else analysis[0] if analysis else None
+        try:
+            return self._resolve_ir(db, owner, sid, target)
+        except IRSnapshotUnavailable:
+            # Old rows with missing snapshots remain an explicit coverage gap.
+            return self._resolve_ir(db, owner, sid)
+
+    def session_record(
+        self, owner: str, sid: str, source_revision: str | None = None
+    ) -> dict[str, Any]:
+        with self.domain.connect() as db:
+            db.execute("BEGIN")
+            return self._resolve_ir(db, owner, sid, source_revision)
 
     def save_analysis(
         self,
@@ -1326,11 +1433,27 @@ class SemanticStore:
         }
 
     def detail(
-        self, owner: str, sid: str, contributions: list[dict[str, Any]] | None = None
+        self,
+        owner: str,
+        sid: str,
+        contributions: list[dict[str, Any]] | None = None,
+        *,
+        source_revision: str | None = None,
     ) -> dict[str, Any]:
         try:
-            record = self.session_record(owner, sid)
-        except ValueError:
+            with self.domain.connect() as db:
+                db.execute("BEGIN")
+                latest = db.execute(
+                    "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
+                    (owner, sid),
+                ).fetchone()
+                if latest is None:
+                    raise IRSnapshotUnavailable("Unknown session")
+                latest_revision = latest["source_revision"]
+                record = self._display_ir(db, owner, sid, source_revision)
+        except IRSnapshotUnavailable:
+            if source_revision:
+                raise
             listing = self.sessions(owner)
             session = next((item for item in listing["sessions"] if item["id"] == sid), None)
             if session is None:
@@ -1353,10 +1476,6 @@ class SemanticStore:
         parsed = json.loads(record["body"])
         metadata = extract_metadata(parsed, record["title"])
         operations = parsed.get("operations", [])
-        if contributions is None:
-            contributions = self.domain.source_contributions(
-                owner, record["collector"], record["source"]
-            )
         with self.domain.connect() as db:
             source = db.execute(
                 "SELECT generation,received_bytes FROM source_archives "
@@ -1364,7 +1483,7 @@ class SemanticStore:
                 (owner, record["collector"], record["source"]),
             ).fetchone()
             current_source_revision = archive_revision(source)
-            source_pending = current_source_revision != record["source_revision"]
+            source_pending = current_source_revision != latest_revision
             collection = collection_progress(
                 db.execute(
                     "SELECT read_bytes,source_bytes,errors,unknown FROM sources "
@@ -1391,19 +1510,50 @@ class SemanticStore:
                 else None
             )
             progress = json.loads(progress_row[0]) if progress_row else {}
-            resume = self.resume_state(
-                db, dict(job) if job else None, progress, record["source_revision"]
-            )
+            resume = self.resume_state(db, dict(job) if job else None, progress, latest_revision)
         # A pending append does not invalidate the saved analysis snapshot. Never
         # estimate newer ledger records onto its old final operation, however.
-        if source_pending:
+        historical_snapshot = record["source_revision"] != latest_revision
+        if source_pending or historical_snapshot:
             contributions = []
+        else:
+            if contributions is None:
+                contributions = self.domain.source_contributions(
+                    owner, record["collector"], record["source"]
+                )
+            with self.domain.connect() as db:
+                head = db.execute(
+                    "SELECT s.source_revision,a.generation,a.received_bytes "
+                    "FROM semantic_sessions s "
+                    "LEFT JOIN source_archives a ON a.owner=s.owner AND a.collector=s.collector "
+                    "AND a.source=s.source WHERE s.owner=? AND s.id=?",
+                    (owner, sid),
+                ).fetchone()
+                if head is not None:
+                    resume = self.resume_state(
+                        db, dict(job) if job else None, progress, head["source_revision"]
+                    )
+            if head is None:
+                raise ValueError("Session changed during snapshot measurement")
+            latest_revision = head["source_revision"]
+            current_source_revision = (
+                archive_revision(head) if head["generation"] is not None else None
+            )
+            source_pending = current_source_revision != latest_revision
+            historical_snapshot = record["source_revision"] != latest_revision
+            if source_pending or historical_snapshot:
+                contributions = []
         attribution = self._measure_operations(owner, record, operations, contributions)
         analysis_matches_parsed = (
+            analysis is not None and analysis["source_revision"] == latest_revision
+        )
+        analysis_snapshot_available = (
             analysis is not None and analysis["source_revision"] == record["source_revision"]
         )
-        current_analysis = analysis_matches_parsed and not source_pending
-        value = json.loads(analysis["body"]) if analysis_matches_parsed else {"tasks": []}
+        current_analysis = (
+            analysis_matches_parsed and analysis_snapshot_available and not source_pending
+        )
+        value = json.loads(analysis["body"]) if analysis_snapshot_available else {"tasks": []}
         status = "complete" if current_analysis else "stale" if analysis else "not_started"
         if (
             job
@@ -1411,7 +1561,7 @@ class SemanticStore:
             and job["status"] in {"queued", "running", "failed"}
         ):
             status = job["status"]
-            if not analysis_matches_parsed and progress:
+            if not analysis_snapshot_available and progress:
                 value["provenance"] = {
                     **progress,
                     "chunks": progress.get("total_chunks"),
@@ -1490,9 +1640,14 @@ class SemanticStore:
             warnings.append(
                 "最新账本无法证明属于当前快照，执行用量与任务开销保持未知；分析调用开销单独保留。"
             )
-        if analysis and not analysis_matches_parsed:
+        if historical_snapshot:
+            warnings.append("当前展示已保存分析的历史快照，最新内容已另行解析；不会自动重新分析。")
             warnings.append(
-                "分析来自旧源版本；任务名称供参考，开销与证据仅覆盖仍可匹配的当前操作。"
+                "历史快照没有独立执行测量，执行用量与任务开销保持未知；分析调用开销单独保留。"
+            )
+        if analysis and not analysis_snapshot_available:
+            warnings.append(
+                "当前展示快照与已有分析的输入不同，任务树暂不可用；不会用其他版本操作替代。"
             )
         parser_coverage = parsed.get("coverage") or {}
         if parser_coverage.get("quarantined_records"):
@@ -1520,6 +1675,9 @@ class SemanticStore:
             "has_analysis": analysis is not None,
             "analysis_current": current_analysis,
             "analysis_matches_parsed": analysis_matches_parsed,
+            "analysis_snapshot_available": analysis_snapshot_available,
+            "historical_snapshot": historical_snapshot,
+            "current_parsed_source_revision": latest_revision,
             "source_pending": source_pending,
             "current_source_revision": current_source_revision,
             "analysis_source_revision": analysis["source_revision"] if analysis else None,
@@ -1794,8 +1952,12 @@ class SemanticStore:
             },
         }
 
-    def evidence(self, owner: str, sid: str, operation_id: str) -> dict[str, Any]:
-        record = self.session_record(owner, sid)
+    def evidence(
+        self, owner: str, sid: str, operation_id: str, *, source_revision: str | None = None
+    ) -> dict[str, Any]:
+        with self.domain.connect() as db:
+            db.execute("BEGIN")
+            record = self._display_ir(db, owner, sid, source_revision)
         parsed = json.loads(record["body"])
         operation = next((o for o in parsed.get("operations", []) if o["id"] == operation_id), None)
         if operation is None:

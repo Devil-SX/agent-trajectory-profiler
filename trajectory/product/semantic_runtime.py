@@ -156,7 +156,9 @@ class AnalysisRuntime:
             else:
                 from trajectory.product.semantic_model import PROMPT_VERSION, segment
 
-                detail = self.store.detail(job["owner"], job["session"])
+                detail = self.store.detail(
+                    job["owner"], job["session"], source_revision=job["source_revision"]
+                )
                 if detail["source_revision"] != job["source_revision"]:
                     raise ValueError("Source changed; request analysis of current revision")
                 self.store.pin_execution(

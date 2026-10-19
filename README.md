@@ -39,3 +39,29 @@ separate explicit decision through the Help-discovered lost-window operation.
 This can incur an additional charge for that window. The service preserves the
 original unknown usage and the recorded decision; ordinary recovery never makes
 this decision automatically.
+
+Saved analyses retain their referenced parsed input when a later append is parsed.
+Old inputs once referenced by a saved analysis or unfinished job move into immutable
+history; the current input has one canonical row. Unreferenced intermediate parses
+are replaced without making history copies. Retained audit snapshots are not
+subject to automatic garbage collection. Historical task trees and original evidence remain readable without
+another model call. Their execution costs stay unknown when no snapshot-bound
+ledger exists; recorded analysis-call costs remain available. `source_pending`
+means the latest received archive still awaits parsing, independently of whether
+the displayed analysis is historical.
+
+The authenticated analysis and operation-evidence GET endpoints accept an optional
+`source_revision` query parameter. Pin it to the detail response's `source_revision`
+to read the same account-owned snapshot after an asynchronous parse. Omitting it
+selects an active analysis job's input, then the saved analysis input, then the
+latest parsed content. Help describes the same shared interface. Runtime analysis
+always pins its own job input. Changing parser operations at an already referenced
+raw revision requires an explicit parser migration and is rejected by normal refresh.
+
+These fields are additive for the 3.3.1 UI. Older UIs without revision pins select
+whatever snapshot is current for their request and cannot guarantee the original
+rendered revision across navigation. A 3.3.1 backend does not resolve retained IR
+history; after history is populated, rollback must preserve that table and restore
+a history-aware reader before claiming historical-result availability. Legacy HTTP
+reads and statistical ingestion remain schema-compatible, but an old backend's parse
+and analysis worker gates must remain closed; its writer does not preserve history.

@@ -298,7 +298,7 @@ def test_parser_result_cannot_overwrite_newer_source_archive(store: SemanticStor
         store.save_session("owner", sid, source, source_revision, old_body)
 
 
-def test_source_revision_expiry_hides_old_tasks_and_rejects_stale_writers(
+def test_source_revision_history_preserves_old_tasks_and_rejects_stale_writers(
     store: SemanticStore,
 ) -> None:
     sid, old_source = seed_session(store)
@@ -306,8 +306,9 @@ def test_source_revision_expiry_hides_old_tasks_and_rejects_stale_writers(
     advance_session(store, sid)
     detail = store.detail("owner", sid)
     assert detail["status"] != "complete"
-    assert detail["tasks"] == []
-    assert all(operation.get("task_id") is None for operation in detail["operations"])
+    assert detail["tasks"]
+    assert detail["analysis_snapshot_available"] is True
+    assert detail["source_revision"] == old_source
     with pytest.raises(ValueError, match="changed|revision|refresh|stale"):
         store.save_analysis("owner", sid, old_source, analysis())
     with pytest.raises(ValueError, match="changed|revision|refresh|stale"):

@@ -166,7 +166,7 @@ const trace=(event,detail={})=>{stage=event;fs.appendFileSync(output+'/semantic-
     assert(operation,'No source-located operation in first evidence page');
     const rawButton=page.locator('.raw-evidence-button[data-operation-id='+JSON.stringify(operation.id)+']');
     await rawButton.locator('xpath=ancestor::details').locator('summary').click();
-    const rawResponse=page.waitForResponse(response=>response.url().endsWith('/operations/'+encodeURIComponent(operation.id)+'/evidence'));
+    const rawResponse=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/operations/'+encodeURIComponent(operation.id)+'/evidence')&&new URL(response.url()).searchParams.get('source_revision')===detail.source_revision);
     await rawButton.click();
     const evidenceResponse=await rawResponse;assert.equal(evidenceResponse.status(),200);
     const evidence=await evidenceResponse.json();
