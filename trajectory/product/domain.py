@@ -648,6 +648,14 @@ class Domain:
                 "active_seconds_estimate": 0.0,
             }
 
+        def metric_bucket(
+            targets: dict[str, dict[str, Any]], key: str, name: str
+        ) -> dict[str, Any]:
+            target = targets.get(key)
+            if target is None:
+                target = targets[key] = bucket(key, name)
+            return target
+
         event_metrics: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         source_metrics: dict[tuple[str, str, str], dict[str, Any]] = {}
         token_events: set[tuple[str, str, str, str]] = set()
@@ -655,18 +663,18 @@ class Domain:
         def event_bucket(record: dict[str, Any]) -> dict[str, Any]:
             key = (record["owner"], record["collector"], record["source"], record["id"])
             if contribution_source is not None:
-                return event_metrics.setdefault(
-                    key,
-                    {
+                target = event_metrics.get(key)
+                if target is None:
+                    target = event_metrics[key] = {
                         **bucket(record["id"], ""),
                         "record": record,
                         "recorded_tokens": records.tokens(record),
-                    },
-                )
+                    }
+                return target
             source_key = key[:3]
-            target = source_metrics.setdefault(
-                source_key,
-                {
+            target = source_metrics.get(source_key)
+            if target is None:
+                target = source_metrics[source_key] = {
                     **bucket(record["source"], ""),
                     "record": {
                         field: record.get(field)
@@ -683,8 +691,7 @@ class Domain:
                     },
                     "recorded_tokens": 0,
                     "last_timestamp": "",
-                },
-            )
+                }
             target["last_timestamp"] = max(target["last_timestamp"], record["timestamp"] or "")
             if record["kind"] == "usage" and key not in token_events:
                 target["recorded_tokens"] += records.tokens(record)
@@ -721,10 +728,10 @@ class Domain:
             if not included(record):
                 continue
             project = record["project"]
-            groups.setdefault(project, bucket(project, record["project_name"]))
-            task = tasks.setdefault(
-                record["task"],
-                {
+            metric_bucket(groups, project, record["project_name"])
+            task = tasks.get(record["task"])
+            if task is None:
+                task = tasks[record["task"]] = {
                     "id": record["task"],
                     "session": record["session"],
                     "project": project,
@@ -737,8 +744,7 @@ class Domain:
                     **human_metrics(),
                     "source": record["source"],
                     "source_line": record["source_line"],
-                },
-            )
+                }
             task["ended"] = record["timestamp"] or task["ended"]
             if record["evidence"] in ("path", "service", "corrected"):
                 task.update(
@@ -767,7 +773,7 @@ class Domain:
             day = date_for(record)
             targets = (
                 groups[record["project"]],
-                days.setdefault(day, bucket(day, day)),
+                metric_bucket(days, day, day),
                 tasks[record["task"]],
                 *event_targets(record),
             )
@@ -790,10 +796,8 @@ class Domain:
             if not included(record):
                 continue
             day = date_for(record)
-            daily = days.setdefault(day, bucket(day, day))
-            project = groups.setdefault(
-                record["project"], bucket(record["project"], record["project_name"])
-            )
+            daily = metric_bucket(days, day, day)
+            project = metric_bucket(groups, record["project"], record["project_name"])
             candidates = prices.get((record["owner"], str(record.get("model") or "")), [])
             price = select_price(candidates, record["timestamp"])
             context = context_length(record)
@@ -844,9 +848,7 @@ class Domain:
                 ending = min(ending, upper)
             if ending <= beginning:
                 return
-            target = groups.setdefault(
-                start["project"], bucket(start["project"], start["project_name"])
-            )
+            target = metric_bucket(groups, start["project"], start["project_name"])
             target[metric] += (ending - beginning).total_seconds()
             for contribution in event_targets(start):
                 contribution[metric] += (ending - beginning).total_seconds()
@@ -854,9 +856,7 @@ class Domain:
                 day = beginning.date().isoformat()
                 midnight = datetime.combine(beginning.date() + timedelta(days=1), time.min, zone)
                 boundary = min(ending, midnight)
-                days.setdefault(day, bucket(day, day))[metric] += (
-                    boundary - beginning
-                ).total_seconds()
+                metric_bucket(days, day, day)[metric] += (boundary - beginning).total_seconds()
                 beginning = boundary
 
         starts: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -896,7 +896,7 @@ class Domain:
                     project["tool_errors"] += 1
                     tasks[record["task"]]["errors"] += 1
                     day = date_for(record)
-                    days.setdefault(day, bucket(day, day))["tool_errors"] += 1
+                    metric_bucket(days, day, day)["tool_errors"] += 1
                 if record["error"] or (elapsed is not None and elapsed > 60):
                     anomalies.append(
                         {
