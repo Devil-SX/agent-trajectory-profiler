@@ -124,6 +124,12 @@ fn parse(request: &Request) -> Result<Value, String> {
                     "native_id":payload.get("id").or_else(||record.get("uuid")),
                     "parent_native_id":record.get("parentId"),
                     "human_origin":record.get("human_origin"),
+                    "role":record.get("message").and_then(|m|m.get("role")),
+                    "model":record.get("message").and_then(|m|m.get("model")),
+                    "provider":record.get("message").and_then(|m|m.get("provider")),
+                    "response_id":record.get("message").and_then(|m|m.get("responseId")),
+                    "input_text":if request.agent=="pi" {pi_input_text(&record)} else {Value::Null},
+                    "measured_usage":if request.agent=="pi" {pi_measured_usage(&record)} else {Value::Null},
                     "call_id":payload.get("call_id").or_else(||record.get("tool_use_id")),
                     "timestamp_ms":ts_ms,"lineage":lineage,
                     "usage_evidence":if request.agent=="pi" {record.get("message").and_then(|m|m.get("usage"))} else if payload.get("type").and_then(Value::as_str)==Some("token_count") {payload.get("info")} else {record.get("message").and_then(|m|m.get("usage"))}}));
@@ -232,12 +238,48 @@ fn parse(request: &Request) -> Result<Value, String> {
         "quarantined_records":quarantined,
         "session":session,"source_records":records,"operations":operations,
         "measurement_policy":"source_recorded_only",
+        "recorded_measurement_schema":if request.agent=="pi" {json!("trajectory.recorded-measurements/1")} else {Value::Null},
         "warnings":warnings}),
     )
 }
 
 /// Pi's native tree remains in source_records. The compatibility view is ephemeral:
 /// agent-session owns the common IR and source positions always refer to original bytes.
+fn pi_input_text(record: &Value) -> Value {
+    let message = &record["message"];
+    if message["role"] != "user" {
+        return Value::Null;
+    }
+    if let Some(text) = message["content"].as_str() {
+        return json!(text);
+    }
+    let parts = message["content"]
+        .as_array()
+        .map(|parts| {
+            parts
+                .iter()
+                .filter(|part| part["type"] == "text")
+                .filter_map(|part| part["text"].as_str())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if parts.is_empty() {
+        Value::Null
+    } else {
+        json!(parts.join("\n"))
+    }
+}
+
+fn pi_measured_usage(record: &Value) -> Value {
+    let Some(usage) = record.get("message").and_then(|m| m.get("usage")) else {
+        return Value::Null;
+    };
+    json!({"input":usage.get("input"),"output":usage.get("output"),
+        "cached":usage.get("cacheRead"),"cache_write":usage.get("cacheWrite"),
+        "reasoning":usage.get("reasoning"),"input_includes_cache":false,
+        "input_includes_cache_write":false,"output_includes_reasoning":true})
+}
+
 fn pi_adapter(records: &[Value]) -> Result<String, String> {
     let header = records
         .iter()
@@ -584,7 +626,7 @@ mod tests {
         "\n",
         r#"{"type":"message","id":"u1","parentId":null,"timestamp":"2026-10-01T10:00:01Z","message":{"role":"user","content":[{"type":"text","text":"Compare AI and CPM"}]}}"#,
         "\n",
-        r#"{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-10-01T10:00:02Z","message":{"role":"assistant","model":"test-model","content":[{"type":"thinking","thinking":"private"},{"type":"toolCall","id":"call-1","name":"bash","arguments":{"command":"pwd"}}],"usage":{"input":20,"output":4,"cacheRead":8,"cacheWrite":2,"reasoning":3,"cost":{"total":0.001}}}}"#,
+        r#"{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-10-01T10:00:02Z","message":{"role":"assistant","model":"test-model","provider":"fixture-provider","responseId":"provider-response-1","content":[{"type":"thinking","thinking":"private"},{"type":"toolCall","id":"call-1","name":"bash","arguments":{"command":"pwd"}}],"usage":{"input":20,"output":4,"cacheRead":8,"cacheWrite":2,"reasoning":3,"cost":{"total":0.001}}}}"#,
         "\n",
         r#"{"type":"message","id":"t1","parentId":"a1","timestamp":"2026-10-01T10:00:03Z","message":{"role":"toolResult","toolCallId":"call-1","toolName":"bash","content":[{"type":"text","text":"/home/sdu/embodied"}],"isError":false}}"#,
         "\n",
@@ -601,6 +643,10 @@ mod tests {
         let result = parse(&req).unwrap();
         assert_eq!(result["session"]["session_id"], "pi-session");
         assert_eq!(result["session"]["agent_type"], "pi");
+        assert_eq!(
+            result["source_records"][2]["response_id"],
+            "provider-response-1"
+        );
         assert_eq!(result["metadata"]["cwd"], "/home/sdu/embodied");
         assert_eq!(result["metadata"]["parent_session_id"], "pi-parent");
         assert_eq!(
@@ -615,6 +661,14 @@ mod tests {
         assert_eq!(
             result["source_records"][2]["usage_evidence"]["cacheWrite"],
             2
+        );
+        assert_eq!(
+            result["source_records"][2]["measured_usage"]["cache_write"],
+            2
+        );
+        assert_eq!(
+            result["source_records"][1]["input_text"],
+            "Compare AI and CPM"
         );
         assert!(result["source_records"][5]["usage_evidence"].is_null());
         assert!(result["source_records"][1]["human_origin"].is_null());

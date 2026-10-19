@@ -69,3 +69,26 @@ and endpoint binding, source/native-session selectors and original pending-body
 replay even when selectors exclude that pending source. Ruff and Black pass with
 the repository configuration. The installed collector configuration and its
 live checkpoint/outbox were inspected read-only and were not changed by these tests.
+
+## Pi measured ledger acceptance, 2026-10-19
+
+Worker 0.1.3 adds source-recorded identity and normalized measurements, without a
+second source parser. Its remote Rust suite passes all 9 tests. Seven new domain
+tests verify source-owner/revision/hash binding, transactional replay, append
+replacement without recounting, exclusive writer ownership, unknown counters and
+origin, provider response deduplication and conservative source-scoped fallback.
+The remote product suite passed 64 tests with one native-environment skip before
+the final append test was added; the native Rust suite and real-source checks ran
+separately. Ruff, Black and mypy pass for the changed Python modules.
+
+Two complete private Pi originals were uploaded into an isolated test domain,
+parsed by the built worker and imported by the canonical Domain transaction.
+Every measured counter matched the worker's original-source measurement sum;
+there were no invalid counters or missing usage objects. All 56 user-role inputs
+lacked explicit human origin and remained unknown. Their exact original text
+character counts were preserved, without calling a model. Replay returned the
+same durable receipts. `real-measured-acceptance.json` remains in the isolated
+remote task directory; no production state or configuration was changed.
+
+Final worker 0.1.3 SHA-256:
+`f7a57ea8761d928eca2ce09ce7aea4281509324835017fd2080d6bb4aeea9083`.

@@ -69,3 +69,9 @@ are a flat current model context. No second analysis or billing pipeline is adde
 `abstract` (otherwise null). No model is called to generate session abstracts.
 `coverage` distinguishes complete from quarantined-record partial coverage, and
 `quarantined_records` identifies the archive locations without echoing content.
+
+Worker 0.1.3 marks Pi measurements as `trajectory.recorded-measurements/1`.
+The normalized `measured_usage` fields copy native counters without estimating
+missing values. `response_id`, `provider`, `model` and native input text preserve
+the evidence needed by the canonical ledger. Input counters exclude cache reads
+and writes; output includes reasoning. Raw usage remains beside the projection.

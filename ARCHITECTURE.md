@@ -96,3 +96,14 @@ again or calling a model. Changed normalized operations invalidate the current
 analysis membership while retaining its historical body. Concurrent queued or
 running analysis prevents refresh. A later analysis request cannot reuse an old
 completed job whose result is stale.
+
+Pi source measurements use the same Domain `events` and `sources` ledger as other
+collectors. The native worker exposes normalized recorded fields with original
+provider/response and branch identities. `Domain.import_native_measurements`
+runs inside the archive/session transaction, verifies owner, revision and original
+byte-prefix hash, and persists an idempotent receipt. It exclusively owns that
+source's ledger; a statistical producer cannot append a second interpretation.
+Provider response identities deduplicate usage across inherited copies. Missing
+provider identity stays session-scoped with an explicit gap, and copied text is
+never proof of duplicate consumption. User-role messages without explicit origin
+remain unknown; available original text still supplies exact character counts.

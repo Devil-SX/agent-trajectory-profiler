@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Show original session directories, timestamps and first user messages, and filter actual stored analysis results.
+- Import source-recorded Pi token and input statistics into the canonical ledger with durable replay, exact source binding and explicit origin gaps.
 - Authorize new ecosystem roots through the existing authenticated machine/collector binding and select individual native sessions without dropping pending uploads.
 - Parse Pi native sessions through the unified worker, retaining branch, source usage and directory metadata.
 - Submit account-owned analysis batches through one idempotent HTTP queue, with bounded concurrent sessions, per-session progress, elapsed time, usage and explicit unknown costs.

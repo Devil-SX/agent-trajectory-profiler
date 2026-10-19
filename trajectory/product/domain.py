@@ -153,10 +153,12 @@ class Domain:
             if prior:
                 return prior
             old = db.execute(
-                "SELECT revision,read_bytes FROM sources "
+                "SELECT revision,read_bytes,parser FROM sources "
                 "WHERE owner=? AND collector=? AND source=?",
                 (owner, batch.collector, batch.source),
             ).fetchone()
+            if old and str(old["parser"]).startswith("pi-native-measurements/"):
+                raise ValueError("Source ledger is owned by the native measurement importer")
             if old and batch.revision <= old[0]:
                 raise ValueError("Source revision must increase")
             if old and not batch.replace and batch.revision != old[0] + 1:
@@ -226,6 +228,112 @@ class Domain:
                 ),
             )
         return result
+
+    def import_native_measurements(
+        self,
+        db: sqlite3.Connection,
+        owner: str,
+        source: dict[str, Any],
+        revision: str,
+        parsed: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Project worker-recorded Pi measurements inside the archive commit.
+
+        The caller must hold the existing parse/save transaction. This path owns
+        its source ledger exclusively; a second statistical producer is rejected.
+        No original JSONL is parsed here and no missing metric becomes zero.
+        """
+        if source.get("ecosystem") != "pi":
+            return {"status": "not_applicable"}
+        if not db.in_transaction:
+            raise ValueError("Native measurements require the archive transaction")
+        if parsed.get("recorded_measurement_schema") != "trajectory.recorded-measurements/1":
+            raise ValueError("Source must be reparsed by the recorded measurement adapter")
+        collector, identity = source["collector"], source["source"]
+        archive = db.execute(
+            "SELECT * FROM source_archives WHERE owner=? AND collector=? AND source=?",
+            (owner, collector, identity),
+        ).fetchone()
+        if not archive or archive["ecosystem"] != "pi":
+            raise PermissionError("Native source does not belong to this account")
+        actual = hashlib.sha256(
+            f"{archive['generation']}:{archive['received_bytes']}".encode()
+        ).hexdigest()
+        if actual != revision or parsed.get("source_id") != identity:
+            raise ValueError("Source changed during measurement import")
+        complete = parsed.get("complete_bytes")
+        if type(complete) is not int or not 0 <= complete <= archive["received_bytes"]:
+            raise ValueError("Invalid native measurement byte coverage")
+        # Hash authoritative archived bytes, without interpreting source syntax.
+        hasher = hashlib.sha256()
+        remaining = complete
+        for chunk in db.execute(
+            "SELECT content FROM source_chunks WHERE owner=? AND collector=? AND source=? "
+            "AND generation=? ORDER BY start",
+            (owner, collector, identity, archive["generation"]),
+        ):
+            block = bytes(chunk[0])[:remaining]
+            hasher.update(block)
+            remaining -= len(block)
+            if not remaining:
+                break
+        if remaining or hasher.hexdigest() != parsed.get("source_sha256"):
+            raise ValueError("Native measurements do not match archived source bytes")
+        old = db.execute(
+            "SELECT revision,parser FROM sources WHERE owner=? AND collector=? AND source=?",
+            (owner, collector, identity),
+        ).fetchone()
+        if old and not str(old["parser"]).startswith("pi-native-measurements/"):
+            raise ValueError("Source already has a statistical ledger; reconcile its writer first")
+        from trajectory.product.native_measurements import pi_records
+
+        records, gaps = pi_records(source, parsed)
+        parser = "pi-native-measurements/1:worker-" + str(parsed.get("worker_version", "unknown"))
+        encoded = [record.model_dump_json() for record in records]
+        summary = {
+            "source": identity,
+            "source_revision": revision,
+            "source_sha256": parsed["source_sha256"],
+            "parser": parser,
+            "records_sha256": hashlib.sha256("\n".join(encoded).encode()).hexdigest(),
+            "accepted": len(records),
+            "gaps": gaps,
+        }
+        body = json.dumps(summary, sort_keys=True)
+        mutation = hashlib.sha256(f"{owner}:{collector}:{body}".encode()).hexdigest()
+        actor = "native-measurement-importer"
+        prior = self._prior(db, actor, mutation, body)
+        if prior:
+            return prior
+        db.execute(
+            "DELETE FROM events WHERE owner=? AND collector=? AND source=?",
+            (owner, collector, identity),
+        )
+        db.executemany(
+            "INSERT INTO events VALUES(?,?,?,?,?)",
+            [
+                (owner, collector, identity, record.id, value)
+                for record, value in zip(records, encoded, strict=True)
+            ],
+        )
+        coverage = parsed.get("coverage", {})
+        db.execute(
+            "INSERT OR REPLACE INTO sources VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                owner,
+                collector,
+                identity,
+                int(old["revision"]) + 1 if old else 1,
+                archive["source_bytes"],
+                complete,
+                parser,
+                int(coverage.get("quarantined_records", 0)),
+                0,  # Origin uncertainty belongs to request metrics, not unparsed-source events.
+                now(),
+            ),
+        )
+        # Existing overview cache invalidation observes the same authoritative audit.
+        return self._receipt(db, actor, mutation, body, "ingest", summary)
 
     def correct(self, owner: str, value: Correction) -> dict[str, Any]:
         body = value.model_dump_json()
