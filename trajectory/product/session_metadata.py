@@ -6,11 +6,42 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-VERSION = 1
+VERSION = 2
 
 
 def _text(value: Any, limit: int = 8000) -> str | None:
     return value.strip()[:limit] if isinstance(value, str) and value.strip() else None
+
+
+def effective_prompt(value: Any) -> str | None:
+    """Exclude known injected context records without asserting human origin."""
+    text = _text(value)
+    if text and not text.startswith(
+        ("# AGENTS.md instructions", "<environment_context>", "<codex_internal_context")
+    ):
+        return text
+    return None
+
+
+def _display_title(first: str | None, cwd: Any, started: Any) -> str:
+    if first:
+        return " ".join(first.split())[:120]
+    directory = _text(cwd, 4096)
+    directory = re.split(r"[/\\]", directory.rstrip("/\\"))[-1] if directory else None
+    date = _text(started, 10)
+    return " ".join(part for part in (directory, date) if part) or "会话"
+
+
+def read(value: dict[str, Any]) -> dict[str, Any]:
+    """Project old indexes safely while bounded migration refreshes their IR."""
+    if value.get("metadata_version") == VERSION:
+        return value
+    first = effective_prompt(value.get("first_user_message"))
+    return {
+        **value,
+        "first_user_message": first,
+        "display_title": _display_title(first, value.get("cwd"), value.get("started_at")),
+    }
 
 
 def _timestamp(value: Any) -> str | None:
@@ -48,16 +79,14 @@ def extract(parsed: dict[str, Any], source_name: str = "") -> dict[str, Any]:
         or lineage.get("forked_from_id")
         or spawn.get("parent_thread_id")
     )
-    first = _text(metadata.get("first_user_message"))
+    first = effective_prompt(metadata.get("first_user_message"))
     operations = parsed.get("operations") or []
     if first is None:
         for operation in operations:
             if operation.get("kind") != "prompt":
                 continue
-            candidate = _text(operation.get("text"))
-            if candidate and not candidate.startswith(
-                ("# AGENTS.md instructions", "<environment_context>", "<codex_internal_context")
-            ):
+            candidate = effective_prompt(operation.get("text"))
+            if candidate:
                 first = candidate
                 break
     times = [
@@ -68,12 +97,13 @@ def extract(parsed: dict[str, Any], source_name: str = "") -> dict[str, Any]:
     started = _timestamp(metadata.get("started_at")) or (min(times) if times else None)
     last = _timestamp(metadata.get("last_activity_at")) or (max(times) if times else None)
     summary = _text(metadata.get("abstract") or metadata.get("summary"))
-    title = " ".join(first.split())[:120] if first else _text(session.get("title"), 120)
+    cwd = _text(metadata.get("cwd") or session.get("cwd"), 4096)
+    title = _display_title(first, cwd, started)
     return {
         "metadata_version": VERSION,
         "native_session_id": native_id,
         "parent_native_session_id": parent,
-        "cwd": _text(metadata.get("cwd") or session.get("cwd"), 4096),
+        "cwd": cwd,
         "started_at": started,
         "last_activity_at": last,
         "first_user_message": first,

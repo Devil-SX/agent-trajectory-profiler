@@ -184,6 +184,7 @@ def test_batch_names_read_only_lightweight_metadata_without_overview_or_ir(tmp_p
                 json.dumps(
                     {
                         "display_title": "CPM progress",
+                        "first_user_message": "CPM progress",
                         "cwd": "/embodied",
                         "started_at": "2026-10-01",
                     }

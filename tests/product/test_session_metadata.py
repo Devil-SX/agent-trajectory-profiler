@@ -231,12 +231,25 @@ def test_four_http_metadata_backfills_with_wal_writer(tmp_path, monkeypatch):
     }
 
 
-def test_backfill_rechecks_parser_metadata_after_waiting_for_writer(tmp_path, monkeypatch):
+@pytest.mark.parametrize("legacy_index", [False, True])
+def test_backfill_rechecks_parser_metadata_after_waiting_for_writer(
+    tmp_path, monkeypatch, legacy_index
+):
     """A parser committed after candidate selection wins over legacy backfill."""
     store, add = seeded(tmp_path)
     sid, revision = add(1, "/old", "old", "2026-10-02")
     with store.domain.connect() as db:
         db.execute("DELETE FROM semantic_session_metadata")
+        if legacy_index:
+            db.execute(
+                "INSERT INTO semantic_session_metadata VALUES(?,?,?,?)",
+                (
+                    "owner",
+                    sid,
+                    json.dumps({"metadata_version": 1, "first_user_message": "old"}),
+                    "old",
+                ),
+            )
     source, _ = store.archive("owner", sid)
     original_connect = store.domain.connect
     calls = 0
@@ -262,3 +275,99 @@ def test_backfill_rechecks_parser_metadata_after_waiting_for_writer(tmp_path, mo
     monkeypatch.setattr(store.domain, "connect", connect)
     assert store.backfill_metadata("owner") == 0
     assert store.sessions("owner")["sessions"][0]["first_user_message"] == "new parser metadata"
+
+
+@pytest.mark.parametrize(
+    "scaffold",
+    [
+        "# AGENTS.md instructions for /research/embodied\n<INSTRUCTIONS>rules</INSTRUCTIONS>",
+        "<environment_context>workspace settings</environment_context>",
+        "<codex_internal_context>internal context</codex_internal_context>",
+    ],
+)
+def test_effective_prompt_filters_parser_metadata_and_operations(scaffold):
+    prompt = "你看看我们现在 AI + CPM 的实验计划是什么，推进到什么地步了"
+    value = extract(
+        {
+            "metadata": {"first_user_message": scaffold},
+            "operations": [
+                {"kind": "prompt", "text": scaffold},
+                {"kind": "tool", "text": "tool output is not a prompt"},
+                {"kind": "prompt", "text": prompt},
+            ],
+        }
+    )
+    assert value["metadata_version"] == 2
+    assert value["first_user_message"] == prompt
+    assert value["display_title"] == prompt
+
+
+def test_no_effective_prompt_uses_directory_date_without_claiming_human_text():
+    value = extract(
+        {
+            "metadata": {
+                "cwd": "/home/sdu/embodied",
+                "started_at": "2026-10-18T12:00:00Z",
+                "first_user_message": "# AGENTS.md instructions for workspace",
+            },
+            "session": {"title": "# AGENTS.md instructions for workspace"},
+            "operations": [{"kind": "prompt", "text": "<environment_context>context"}],
+        }
+    )
+    assert value["first_user_message"] is None
+    assert value["display_title"] == "embodied 2026-10-18"
+    assert extract({})["display_title"] == "会话"
+
+
+def test_v1_index_migrates_once_without_changing_ir_or_usage(tmp_path):
+    store, add = seeded(tmp_path)
+    sid, _ = add(1, "/research/embodied", "真实任务", "2026-10-02")
+    with store.domain.connect() as db:
+        original = db.execute("SELECT body FROM semantic_sessions WHERE id=?", (sid,)).fetchone()[0]
+        stale = {
+            "metadata_version": 1,
+            "first_user_message": "# AGENTS.md instructions old",
+            "display_title": "# AGENTS.md instructions old",
+            "cwd": "/research/embodied",
+        }
+        db.execute("UPDATE semantic_session_metadata SET body=?", (json.dumps(stale),))
+    assert store.backfill_metadata("owner") == 1
+    assert store.backfill_metadata("owner") == 0
+    with store.domain.connect() as db:
+        assert (
+            db.execute("SELECT body FROM semantic_sessions WHERE id=?", (sid,)).fetchone()[0]
+            == original
+        )
+        current = json.loads(db.execute("SELECT body FROM semantic_session_metadata").fetchone()[0])
+    assert current["metadata_version"] == 2
+    assert current["first_user_message"] == "真实任务"
+
+
+def test_old_index_read_projection_does_not_expose_scaffold_or_load_ir(tmp_path, monkeypatch):
+    from trajectory.product.contracts import AnalysisBatchRequest
+    from trajectory.product.session_metadata import read
+
+    store, add = seeded(tmp_path)
+    sid, _ = add(1, "/research/embodied", "真实任务", "2026-10-02")
+    stale = {
+        "metadata_version": 1,
+        "first_user_message": "# AGENTS.md instructions old",
+        "display_title": "# AGENTS.md instructions old",
+        "cwd": "/research/embodied",
+        "started_at": "2026-10-02T01:00:00Z",
+    }
+    with store.domain.connect() as db:
+        db.execute("UPDATE semantic_session_metadata SET body=?", (json.dumps(stale),))
+    assert read(stale)["display_title"] == "embodied 2026-10-02"
+    assert read(stale)["first_user_message"] is None
+    # Simulate a stale row beyond the bounded migration batch. No IR fallback on reads.
+    monkeypatch.setattr(store, "backfill_metadata", lambda owner: 0)
+    listing = store.sessions("owner")
+    assert listing["sessions"][0]["display_title"] == "embodied 2026-10-02"
+    batch = store.request_batch(
+        "owner",
+        AnalysisBatchRequest(mutation_id=uuid.uuid4().hex, session_ids=[sid], concurrency=1),
+    )
+    item = store.batch_detail("owner", batch["batch_id"])["items"][0]["session"]
+    assert item["display_title"] == "embodied 2026-10-02"
+    assert item["first_user_message"] is None

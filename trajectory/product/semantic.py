@@ -21,7 +21,9 @@ from trajectory.product.contracts import (
     SourceChunk,
     TaskEdit,
 )
+from trajectory.product.session_metadata import VERSION as METADATA_VERSION
 from trajectory.product.session_metadata import extract as extract_metadata
+from trajectory.product.session_metadata import read as read_metadata
 
 if TYPE_CHECKING:
     from trajectory.product.domain import Domain
@@ -540,9 +542,9 @@ class SemanticStore:
                         "session_id": row["session"],
                         "session": {
                             **(
-                                json.loads(row["session_metadata"])
+                                read_metadata(json.loads(row["session_metadata"]))
                                 if row["session_metadata"]
-                                else {}
+                                else read_metadata({})
                             ),
                             "id": row["session"],
                             "title": row["session_title"],
@@ -666,8 +668,10 @@ class SemanticStore:
             rows = db.execute(
                 "SELECT s.id FROM semantic_sessions s "
                 "LEFT JOIN semantic_session_metadata m ON m.owner=s.owner AND m.session=s.id "
-                "WHERE s.owner=? AND m.session IS NULL ORDER BY s.updated DESC LIMIT ?",
-                (owner, limit),
+                "WHERE s.owner=? AND (m.session IS NULL OR "
+                "COALESCE(json_extract(m.body,'$.metadata_version'),0)<?) "
+                "ORDER BY s.updated DESC LIMIT ?",
+                (owner, METADATA_VERSION, limit),
             ).fetchall()
         for row in rows:
             # One record per transaction bounds writer ownership. Recheck under the
@@ -677,15 +681,16 @@ class SemanticStore:
                 current = db.execute(
                     "SELECT s.body,s.title FROM semantic_sessions s "
                     "LEFT JOIN semantic_session_metadata m ON m.owner=s.owner AND m.session=s.id "
-                    "WHERE s.owner=? AND s.id=? AND m.session IS NULL",
-                    (owner, row["id"]),
+                    "WHERE s.owner=? AND s.id=? AND (m.session IS NULL OR "
+                    "COALESCE(json_extract(m.body,'$.metadata_version'),0)<?)",
+                    (owner, row["id"], METADATA_VERSION),
                 ).fetchone()
                 if current is None:
                     continue
                 snapshot = current["body"]
                 metadata = extract_metadata(json.loads(snapshot), current["title"])
                 db.execute(
-                    "INSERT INTO semantic_session_metadata VALUES(?,?,?,?)",
+                    "INSERT OR REPLACE INTO semantic_session_metadata VALUES(?,?,?,?)",
                     (owner, row["id"], json.dumps(metadata), stamp()),
                 )
                 migrated += 1
@@ -1079,7 +1084,7 @@ class SemanticStore:
                 )
             }
             metadata = {
-                row["session"]: json.loads(row["body"])
+                row["session"]: read_metadata(json.loads(row["body"]))
                 for row in db.execute(
                     "SELECT session,body FROM semantic_session_metadata WHERE owner=?", (owner,)
                 )

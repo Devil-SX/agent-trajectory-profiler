@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Exclude injected agent instructions from session names, refresh legacy metadata indexes, and use directory and date when no effective prompt is available.
+
 ## [3.2.2] - 2026-10-19
 
 ### Fixed

@@ -94,8 +94,16 @@ Each job, chunk and attempt determines a stable X-Jindu-Call-ID. The stored anal
 The single workbench preserves directory, activity-time, search and analysis-state filters.
 Its `analyzed` state requires an actual stored analysis; a measured-only `partial`
 session is not an analysis. Display metadata comes from the canonical worker and
-bounded migration of old IR. The original first user message supplies a title;
-existing abstracts are reused, and no model call generates a display abstract.
+bounded migration of old IR. `session_metadata` owns the effective-prompt filter for
+both worker metadata and prompt operations: known injected instruction/context records
+never supply display names. Without an effective prompt, names use directory and date;
+the first-message field remains null. Existing abstracts are reused without a model call.
+The v2 metadata index replaces older versions in place, at most 32 IR records or a
+16 Mi-character read budget per listing. Each record acquires `BEGIN IMMEDIATE` before
+reading and rechecks its index version, so a concurrent parser's newer metadata wins.
+Old indexes awaiting migration receive the same conservative display projection on
+session and batch reads; this path reads no IR and creates no second stored index.
+Raw IR, source offsets, usage and model jobs remain unchanged.
 Session ordering uses original activity time, never import time.
 
 Batch and individual submissions share the same owner-bound job queue and stable
