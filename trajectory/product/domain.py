@@ -8,6 +8,7 @@ import sqlite3
 import threading
 from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
+from itertools import chain
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,6 +16,15 @@ from zoneinfo import ZoneInfo
 from trajectory.product.contracts import Batch, Correction, Price
 from trajectory.product.costing import quote_record, select_price, usage_record
 from trajectory.product.ledger_scan import LedgerScan, UniqueUsages
+
+INTERACTION_COUNTERS = (
+    "human_interactions",
+    "human_input_chars",
+    "missing_human_input_chars",
+    "unknown_origin_interactions",
+    "agent_interactions",
+    "system_interactions",
+)
 
 
 def now() -> str:
@@ -490,6 +500,50 @@ class Domain:
     def session_summaries(self, owner: str) -> list[dict[str, Any]]:
         return list(self._snapshot(owner)["source_summaries"])
 
+    @staticmethod
+    def interaction_availability(
+        request_records: int, source: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Recorded request evidence is independent of token/byte coverage.
+
+        An absent request ledger cannot prove zero interactions, even when the
+        collector read every byte. User-role IR is not evidence of human origin.
+        """
+        source = source or {}
+        complete = (
+            source.get("read_bytes") == source.get("source_bytes")
+            and source.get("read_bytes") is not None
+            and source.get("errors") == 0
+        )
+        parser = str(source.get("parser", ""))
+        request_contract = parser == "sparkstead-trajectory/3" or parser.startswith(
+            "pi-native-measurements/1:"
+        )
+        coverage_complete = bool(request_records and complete and request_contract)
+        return {
+            "available": request_records > 0,
+            "status": "observed" if request_records else "unknown",
+            "request_records": request_records,
+            "collector_parser": source.get("parser"),
+            "reason": (
+                "request_measurements_missing"
+                if not request_records
+                else None if coverage_complete else "request_collection_coverage_unverified"
+            ),
+            "coverage_status": (
+                "complete" if coverage_complete else "partial" if request_records else "unknown"
+            ),
+            "collection_complete": complete,
+        }
+
+    @staticmethod
+    def apply_interaction_availability(
+        metrics: dict[str, Any], availability: dict[str, Any]
+    ) -> None:
+        if not availability["available"]:
+            for key in INTERACTION_COUNTERS:
+                metrics[key] = None
+
     def source_contributions(self, owner: str, collector: str, source: str) -> list[dict[str, Any]]:
         # Coalesce broad scans and bound concurrent transient identity maps. The
         # returned records belong only to the requested source, never the cache.
@@ -531,6 +585,8 @@ class Domain:
         prices: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
         for row in db.execute("SELECT * FROM prices" + where + " ORDER BY effective", params):
             prices[(row["owner"], row["model"])].append(json.loads(row["body"]))
+        source_coverage = {(row["owner"], row["collector"], row["source"]): row for row in sources}
+        request_records: dict[tuple[str, str, str], int] = defaultdict(int)
         records = LedgerScan(db, owner, corrections)
         scoped_sessions = (
             records.source_sessions(contribution_source) if contribution_source else None
@@ -570,17 +626,7 @@ class Domain:
         tasks: dict[str, dict[str, Any]] = {}
 
         def human_metrics() -> dict[str, int]:
-            return dict.fromkeys(
-                (
-                    "human_interactions",
-                    "human_input_chars",
-                    "missing_human_input_chars",
-                    "unknown_origin_interactions",
-                    "agent_interactions",
-                    "system_interactions",
-                ),
-                0,
-            )
+            return dict.fromkeys(INTERACTION_COUNTERS, 0)
 
         def bucket(key: str, name: str) -> dict[str, Any]:
             return {
@@ -674,6 +720,8 @@ class Domain:
 
         unknown_timestamps = 0
         for record in chronological:
+            if record["kind"] == "request":
+                request_records[(record["owner"], record["collector"], record["source"])] += 1
             unknown_timestamps += int(record["timestamp"] is None)
             if not included(record):
                 continue
@@ -899,6 +947,15 @@ class Domain:
             )
             if target["unpriced_calls"]:
                 target["estimated_usd"] = None
+        # Reuse the existing ledger scan; no extra scan or per-source query.
+        for target in chain(source_metrics.values(), event_metrics.values()):
+            measured = target["record"]
+            source_key = (measured["owner"], measured["collector"], measured["source"])
+            availability = self.interaction_availability(
+                request_records.get(source_key, 0), source_coverage.get(source_key)
+            )
+            target["interaction_availability"] = availability
+            self.apply_interaction_availability(target, availability)
         return {
             **(
                 {"event_contributions": list(event_metrics.values())} if contribution_source else {}

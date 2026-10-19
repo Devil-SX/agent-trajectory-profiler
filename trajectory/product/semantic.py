@@ -760,6 +760,16 @@ class SemanticStore:
             and c["record"]["source"] == record["source"]
         ]
         usage_available = any(c["record"]["kind"] == "usage" for c in selected)
+        interaction_availability = next(
+            (
+                item["interaction_availability"]
+                for item in selected
+                if "interaction_availability" in item
+            ),
+            self.domain.interaction_availability(
+                sum(item["record"]["kind"] == "request" for item in selected)
+            ),
+        )
         zero = dict.fromkeys(COUNTERS, 0)
         for operation in operations:
             operation["metrics"] = total_metrics([zero]) if selected else total_metrics([])
@@ -839,7 +849,12 @@ class SemanticStore:
                     operation["metrics"][key] = None
                 operation["metrics"]["cost_status"] = "unknown"
                 operation["metrics"]["estimated_usd"] = None
+        for operation in operations:
+            self.domain.apply_interaction_availability(
+                operation["metrics"], interaction_availability
+            )
         return {
+            "interaction_availability": interaction_availability,
             "ledger_available": bool(selected),
             "usage_available": usage_available,
             "exact_records": exact,
@@ -865,7 +880,12 @@ class SemanticStore:
                 "tasks": [],
                 "operations": [],
                 "unassigned_operation_ids": [],
-                "coverage": {"content_available": False, "collection": session["collection"]},
+                "coverage": {
+                    "content_available": False,
+                    "collection": session["collection"],
+                    "interaction_availability": session["interaction_availability"],
+                    "warnings": session["coverage"]["warnings"],
+                },
             }
         parsed = json.loads(record["body"])
         metadata = extract_metadata(parsed, record["title"])
@@ -976,6 +996,7 @@ class SemanticStore:
                 ]
             )
         metrics["collection_status"] = collection["status"]
+        self.domain.apply_interaction_availability(metrics, attribution["interaction_availability"])
         for operation in operations:
             operation["metrics"]["collection_status"] = collection["status"]
         parser_notes = list(parsed.get("warnings", []))
@@ -996,6 +1017,8 @@ class SemanticStore:
             warnings.append("尚未收到对应的用量账本，开销和人类投入保持未知。")
         elif not attribution["usage_available"]:
             warnings.append("尚未收到模型用量，token和费用保持未知。")
+        if not attribution["interaction_availability"]["available"]:
+            warnings.append("尚未收到请求交互测量，人类交互次数和输入字数保持未知。")
         if attribution["estimated_records"]:
             warnings.append("部分用量按源记录位置估计归属，任务级开销不是精确调用对齐。")
         return {
@@ -1033,6 +1056,7 @@ class SemanticStore:
                 "content_available": True,
                 "ledger_available": attribution["ledger_available"],
                 "usage_available": attribution["usage_available"],
+                "interaction_availability": attribution["interaction_availability"],
                 "attribution": attribution,
                 "collection": collection,
             },
@@ -1151,6 +1175,10 @@ class SemanticStore:
             collection = ledger_sources.get(key) or archives.get(key) or collection_progress(None)
             metrics = total_metrics([own]) if own else total_metrics([])
             metrics["collection_status"] = collection["status"]
+            interaction_availability = (
+                own["interaction_availability"] if own else self.domain.interaction_availability(0)
+            )
+            self.domain.apply_interaction_availability(metrics, interaction_availability)
             parent_native = meta.get("parent_native_session_id")
             item = {
                 "id": sid,
@@ -1176,6 +1204,15 @@ class SemanticStore:
                 "metrics": metrics,
                 "content_available": bool(record),
                 "collection": collection,
+                "interaction_availability": interaction_availability,
+                "coverage": {
+                    "interaction_availability": interaction_availability,
+                    "warnings": (
+                        []
+                        if interaction_availability["available"]
+                        else ["尚未收到请求交互测量，人类交互次数和输入字数保持未知。"]
+                    ),
+                },
             }
             if project and item["project"] != project:
                 continue
