@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-10-19
+
 ### Fixed
 
 - Preserve canonical task titles when a model echoes a visible existing task with the same parent; locally revalidate paid title-only failures with versioned audit events while retaining original receipts, invalid reviews and usage.
 - Defer only sources that change during prefix validation, allowing stable sources and existing outbox entries to progress while retaining checkpoint integrity and explicit retry status.
 - Identify source-sync validation races and safe error locations without logging private messages, paths or source contents, preserving the shared checkpoint and outbox.
+
+Code stats vs v3.4.0: total 19844 text lines (baseline 19244), +626 (-26) = +600, 3.12% text-line change.
 
 ## [3.4.0] - 2026-10-19
 
