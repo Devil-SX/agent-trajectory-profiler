@@ -612,6 +612,7 @@ class SemanticStore:
                 raise ValueError(
                     "Source changed during parsing; current revision remains authoritative"
                 )
+            self.domain.import_native_measurements(db, owner, source, revision, parsed)
             previous = db.execute(
                 "SELECT body FROM semantic_sessions WHERE owner=? AND id=?", (owner, sid)
             ).fetchone()

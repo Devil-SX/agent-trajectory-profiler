@@ -6,8 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-19
+
 ### Added
 
+- Use one persistent analysis workbench with directory and original-time sorting, sticky visualization controls and explicit stale-result reanalysis.
+- Value analysis attempts through the same account price registry, separating API-equivalent reference cost from unknown actual billing.
 - Show original session directories, timestamps and first user messages, and filter actual stored analysis results.
 - Import source-recorded Pi token and input statistics into the canonical ledger with durable replay, exact source binding and explicit origin gaps.
 - Authorize new ecosystem roots through the existing authenticated machine/collector binding and select individual native sessions without dropping pending uploads.
@@ -20,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Quarantine malformed JSONL records with explicit partial coverage and original byte locations instead of rejecting the entire source.
 - Reuse the source synchronizer checkpoint and outbox for Pi collection.
 - Drain active analysis jobs before coordinator lease handoff and prevent uncertain Jindu calls from being resubmitted under a new paid identity.
+
+Code stats vs v3.1.0: total 14084 text lines (baseline 11307), +2945 (-168) = +2777, 24.56% text-line change.
 
 ## [3.1.0] - 2026-10-19
 
