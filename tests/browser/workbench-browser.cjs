@@ -3,7 +3,7 @@ const fs=require('fs'),http=require('http'),assert=require('node:assert/strict')
 const html=fs.readFileSync(process.argv[2],'utf8');
 assert(!html.includes('\u00b7'));
 const sessions=[
- {id:'complete',display_title:'分析 CPM 优化',cwd:'/research/embodied',started_at:'2026-10-01T06:00:00Z',last_activity_at:'2026-10-18T07:00:00Z',has_analysis:true,analysis_status:'complete',agent:'Codex',summary:'已有摘要，不新增模型请求'},
+ {id:'complete',native_session_id:'native-cpm-7f12',title:'rollout-cpm-source-file.jsonl',display_title:'分析 CPM 优化',cwd:'/research/embodied',started_at:'2026-10-01T06:00:00Z',last_activity_at:'2026-10-18T07:00:00Z',has_analysis:true,analysis_status:'complete',agent:'Codex',summary:'已有摘要，不新增模型请求'},
  {id:'metadata',display_title:'仅元信息部分上传',cwd:'/research/embodied',started_at:'2026-10-10T06:00:00Z',last_activity_at:'2026-10-19T06:00:00Z',has_analysis:false,analysis_status:'partial'},
  {id:'child',display_title:'子 Agent 验证稀疏矩阵',cwd:'/research/embodied',started_at:'2026-10-12T06:00:00Z',last_activity_at:'2026-10-18T08:00:00Z',has_analysis:true,analysis_status:'stale',parent_session_id:'complete'},
  {id:'pending',display_title:'新的 CPM 对照实验',cwd:'/research/embodied',started_at:'2026-10-17T06:00:00Z',last_activity_at:'2026-10-17T06:00:00Z',has_analysis:false,analysis_status:'not_started'},
@@ -23,7 +23,7 @@ const server=http.createServer(async(req,res)=>{
  if(url.pathname==='/trajectory/api/sessions'){
   queries.push(Object.fromEntries(url.searchParams));
   if(failList){res.writeHead(503);return res.end('{}')}
-  return res.end(JSON.stringify({sessions,directories:['/research/embodied','/work/BatCave']}));
+  const query=(url.searchParams.get('q')||'').toLowerCase();const filtered=sessions.filter(s=>['id','title','display_title','cwd','first_user_message','summary','native_session_id','agent_path','parent_session_id','agent','project','project_name'].map(k=>s[k]||'').join(' ').toLowerCase().includes(query));return res.end(JSON.stringify({sessions:filtered,directories:['/research/embodied','/work/BatCave']}));
  }
  if(url.pathname==='/trajectory/api/analysis-batches'&&req.method==='POST'){
   posts.push(JSON.parse(body));
@@ -50,6 +50,7 @@ const server=http.createServer(async(req,res)=>{
  await page.waitForFunction(()=>document.querySelectorAll('.session-button').length===2);
  assert.deepEqual(await page.locator('.session-button').evaluateAll(ns=>ns.map(n=>n.dataset.sessionId)),['child','complete']);
  assert.equal(await page.locator('[data-session-id="metadata"]').count(),0);
+ for(const [query,expectedId] of [['native-cpm-7f12','complete'],['child','child'],['rollout-cpm-source-file.jsonl','complete'],['分析 CPM 优化','complete']]){const response=page.waitForResponse(r=>{const u=new URL(r.url());return u.pathname==='/trajectory/api/sessions'&&u.searchParams.get('q')===query});await page.fill('#session-search',query);await response;await page.waitForFunction(expected=>document.querySelectorAll('.session-button').length===1&&document.querySelector('.session-button')?.dataset.sessionId===expected,expectedId);}await page.fill('#session-search','');await page.waitForFunction(()=>document.querySelectorAll('.session-button').length===2);
  await page.locator('[data-session-id="child"]').click();
  await page.waitForFunction(()=>document.querySelector('#analysis-job-state')?.textContent==='记录已更新，待重新分析');assert.equal(await page.locator('#analysis-view').count(),0);assert((await page.locator('#analysis-content').innerText()).includes('旧任务暂不展示'));assert.equal(await page.locator('[data-session-id="child"]').count(),1);assert.equal(await page.locator('#analyze-session').textContent(),'重新分析');await page.click('#analyze-session');await page.waitForFunction(()=>document.querySelector('#analysis-job-state')?.textContent==='等待分析');assert.equal(analysisPosts.length,1);assert(analysisPosts[0].mutation_id);
  await page.getByRole('button',{name:'查看父会话',exact:true}).click();
@@ -81,6 +82,6 @@ const server=http.createServer(async(req,res)=>{
  await page.screenshot({path:process.argv[3]+'/workbench-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:process.argv[3]+'/workbench-mobile.png',fullPage:true});
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.deepEqual(errors,[]);
- console.log(JSON.stringify({status:'passed',checks:['status filter persistence','metadata-only excluded','source and time sorting','existing summary','parent navigation','stable batch retry','batch progress recovery','empty and stale list','mobile layout','persistent navigation'],api_queries:queries.length}));
+ console.log(JSON.stringify({status:'passed',checks:['server-authoritative native/opaque/title search','status filter persistence','metadata-only excluded','source and time sorting','existing summary','parent navigation','stable batch retry','batch progress recovery','empty and stale list','mobile layout','persistent navigation'],api_queries:queries.length}));
  }finally{await browser.close();server.close()}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close()});
