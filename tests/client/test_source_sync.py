@@ -256,6 +256,41 @@ class SourceSyncTests(unittest.TestCase):
             2,
         )
 
+    def test_pi_root_uses_shared_checkpoint_without_reupload(self):
+        legacy_root = r"C:\pi\sessions"
+        legacy_path = legacy_root + r"\session.jsonl"
+        identity = self.root / "identity.json"
+        identity.write_text(
+            json.dumps(
+                {"collector": "collector", "sources": [sync.source_id("collector", legacy_path)]}
+            )
+        )
+        config = {
+            "legacy_identity_snapshot": str(identity),
+            "roots": [
+                {
+                    "local_root": str(self.root),
+                    "legacy_root": legacy_root,
+                    "ecosystem": "pi",
+                    "allow_new_sources": True,
+                }
+            ],
+        }
+        collector, specs = sync.validate_manifest(config)
+        self.assertEqual(specs[0]["ecosystem"], "pi")
+        self.state.prepare(collector, specs[0])
+        first = self.ack(self.state.next())
+        self.state.close()
+        self.state = sync.SyncState(self.root / "state.sqlite")
+        self.assertFalse(self.state.prepare(collector, sync.validate_manifest(config)[1][0]))
+        with self.path.open("ab") as stream:
+            stream.write(b'{"type":"message"}\n')
+        self.assertTrue(self.state.prepare(collector, specs[0]))
+        second = self.ack(self.state.next())
+        self.assertEqual(second["source"], first["source"])
+        self.assertEqual(second["generation"], first["generation"])
+        self.assertEqual(second["start"], first["end"])
+
     def test_anchored_root_can_discover_new_sources_before_legacy_worker(self):
         legacy_root = r"C:\logs"
         identity = self.root / "identity.json"

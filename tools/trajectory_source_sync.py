@@ -336,7 +336,7 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
         unique[identity] = spec
     specs = list(unique.values())
     for spec in specs:
-        if spec["ecosystem"] not in {"codex", "claude_code"}:
+        if spec["ecosystem"] not in {"codex", "claude_code", "pi"}:
             raise ValueError("Unsupported ecosystem")
         if (
             source_id(collector, spec["legacy_path"]) not in known

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Parse Pi native sessions through the unified worker, retaining branch, source usage and directory metadata.
+
+### Fixed
+
+- Quarantine malformed JSONL records with explicit partial coverage and original byte locations instead of rejecting the entire source.
+- Reuse the source synchronizer checkpoint and outbox for Pi collection.
+
 ## [3.1.0] - 2026-10-19
 
 ### Changed

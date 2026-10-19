@@ -32,3 +32,29 @@ The profile test used synthetic data only. Real multi-session accounting,
 semantic annotation quality, authenticated API flow and production browser
 acceptance remain service integration responsibilities; these component tests
 do not establish that the website has been deployed.
+
+
+## Pi adapter and damaged JSONL acceptance, 2026-10-19
+
+Worker 0.1.2 was built and tested on `batcave-wsl` under the isolated
+`/home/saveer/BatCave/tests/trajectory-pi-20261019` directory, using the existing
+isolated Rust 1.99.1/Zig toolchain. Production and Sparkstead were unchanged.
+
+- `cargo test --locked --offline`: 9 passed, including native Pi branch and
+  cache-write/cache-read preservation, missing-field handling, stable replay,
+  and quarantined-line offsets without rewriting source bytes.
+- Source sync stdlib suite: 21 passed, including Pi root discovery and shared
+  checkpoint reopen/append without duplicate upload.
+- Ruff and Black use the repository's `pyproject.toml`; both passed remotely.
+- Three private original sources were parsed without any model call. Two Pi
+  sessions yielded 352 and 1,018 operations. The damaged Codex source yielded
+  2,072 operations and explicit partial coverage: 14,234 valid records and one
+  quarantined record at line 9,939. Each source hash and every valid record byte
+  range was checked against its unchanged original bytes. No source text is
+  committed in this repository.
+
+Built worker SHA-256:
+`de83a602faf4a881e68d2f299a61854f046bab53bb1418eaa85fb566f40cebea`.
+The private isolated test directory retains `real-source-acceptance.json` as the
+verification receipt. The source gap must also remain visible in service analysis
+results; native acceptance alone does not certify the integrated web release.

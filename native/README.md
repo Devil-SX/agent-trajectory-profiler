@@ -34,8 +34,10 @@ not invoke parsing for each upload chunk. JSONL incomplete final records are
 held as raw bytes for the next snapshot. File input is read as bytes; only the
 prefix through the last complete newline is UTF-8 decoded, so a half-written
 Unicode character in the pending suffix does not fail parsing. Gemini's full
-JSON document must be valid UTF-8 in its entirety. Malformed complete records fail the job rather
-than disappearing silently. Source identity and operation IDs are stable on
+JSON document must be valid UTF-8 in its entirety. Malformed complete JSONL records are quarantined in the parser view. The result
+reports partial coverage and original line, byte range, hash and reason; original
+bytes remain archived and subsequent source locations retain their original offsets.
+Invalid UTF-8 in complete records and malformed full JSON documents still fail the job. Source identity and operation IDs are stable on
 replay; cross-session inherited context still requires source-native lineage
 and the service's consumption identity rules, rather than content-only dedup.
 
@@ -54,3 +56,16 @@ on `batcave-wsl` in an isolated directory under `/home/saveer/BatCave/tests`.
 The build requires Rust 1.87 or later. Install both binaries and the emitted
 upstream MIT license with the release. No submodule or runtime Git fetch is
 required in production.
+
+The Pi adapter accepts native v3 JSONL logs under `~/.pi/agent/sessions`. It maps
+message/tool blocks into an ephemeral agent-session-compatible view and marks the
+result's agent type as Pi. Original parent IDs, branch records, usage fields and
+source positions remain in `source_records`; missing usage and human origin stay
+unknown. It retains historical branches as evidence rather than pretending they
+are a flat current model context. No second analysis or billing pipeline is added.
+
+`metadata` exposes only source-recorded `native_session_id`, `cwd`, `started_at`,
+`last_activity_at`, `parent_session_id`, `first_user_message` and an existing
+`abstract` (otherwise null). No model is called to generate session abstracts.
+`coverage` distinguishes complete from quarantined-record partial coverage, and
+`quarantined_records` identifies the archive locations without echoing content.

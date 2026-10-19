@@ -157,3 +157,9 @@ An existing pending outbox body is always replayed unchanged before preparing an
 new chunk. This makes recent and actively growing sessions visible promptly;
 historical sources use remaining cycle capacity. It does not promise strict
 fairness or a deadline for completing all historical backfill.
+
+Supported `ecosystem` values are `codex`, `claude_code` and `pi`. A Pi root uses
+its native `~/.pi/agent/sessions` tree and the exact path spelling registered by
+the existing collector. It follows the same registered-root anchor checks,
+checkpoint/outbox and process lock as other ecosystems. Adding a Pi root never
+resets existing Codex/Claude state or creates another collector identity.

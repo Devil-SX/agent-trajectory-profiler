@@ -44,7 +44,8 @@ fn parse(request: &Request) -> Result<Value, String> {
     if request.source_id.is_empty() {
         return Err("source_id is required".into());
     }
-    if !["codex", "claude", "gemini", "cursor", "codebuddy"].contains(&request.agent.as_str()) {
+    if !["codex", "claude", "gemini", "cursor", "codebuddy", "pi"].contains(&request.agent.as_str())
+    {
         return Err("unsupported agent".into());
     }
     // JSONL appends can stop in the middle of an encoded Unicode character or
@@ -73,6 +74,9 @@ fn parse(request: &Request) -> Result<Value, String> {
     let content = std::str::from_utf8(&source[..complete_bytes])
         .map_err(|_| "invalid UTF-8 in complete source records")?;
     let mut records = Vec::new();
+    let mut valid_source = String::new();
+    let mut values = Vec::new();
+    let mut quarantined = Vec::new();
     let mut offset = 0;
     if is_document {
         let record: Value =
@@ -84,8 +88,20 @@ fn parse(request: &Request) -> Result<Value, String> {
         for (ordinal, line) in content.split_inclusive('\n').enumerate() {
             let end = offset + line.len();
             if !line.trim().is_empty() {
-                let record: Value = serde_json::from_str(line)
-                    .map_err(|_| format!("invalid source JSON at line {}", ordinal + 1))?;
+                let record: Value = match serde_json::from_str::<Value>(line) {
+                    Ok(record) if record.is_object() => record,
+                    _ => {
+                        quarantined.push(json!({"source_line":ordinal+1,"byte_start":offset,
+                            "byte_end":end,"record_sha256":digest(line.as_bytes()),
+                            "reason":"invalid_json_record"}));
+                        // Keep a blank line in the parser view, never rewrite the archive or offsets.
+                        valid_source.push('\n');
+                        offset = end;
+                        continue;
+                    }
+                };
+                valid_source.push_str(line);
+                values.push(record.clone());
                 let payload = record.get("payload").unwrap_or(&record);
                 let ts_ms = record
                     .get("timestamp")
@@ -95,6 +111,9 @@ fn parse(request: &Request) -> Result<Value, String> {
                 let lineage = if record.get("type").and_then(Value::as_str) == Some("session_meta")
                 {
                     json!({"id":payload.get("id"),"forked_from_id":payload.get("forked_from_id"),"parent_thread_id":payload.get("parent_thread_id"),"source":payload.get("source")})
+                } else if request.agent == "pi" {
+                    json!({"id":record.get("id"),"parentId":record.get("parentId"),
+                        "parentSession":record.get("parentSession"),"parent_session_id":record.get("parent_session_id")})
                 } else {
                     Value::Null
                 };
@@ -103,9 +122,11 @@ fn parse(request: &Request) -> Result<Value, String> {
                     "record_sha256":digest(line.trim_end_matches(['\r','\n']).as_bytes()),
                     "record_type":record.get("type"),"payload_type":payload.get("type"),
                     "native_id":payload.get("id").or_else(||record.get("uuid")),
+                    "parent_native_id":record.get("parentId"),
+                    "human_origin":record.get("human_origin"),
                     "call_id":payload.get("call_id").or_else(||record.get("tool_use_id")),
                     "timestamp_ms":ts_ms,"lineage":lineage,
-                    "usage_evidence":if payload.get("type").and_then(Value::as_str)==Some("token_count") {payload.get("info")} else {None}}));
+                    "usage_evidence":if request.agent=="pi" {record.get("message").and_then(|m|m.get("usage"))} else if payload.get("type").and_then(Value::as_str)==Some("token_count") {payload.get("info")} else {record.get("message").and_then(|m|m.get("usage"))}}));
             }
             offset = end;
         }
@@ -115,9 +136,33 @@ fn parse(request: &Request) -> Result<Value, String> {
     } else {
         &request.source_path
     };
-    let session =
-        agent_session::parse_session_content(&request.agent, Path::new(path), UNIX_EPOCH, content)
-            .ok_or("source did not yield an agent session")?;
+    let pi_content = if request.agent == "pi" {
+        pi_adapter(&values)?
+    } else {
+        String::new()
+    };
+    let parser_content = if request.agent == "pi" {
+        &pi_content
+    } else if is_document {
+        content
+    } else {
+        &valid_source
+    };
+    let parser_agent = if request.agent == "pi" {
+        "claude"
+    } else {
+        &request.agent
+    };
+    let mut session = agent_session::parse_session_content(
+        parser_agent,
+        Path::new(path),
+        UNIX_EPOCH,
+        parser_content,
+    )
+    .ok_or("source did not yield an agent session")?;
+    if request.agent == "pi" {
+        session.agent_type = "pi".into();
+    }
     let mut operations = Vec::new();
     let mut by_timestamp: HashMap<i64, Option<usize>> = HashMap::new();
     let mut by_call: HashMap<&str, Option<usize>> = HashMap::new();
@@ -165,16 +210,185 @@ fn parse(request: &Request) -> Result<Value, String> {
             "metrics":{},"location":location(tool.ts_ms,tool.call_id.as_deref())}));
     }
     operations.sort_by_key(|value| value["timestamp_ms"].as_i64().unwrap_or(i64::MAX));
+    let mut warnings = vec![
+        "upstream IR usage zero does not establish source availability; billing must inspect source-recorded fields",
+        "upstream parser accepts complete snapshots, not independent suffixes",
+        "source_records are retained for provenance, fork lineage, exact usage, and content absent from upstream IR",
+    ];
+    if !quarantined.is_empty() {
+        warnings.push(
+            "coverage gap: malformed records quarantined; raw bytes retained in source archive",
+        );
+    }
     Ok(
         json!({"schema":SCHEMA,"worker_version":env!("CARGO_PKG_VERSION"),"parser":{"name":"agent-session","version":"0.5.17"},
         "source_id":request.source_id,"source_sha256":digest(content.as_bytes()),
         "complete_bytes":complete_bytes,"pending_bytes":source.len()-complete_bytes,
+        "metadata":source_metadata(&values),
+        "coverage":{"status":if quarantined.is_empty() {"complete"} else {"partial"},
+            "complete_records":records.len()+quarantined.len(),"valid_records":records.len(),
+            "quarantined_records":quarantined.len(),"complete_bytes":complete_bytes,
+            "pending_bytes":source.len()-complete_bytes},
+        "quarantined_records":quarantined,
         "session":session,"source_records":records,"operations":operations,
         "measurement_policy":"source_recorded_only",
-        "warnings":["upstream IR usage zero does not establish source availability; billing must inspect source-recorded fields",
-                    "upstream parser accepts complete snapshots, not independent suffixes",
-                    "source_records are retained for provenance, fork lineage, exact usage, and content absent from upstream IR"]}),
+        "warnings":warnings}),
     )
+}
+
+/// Pi's native tree remains in source_records. The compatibility view is ephemeral:
+/// agent-session owns the common IR and source positions always refer to original bytes.
+fn pi_adapter(records: &[Value]) -> Result<String, String> {
+    let header = records
+        .iter()
+        .find(|r| r["type"] == "session")
+        .ok_or("Pi source has no session header")?;
+    let session_id = header["id"].as_str().ok_or("Pi session has no id")?;
+    let mut output = String::new();
+    for record in records {
+        if record["type"] != "message" {
+            continue;
+        }
+        let message = &record["message"];
+        let role = message["role"].as_str().unwrap_or("");
+        if !["user", "assistant", "toolResult"].contains(&role) {
+            continue;
+        }
+        let mut blocks = Vec::new();
+        if let Some(text) = message["content"].as_str() {
+            blocks.push(json!({"type":"text","text":text}));
+        }
+        if let Some(parts) = message["content"].as_array() {
+            for part in parts {
+                match part["type"].as_str().unwrap_or("") {
+                    "text" => blocks.push(part.clone()),
+                    "toolCall" => blocks.push(json!({"type":"tool_use","id":part["id"],
+                        "name":part["name"],"input":part["arguments"]})),
+                    _ => (),
+                }
+            }
+        }
+        let mapped_role = if role == "assistant" {
+            "assistant"
+        } else {
+            "user"
+        };
+        if role == "toolResult" {
+            blocks = vec![
+                json!({"type":"tool_result","tool_use_id":message["toolCallId"],
+                "content":blocks,"is_error":message["isError"]}),
+            ];
+        }
+        let mut mapped = json!({"type":mapped_role,"sessionId":session_id,"uuid":record["id"],
+            "parentUuid":record["parentId"],"timestamp":record["timestamp"],"cwd":header["cwd"],
+            "message":{"id":record["id"],"role":mapped_role,"model":message["model"],"content":blocks}});
+        if let Some(usage) = message.get("usage") {
+            let mut target = serde_json::Map::new();
+            for (native, unified) in [
+                ("input", "input_tokens"),
+                ("output", "output_tokens"),
+                ("cacheRead", "cache_read_input_tokens"),
+                ("cacheWrite", "cache_creation_input_tokens"),
+            ] {
+                if let Some(value) = usage.get(native) {
+                    target.insert(unified.into(), value.clone());
+                }
+            }
+            mapped["message"]["usage"] = Value::Object(target);
+        }
+        output.push_str(&serde_json::to_string(&mapped).map_err(|_| "cannot adapt Pi record")?);
+        output.push('\n');
+    }
+    Ok(output)
+}
+
+fn source_metadata(records: &[Value]) -> Value {
+    let mut metadata = json!({"native_session_id":null,"cwd":null,"started_at":null,
+        "last_activity_at":null,"parent_session_id":null,"first_user_message":null,"abstract":null});
+    let mut first_ts: Option<(i64, String)> = None;
+    let mut last_ts: Option<(i64, String)> = None;
+    for record in records {
+        let payload = record.get("payload").unwrap_or(record);
+        let kind = record["type"].as_str().unwrap_or("");
+        if ["session_meta", "session"].contains(&kind) {
+            for (target, keys) in [
+                ("native_session_id", vec!["id"]),
+                ("cwd", vec!["cwd"]),
+                (
+                    "parent_session_id",
+                    vec!["forked_from_id", "parent_thread_id", "parent_session_id"],
+                ),
+            ] {
+                if let Some(value) = keys
+                    .iter()
+                    .find_map(|key| payload.get(*key))
+                    .filter(|v| !v.is_null())
+                {
+                    metadata[target] = value.clone();
+                }
+            }
+        }
+        for key in ["cwd", "sessionId"] {
+            let target = if key == "cwd" {
+                "cwd"
+            } else {
+                "native_session_id"
+            };
+            if metadata[target].is_null() && record.get(key).is_some() {
+                metadata[target] = record[key].clone();
+            }
+        }
+        if metadata["abstract"].is_null() {
+            if let Some(value) = record
+                .get("abstract")
+                .or_else(|| payload.get("abstract"))
+                .filter(|v| v.is_string())
+            {
+                metadata["abstract"] = value.clone();
+            }
+        }
+        if let Some(ts) = record
+            .get("timestamp")
+            .or_else(|| payload.get("timestamp"))
+            .and_then(Value::as_str)
+            .and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(s)
+                    .ok()
+                    .map(|d| (d.timestamp_millis(), s.to_string()))
+            })
+        {
+            if first_ts.as_ref().is_none_or(|first| ts.0 < first.0) {
+                first_ts = Some(ts.clone());
+            }
+            if last_ts.as_ref().is_none_or(|last| ts.0 > last.0) {
+                last_ts = Some(ts);
+            }
+        }
+        let message = record.get("message").unwrap_or(payload);
+        if metadata["first_user_message"].is_null() && message["role"] == "user" {
+            let text = if let Some(text) = message["content"].as_str() {
+                text.to_owned()
+            } else {
+                message["content"]
+                    .as_array()
+                    .map(|parts| {
+                        parts
+                            .iter()
+                            .filter(|p| p["type"] == "text" || p["type"] == "input_text")
+                            .filter_map(|p| p["text"].as_str())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default()
+            };
+            if !text.is_empty() {
+                metadata["first_user_message"] = json!(text);
+            }
+        }
+    }
+    metadata["started_at"] = first_ts.map(|(_, s)| json!(s)).unwrap_or(Value::Null);
+    metadata["last_activity_at"] = last_ts.map(|(_, s)| json!(s)).unwrap_or(Value::Null);
+    metadata
 }
 
 fn main() -> io::Result<()> {
@@ -258,8 +472,20 @@ mod tests {
     }
 
     #[test]
-    fn malformed_complete_line_is_not_silently_dropped() {
-        assert!(parse(&request(&format!("{SOURCE}broken\n"))).is_err());
+    fn malformed_complete_line_is_quarantined_with_original_offsets() {
+        let bad = "broken\n";
+        let last = SOURCE.lines().nth(2).unwrap();
+        let content = format!("{SOURCE}{bad}{last}\n");
+        let result = parse(&request(&content)).unwrap();
+        assert_eq!(result["coverage"]["status"], "partial");
+        assert_eq!(result["coverage"]["quarantined_records"], 1);
+        assert_eq!(result["quarantined_records"][0]["byte_start"], SOURCE.len());
+        assert_eq!(
+            result["source_records"][4]["byte_start"],
+            SOURCE.len() + bad.len()
+        );
+        assert_eq!(result["source_records"][4]["source_line"], 6);
+        assert_eq!(result["source_sha256"], digest(content.as_bytes()));
     }
 
     #[test]
@@ -352,5 +578,57 @@ mod tests {
                 .iter()
                 .all(|operation| operation["metrics"] == json!({}))
         );
+    }
+    const PI_SOURCE: &str = concat!(
+        r#"{"type":"session","version":3,"id":"pi-session","timestamp":"2026-10-01T10:00:00Z","cwd":"/home/sdu/embodied","parent_session_id":"pi-parent"}"#,
+        "\n",
+        r#"{"type":"message","id":"u1","parentId":null,"timestamp":"2026-10-01T10:00:01Z","message":{"role":"user","content":[{"type":"text","text":"Compare AI and CPM"}]}}"#,
+        "\n",
+        r#"{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-10-01T10:00:02Z","message":{"role":"assistant","model":"test-model","content":[{"type":"thinking","thinking":"private"},{"type":"toolCall","id":"call-1","name":"bash","arguments":{"command":"pwd"}}],"usage":{"input":20,"output":4,"cacheRead":8,"cacheWrite":2,"reasoning":3,"cost":{"total":0.001}}}}"#,
+        "\n",
+        r#"{"type":"message","id":"t1","parentId":"a1","timestamp":"2026-10-01T10:00:03Z","message":{"role":"toolResult","toolCallId":"call-1","toolName":"bash","content":[{"type":"text","text":"/home/sdu/embodied"}],"isError":false}}"#,
+        "\n",
+        r#"{"type":"message","id":"u2","parentId":"u1","timestamp":"2026-10-01T10:00:04Z","message":{"role":"user","content":[{"type":"text","text":"Alternative branch"}]}}"#,
+        "\n",
+        r#"{"type":"message","id":"a2","parentId":"u2","timestamp":"2026-10-01T10:00:05Z","message":{"role":"assistant","model":"test-model","content":[{"type":"text","text":"Compared"}]}}"#,
+        "\n"
+    );
+
+    #[test]
+    fn pi_native_adapter_preserves_branch_usage_unknowns_and_locations() {
+        let mut req = request(PI_SOURCE);
+        req.agent = "pi".into();
+        let result = parse(&req).unwrap();
+        assert_eq!(result["session"]["session_id"], "pi-session");
+        assert_eq!(result["session"]["agent_type"], "pi");
+        assert_eq!(result["metadata"]["cwd"], "/home/sdu/embodied");
+        assert_eq!(result["metadata"]["parent_session_id"], "pi-parent");
+        assert_eq!(
+            result["metadata"]["first_user_message"],
+            "Compare AI and CPM"
+        );
+        assert_eq!(
+            result["metadata"]["last_activity_at"],
+            "2026-10-01T10:00:05Z"
+        );
+        assert_eq!(result["source_records"][4]["parent_native_id"], "u1");
+        assert_eq!(
+            result["source_records"][2]["usage_evidence"]["cacheWrite"],
+            2
+        );
+        assert!(result["source_records"][5]["usage_evidence"].is_null());
+        assert!(result["source_records"][1]["human_origin"].is_null());
+        assert!(result["metadata"]["abstract"].is_null());
+        assert_eq!(result["session"]["usage"]["cache_creation_tokens"], 2);
+        assert_eq!(result["session"]["usage"]["cache_read_tokens"], 8);
+        let ops = result["operations"].as_array().unwrap();
+        assert!(
+            ops.iter()
+                .any(|o| o["kind"] == "tool" && o["location"]["source_line"] == 3)
+        );
+        assert!(ops.iter().all(|o| o["metrics"] == json!({})));
+        assert_eq!(result["source_sha256"], digest(PI_SOURCE.as_bytes()));
+        let replay = parse(&req).unwrap();
+        assert_eq!(result["operations"], replay["operations"]);
     }
 }

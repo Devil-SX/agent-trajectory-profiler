@@ -12,7 +12,7 @@ class Record(BaseModel):
     session: str = Field(min_length=1, max_length=200)
     parent: str | None = Field(default=None, max_length=200)
     task: str = Field(min_length=1, max_length=128)
-    ecosystem: Literal["codex", "claude_code"]
+    ecosystem: Literal["codex", "claude_code", "pi"]
     timestamp: datetime | None
     kind: Literal["request", "usage", "tool_start", "tool_end", "notice"]
     input_origin: Literal["human", "agent", "system", "unknown"] | None = None
@@ -96,7 +96,7 @@ class SourceChunk(BaseModel):
     mutation_id: str = Field(min_length=16, max_length=128)
     collector: str = Field(min_length=1, max_length=100)
     source: str = Field(pattern=r"^[a-f0-9]{64}$")
-    ecosystem: Literal["codex", "claude_code"]
+    ecosystem: Literal["codex", "claude_code", "pi"]
     generation: str = Field(min_length=1, max_length=128)
     start: int = Field(ge=0)
     end: int = Field(ge=0)
