@@ -181,10 +181,13 @@ class AnalysisRuntime:
                     != os.environ.get("TRAJECTORY_MODEL_REASONING_EFFORT", "")
                     or result.get("provenance", {}).get("prompt_version") != PROMPT_VERSION
                 ):
+                    resume = self.store.resume_context(job)
                     result = segment(
                         detail["operations"],
                         detail["session"]["title"],
                         analysis_id=job["id"],
+                        prior_progress=resume["prior_progress"],
+                        resume_generation=resume["generation"],
                         checkpoint=directory / ("chunks-" + job["id"] + ".json"),
                         progress=lambda value: self.store.job_progress(job, value),
                     )

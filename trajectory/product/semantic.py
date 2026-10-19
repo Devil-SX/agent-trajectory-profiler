@@ -101,6 +101,12 @@ def collection_progress(row: Any) -> dict[str, Any]:
     }
 
 
+class AnalysisResumeError(ValueError):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
 class SemanticStore:
     def __init__(self, domain: Domain):
         self.domain = domain
@@ -129,6 +135,9 @@ class SemanticStore:
                 CREATE TABLE IF NOT EXISTS semantic_batch_items(
                     batch TEXT,session TEXT,job TEXT,PRIMARY KEY(batch,session));
                 CREATE TABLE IF NOT EXISTS semantic_job_execution(job TEXT PRIMARY KEY,body TEXT);
+                CREATE TABLE IF NOT EXISTS semantic_job_resumes(
+                    job TEXT,generation INTEGER,body TEXT,created TEXT,
+                    PRIMARY KEY(job,generation));
                 CREATE TABLE IF NOT EXISTS semantic_job_progress(job TEXT PRIMARY KEY,body TEXT);
                 CREATE TABLE IF NOT EXISTS semantic_job_times(
                     job TEXT PRIMARY KEY,started TEXT,finished TEXT);
@@ -289,6 +298,17 @@ class SemanticStore:
         ).fetchone()
         if uncertain:
             raise ValueError("Prior Jindu result uncertain; reconcile original job before retry")
+        if (
+            kind == "analyze"
+            and db.execute(
+                "SELECT 1 FROM semantic_jobs WHERE owner=? AND session=? AND kind='analyze' "
+                "AND source_revision=? AND status='failed'",
+                (owner, sid, revision),
+            ).fetchone()
+        ):
+            raise ValueError(
+                "Resume the original failed analysis job; a new paid identity is prohibited"
+            )
         identifier = uuid.uuid4().hex
         db.execute(
             "INSERT INTO semantic_jobs VALUES(?,?,?,?,?,?,?,?,?)",
@@ -372,6 +392,152 @@ class SemanticStore:
                 },
             )
 
+    @staticmethod
+    def resume_eligibility(job: dict[str, Any], progress: dict[str, Any], generation: int) -> str:
+        if job["kind"] != "analyze" or job["status"] != "failed":
+            return "analysis_not_failed"
+        if generation >= 3:
+            return "resume_limit_reached"
+        calls = progress.get("analysis_usage", [])
+        if "result uncertain" in job.get("message", "") or any(
+            call.get("failed") or call.get("state") in {"prepared", "uncertain"} for call in calls
+        ):
+            return "prior_call_uncertain"
+        if not calls or not (
+            calls[-1].get("valid") is False
+            and calls[-1].get("receipt_id")
+            and isinstance(calls[-1].get("usage"), dict)
+            and calls[-1]["usage"]
+        ):
+            return "received_invalid_result_required"
+        if progress.get("state") != "failed":
+            return "failed_progress_required"
+        return "eligible"
+
+    def resume_state(
+        self,
+        job: dict[str, Any] | None,
+        progress: dict[str, Any],
+        current_source_revision: str,
+    ) -> dict[str, Any]:
+        generation = job.get("resume_generation", 0) if job else 0
+        reason = (
+            self.resume_eligibility(job, progress, generation) if job else "analysis_not_failed"
+        )
+        if reason == "eligible" and job:
+            if job["source_revision"] != current_source_revision:
+                reason = "analysis_source_changed"
+            elif not job.get("execution_job"):
+                reason = "execution_identity_missing"
+        return {
+            "eligible": reason == "eligible",
+            "reason": reason,
+            "job_id": job["id"] if job else None,
+            "generation": generation,
+            "completed_chunks": progress.get("completed_chunks", 0),
+            "max_generations": 3,
+        }
+
+    def resume_context(self, job: dict[str, Any]) -> dict[str, Any]:
+        with self.domain.connect() as db:
+            row = db.execute(
+                "SELECT generation,body FROM semantic_job_resumes WHERE job=? "
+                "ORDER BY generation DESC LIMIT 1",
+                (job["id"],),
+            ).fetchone()
+            progress = db.execute(
+                "SELECT body FROM semantic_job_progress WHERE job=?", (job["id"],)
+            ).fetchone()
+        return {
+            "generation": row["generation"] if row else 0,
+            "authorization": json.loads(row["body"]) if row else None,
+            "prior_progress": json.loads(progress[0]) if progress else {},
+        }
+
+    def resume_analysis(self, owner: str, job_id: str, value: AnalysisRequest) -> dict[str, Any]:
+        """Authorize bounded continuation of the same failed job, never a fresh analysis."""
+        from trajectory.product.semantic_model import PROMPT_VERSION
+
+        body = "analysis.resume:" + job_id + ":" + value.model_dump_json()
+        with self.domain.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            prior = self.domain._prior(db, owner, value.mutation_id, body)
+            if prior:
+                return prior
+            row = db.execute(
+                "SELECT * FROM semantic_jobs WHERE owner=? AND id=?", (owner, job_id)
+            ).fetchone()
+            if row is None:
+                raise PermissionError("Analysis job unavailable")
+            progress_row = db.execute(
+                "SELECT body FROM semantic_job_progress WHERE job=?", (job_id,)
+            ).fetchone()
+            progress = json.loads(progress_row[0]) if progress_row else {}
+            generation = db.execute(
+                "SELECT COALESCE(max(generation),0) FROM semantic_job_resumes " "WHERE job=?",
+                (job_id,),
+            ).fetchone()[0]
+            reason = self.resume_eligibility(dict(row), progress, generation)
+            if reason != "eligible":
+                raise AnalysisResumeError(reason)
+            current = db.execute(
+                "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
+                (owner, row["session"]),
+            ).fetchone()
+            if current is None or current[0] != row["source_revision"]:
+                raise AnalysisResumeError("analysis_source_changed")
+            if db.execute(
+                "SELECT 1 FROM semantic_jobs WHERE owner=? AND session=? AND id<>? "
+                "AND status IN ('queued','running')",
+                (owner, row["session"], job_id),
+            ).fetchone():
+                raise AnalysisResumeError("another_analysis_active")
+            execution = db.execute(
+                "SELECT body FROM semantic_job_execution WHERE job=?", (job_id,)
+            ).fetchone()
+            if not execution:
+                raise AnalysisResumeError("execution_identity_missing")
+            old_execution = json.loads(execution[0])
+            if old_execution.get("prompt_version") not in {
+                "trajectory-task-hierarchy/1",
+                PROMPT_VERSION,
+            }:
+                raise AnalysisResumeError("unsupported_prompt_migration")
+            target = {**old_execution, "prompt_version": PROMPT_VERSION}
+            authorization = {
+                "generation": generation + 1,
+                "from_execution": old_execution,
+                "to_execution": target,
+                "completed_chunks": progress.get("completed_chunks", 0),
+                "previous_call_ids": [call.get("call_id") for call in progress["analysis_usage"]],
+                "policy": "received_invalid_only_preserve_completed_chunks",
+            }
+            queued_at = stamp()
+            db.execute(
+                "INSERT INTO semantic_job_resumes VALUES(?,?,?,?)",
+                (job_id, generation + 1, json.dumps(authorization, sort_keys=True), queued_at),
+            )
+            db.execute(
+                "UPDATE semantic_jobs SET status='queued',message='',updated=? WHERE id=?",
+                (queued_at, job_id),
+            )
+            return self.domain._receipt(
+                db,
+                owner,
+                value.mutation_id,
+                body,
+                "analysis.resume",
+                {
+                    "job_id": job_id,
+                    "session_id": row["session"],
+                    "status": "queued",
+                    "resume_generation": generation + 1,
+                    "queued_at": queued_at,
+                    "completed_chunks": progress.get("completed_chunks", 0),
+                    "source_revision": row["source_revision"],
+                },
+            )
+
     def claim_job(self) -> dict[str, Any] | None:
         with self.domain.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -419,8 +585,21 @@ class SemanticStore:
                 "SELECT body FROM semantic_job_execution WHERE job=?", (job["id"],)
             ).fetchone()
             if prior and prior[0] != body:
-                raise ValueError(
-                    "Analysis execution configuration changed; review original job before retry"
+                resume = db.execute(
+                    "SELECT body FROM semantic_job_resumes WHERE job=? "
+                    "ORDER BY generation DESC LIMIT 1",
+                    (job["id"],),
+                ).fetchone()
+                authorization = json.loads(resume[0]) if resume else {}
+                if (
+                    authorization.get("from_execution") != json.loads(prior[0])
+                    or authorization.get("to_execution") != configuration
+                ):
+                    raise ValueError(
+                        "Analysis execution configuration changed; review original job before retry"
+                    )
+                db.execute(
+                    "UPDATE semantic_job_execution SET body=? WHERE job=?", (body, job["id"])
                 )
             db.execute(
                 "INSERT OR IGNORE INTO semantic_job_execution VALUES(?,?)", (job["id"], body)
@@ -498,10 +677,13 @@ class SemanticStore:
                 raise PermissionError("Batch unavailable")
             rows = db.execute(
                 "SELECT j.*,t.started,t.finished,s.title AS session_title,s.agent AS session_agent,"
-                "m.body AS session_metadata FROM semantic_batch_items i "
+                "m.body AS session_metadata,s.source_revision AS current_source_revision,"
+                "e.job AS execution_job,COALESCE((SELECT max(generation) FROM semantic_job_resumes "
+                "r WHERE r.job=j.id),0) AS resume_generation FROM semantic_batch_items i "
                 "JOIN semantic_jobs j ON j.id=i.job LEFT JOIN semantic_job_times t ON t.job=j.id "
                 "LEFT JOIN semantic_sessions s ON s.owner=j.owner AND s.id=j.session "
                 "LEFT JOIN semantic_session_metadata m ON m.owner=j.owner AND m.session=j.session "
+                "LEFT JOIN semantic_job_execution e ON e.job=j.id "
                 "WHERE i.batch=? ORDER BY j.created,j.id",
                 (batch_id,),
             ).fetchall()
@@ -516,7 +698,7 @@ class SemanticStore:
                 if row["status"] == "failed":
                     failed = db.execute(
                         "SELECT body FROM audit WHERE actor=? AND id=? "
-                        "AND operation='analysis.failed'",
+                        "AND operation='analysis.failed' ORDER BY created DESC,rowid DESC LIMIT 1",
                         (owner, row["id"]),
                     ).fetchone()
                     if failed:
@@ -559,6 +741,9 @@ class SemanticStore:
                         "finished_at": row["finished"],
                         "elapsed_seconds": elapsed,
                         "progress": progress,
+                        "resume": self.resume_state(
+                            dict(row), progress, row["current_source_revision"]
+                        ),
                         "analysis_usage": provenance.get(
                             "analysis_usage", progress.get("analysis_usage", [])
                         ),
@@ -907,8 +1092,11 @@ class SemanticStore:
                 "SELECT * FROM semantic_analyses WHERE owner=? AND session=?", (owner, sid)
             ).fetchone()
             job = db.execute(
-                "SELECT * FROM semantic_jobs WHERE owner=? AND session=? AND kind='analyze' "
-                "ORDER BY created DESC LIMIT 1",
+                "SELECT j.*,e.job AS execution_job,COALESCE((SELECT max(generation) "
+                "FROM semantic_job_resumes r WHERE r.job=j.id),0) AS resume_generation "
+                "FROM semantic_jobs j LEFT JOIN semantic_job_execution e ON e.job=j.id "
+                "WHERE j.owner=? AND j.session=? AND j.kind='analyze' "
+                "ORDER BY j.created DESC LIMIT 1",
                 (owner, sid),
             ).fetchone()
             progress_row = (
@@ -1032,6 +1220,9 @@ class SemanticStore:
             },
             "status": status,
             "progress": progress,
+            "resume": self.resume_state(
+                dict(job) if job else None, progress, record["source_revision"]
+            ),
             "has_analysis": analysis is not None,
             "analysis_current": current_analysis,
             "message": job["message"] if job and status == "failed" else "",

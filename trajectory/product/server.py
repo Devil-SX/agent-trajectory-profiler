@@ -29,7 +29,7 @@ from trajectory.product.contracts import (
 )
 from trajectory.product.domain import Domain
 from trajectory.product.error_logging import log_request_exception
-from trajectory.product.semantic import SemanticStore
+from trajectory.product.semantic import AnalysisResumeError, SemanticStore
 from trajectory.product.semantic_runtime import AnalysisRuntime
 
 
@@ -108,6 +108,15 @@ OPERATIONS: list[dict[str, Any]] = [
         "scope": "configure",
         "input": AnalysisRequest,
         "effect": "Queue semantic segmentation using the configured model; incurs model usage",
+    },
+    {
+        "id": "analysis_resume",
+        "method": "POST",
+        "path": "/api/analysis-jobs/{job_id}/resume",
+        "scope": "configure",
+        "input": AnalysisRequest,
+        "effect": "Continue the same failed job from durable checkpoints, at most 3 resumes; "
+        "new windows incur model usage, uncertain calls remain blocked",
     },
     {
         "id": "analysis_batch_run",
@@ -520,6 +529,13 @@ def create_app(
                     if not principal.machine_client:
                         raise HTTPException(403, "Uploads require a native machine account")
                     return await asyncio.to_thread(semantic.ingest_source, principal.account, value)
+                if identifier == "analysis_resume":
+                    return await asyncio.to_thread(
+                        semantic.resume_analysis,
+                        principal.account,
+                        request.path_params["job_id"],
+                        value,
+                    )
                 if identifier == "analysis_batch_run":
                     return await asyncio.to_thread(semantic.request_batch, principal.account, value)
                 if identifier == "session_parse":
@@ -580,6 +596,8 @@ def create_app(
                 raise HTTPException(422, "Invalid protocol payload") from error
             except PermissionError as error:
                 raise HTTPException(403, str(error)) from error
+            except AnalysisResumeError as error:
+                raise HTTPException(409, {"code": error.code, "message": str(error)}) from error
             except ValueError as error:
                 raise HTTPException(409, str(error)) from error
             raise HTTPException(404, "Unknown operation")
