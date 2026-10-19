@@ -345,6 +345,7 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
             raise ValueError("Source path does not match the existing collector")
         if not Path(spec["path"]).is_file():
             raise ValueError("Source file is unavailable")
+    specs.sort(key=lambda spec: (-Path(spec["path"]).stat().st_mtime_ns, spec["legacy_path"]))
     return collector, specs
 
 

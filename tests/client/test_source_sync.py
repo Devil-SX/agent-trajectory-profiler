@@ -321,6 +321,108 @@ class SourceSyncTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "boolean"):
             sync.validate_manifest(config)
 
+    def test_newest_source_precedes_cold_with_stable_path_tiebreaker(self):
+        new = self.root / "new.jsonl"
+        new.write_text("{}")
+        sync.os.utime(self.path, ns=(100, 100))
+        sync.os.utime(new, ns=(200, 200))
+        identity = self.root / "identity.json"
+        identity.write_text(
+            json.dumps(
+                {
+                    "collector": "collector",
+                    "sources": [sync.source_id("collector", r"C:\logs\session.jsonl")],
+                }
+            )
+        )
+        config = {
+            "legacy_identity_snapshot": str(identity),
+            "roots": [
+                {
+                    "local_root": str(self.root),
+                    "legacy_root": r"C:\logs",
+                    "ecosystem": "codex",
+                    "allow_new_sources": True,
+                }
+            ],
+        }
+        self.assertEqual(sync.validate_manifest(config)[1][0]["path"], str(new))
+        sync.os.utime(new, ns=(100, 100))
+        specs = sync.validate_manifest(config)[1]
+        self.assertEqual(
+            [spec["legacy_path"] for spec in specs], sorted(spec["legacy_path"] for spec in specs)
+        )
+
+    def test_pending_body_replays_before_newer_source_is_prepared(self):
+        self.state.prepare("collector", self.spec)
+        original = self.state.next()[1]
+        new = self.root / "new.jsonl"
+        new.write_text("{}")
+        posts = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers["Content-Length"]))
+                posts.append(body.decode())
+                batch = json.loads(body)
+                response = json.dumps(
+                    {
+                        "durable": True,
+                        "mutation_id": batch["mutation_id"],
+                        "accepted_bytes": batch["end"] - batch["start"],
+                        "next_offset": batch["end"],
+                    }
+                ).encode()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(response)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        origin = f"http://127.0.0.1:{server.server_port}"
+        identity = self.root / "identity.json"
+        new_spec = {"path": str(new), "legacy_path": r"C:\logs\new.jsonl", "ecosystem": "codex"}
+        identity.write_text(
+            json.dumps(
+                {
+                    "collector": "collector",
+                    "sources": [
+                        sync.source_id("collector", s["legacy_path"]) for s in [self.spec, new_spec]
+                    ],
+                }
+            )
+        )
+        credential = self.root / "credential.json"
+        credential.write_text(json.dumps({"origin": origin, "api_key": "test-only"}))
+        credential.chmod(0o600)
+        try:
+            result = sync.sync_once(
+                {
+                    "url": origin + "/trajectory/api/source-chunks",
+                    "credential": str(credential),
+                    "state": str(self.root / "state.sqlite"),
+                    "legacy_identity_snapshot": str(identity),
+                    "sources": [new_spec, self.spec],
+                },
+                1,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+        self.assertEqual(result["chunks"], 1)
+        self.assertEqual(posts, [original])
+        self.assertIsNone(
+            self.state.db.execute(
+                "SELECT 1 FROM sources WHERE source=?",
+                (sync.source_id("collector", new_spec["legacy_path"]),),
+            ).fetchone()
+        )
+
     def test_state_cannot_silently_change_endpoint_or_collector(self):
         self.state.bind("collector", "https://example.com/trajectory/api/source-chunks")
         self.state.bind("collector", "https://example.com/trajectory/api/source-chunks")

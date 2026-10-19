@@ -151,3 +151,9 @@ TLS hostname and certificate verification. Use it when the service's confirmed
 public DNS route works directly and a local environment proxy causes handshake
 failures. A changed proxy transport never changes source identity, pending body,
 mutation ID or checkpoints.
+
+All discovered sources are ordered by newest `mtime_ns`, then stable legacy path.
+An existing pending outbox body is always replayed unchanged before preparing any
+new chunk. This makes recent and actively growing sessions visible promptly;
+historical sources use remaining cycle capacity. It does not promise strict
+fairness or a deadline for completing all historical backfill.
