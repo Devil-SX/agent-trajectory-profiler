@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-10-19
+
 ### Fixed
 
 - Bound new task display titles without changing task identity, hierarchy or operation membership. Revalidate already paid title-only failures locally, retain original usage and raw reviews, and migrate title audit metadata to one versioned field.
+
+Code stats vs v3.4.1: total 20097 text lines (baseline 19844), +289 (-36) = +253, 1.27% text-line change.
 
 ## [3.4.1] - 2026-10-19
 
