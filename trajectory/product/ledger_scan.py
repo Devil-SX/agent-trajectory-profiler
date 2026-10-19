@@ -3,7 +3,7 @@
 import json
 import sqlite3
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 from trajectory.product.projects import classify_record, request_route
 
@@ -32,18 +32,40 @@ class LedgerScan:
         if order:
             query += " ORDER BY " + order
         for row in self.db.execute(query, self.params + extra_params):
-            record = json.loads(row["body"])
-            record.update(owner=row["owner"], collector=row["collector"], source=row["source"])
-            if classify:
-                classify_record(record, self.routes)
-                correction = self.corrections.get((record["owner"], record["task"]))
-                if correction:
-                    record.update(
-                        project=correction["project"],
-                        project_name=correction["name"],
-                        evidence="corrected",
-                    )
-            yield record
+            yield self.decode(row, classify=classify)
+
+    def decode(self, row: sqlite3.Row, *, classify: bool = True) -> dict[str, Any]:
+        record: dict[str, Any] = json.loads(row["body"])
+        record.update(owner=row["owner"], collector=row["collector"], source=row["source"])
+        if classify:
+            classify_record(record, self.routes)
+            correction = self.corrections.get((record["owner"], record["task"]))
+            if correction:
+                record.update(
+                    project=correction["project"],
+                    project_name=correction["name"],
+                    evidence="corrected",
+                )
+        return record
+
+    def usage_candidates(self, sessions: set[str]) -> Iterator[sqlite3.Row]:
+        # Every account-wide candidate still participates in winner selection.
+        # Only the eventual winner's selected session needs a decoded body. This
+        # projection avoids sending unrelated event bodies to Python twice.
+        where = self.where + (" AND " if self.where else " WHERE ")
+        query = (
+            "SELECT owner,collector,source,"
+            "json_extract(body,'$.ecosystem') AS ecosystem,"
+            "json_extract(body,'$.consumption') AS consumption,"
+            "json_extract(body,'$.id') AS event_id,"
+            "CASE WHEN json_extract(body,'$.session') IN "
+            "(SELECT value FROM json_each(?)) THEN body END AS body "
+            "FROM events"
+            + where
+            + "json_extract(body,'$.kind')='usage' ORDER BY "
+            + self.ordering(True)
+        )
+        yield from self.db.execute(query, (json.dumps(sorted(sessions)),) + self.params)
 
     def ordering(self, reverse: bool = False) -> str:
         direction = " DESC" if reverse else " ASC"
@@ -95,19 +117,41 @@ class LedgerScan:
 
 
 class UniqueUsages:
-    def __init__(self, records: LedgerScan):
+    def __init__(self, records: LedgerScan, *, sessions: set[str] | None = None):
         self.records = records
+        self.sessions = sessions
         self.duplicates = 0
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
         seen: set[tuple[str, str, str]] = set()
         self.duplicates = 0
-        for record in self.records._scan(
-            "json_extract(body,'$.kind')='usage'", order=self.records.ordering(True)
-        ):
-            key = (record["owner"], record["ecosystem"], record.get("consumption") or record["id"])
+        candidates: Iterator[dict[str, Any] | sqlite3.Row]
+        if self.sessions is None:
+            candidates = self.records._scan(
+                "json_extract(body,'$.kind')='usage'", order=self.records.ordering(True)
+            )
+        else:
+            candidates = self.records.usage_candidates(self.sessions)
+        for candidate in candidates:
+            if self.sessions is None:
+                record = cast(dict[str, Any], candidate)
+                key = (
+                    record["owner"],
+                    record["ecosystem"],
+                    record.get("consumption") or record["id"],
+                )
+            else:
+                key = (
+                    candidate["owner"],
+                    candidate["ecosystem"],
+                    candidate["consumption"] or candidate["event_id"],
+                )
             if key in seen:
                 self.duplicates += 1
                 continue
             seen.add(key)
+            if self.sessions is not None:
+                if candidate["body"] is None:
+                    continue
+                record = self.records.decode(cast(sqlite3.Row, candidate))
             yield record

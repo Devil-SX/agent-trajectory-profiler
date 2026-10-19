@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from trajectory.product.contracts import Batch, Correction, Price
 from trajectory.product.costing import quote_record, select_price, usage_record
 from trajectory.product.ledger_scan import LedgerScan, UniqueUsages
+from trajectory.product.read_cache import RevisionCache
 
 INTERACTION_COUNTERS = (
     "human_interactions",
@@ -37,6 +38,8 @@ class Domain:
         self.path = path
         self._overview_lock = threading.Lock()
         self._overview_cache: OrderedDict[tuple[Any, ...], dict[str, Any]] = OrderedDict()
+        self._source_cache = RevisionCache(max_bytes=16 * 1024 * 1024, max_entries=16)
+        self._source_scan_slots = threading.BoundedSemaphore(2)
         with self.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS request_traces(
@@ -466,15 +469,21 @@ class Domain:
             "calls": quoted,
         }
 
+    def ledger_revision(self, db: sqlite3.Connection | None = None) -> int:
+        """Global winners, prices and corrections share one transactional revision."""
+        if db is None:
+            with self.connect() as connection:
+                return self.ledger_revision(connection)
+        revision = db.execute(
+            "SELECT rowid FROM audit WHERE operation IN ('ingest','price','correct') "
+            "ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        return revision[0] if revision else 0
+
     def _snapshot(self, owner: str | None, since: str = "", until: str = "") -> dict[str, Any]:
         # Public and session summaries share a compact aggregate snapshot.
         # Only ledger mutations invalidate it; raw uploads and request traces do not.
-        with self.connect() as db:
-            revision = db.execute(
-                "SELECT rowid FROM audit WHERE operation IN ('ingest','price','correct') "
-                "ORDER BY rowid DESC LIMIT 1"
-            ).fetchone()
-        key = (owner, since, until, revision[0] if revision else 0)
+        key = (owner, since, until, self.ledger_revision())
         with self._overview_lock:
             if key not in self._overview_cache:
                 # Two compact slots allow global/account alternation without retaining
@@ -540,14 +549,20 @@ class Domain:
                 metrics[key] = None
 
     def source_contributions(self, owner: str, collector: str, source: str) -> list[dict[str, Any]]:
-        # Coalesce broad scans and bound concurrent transient identity maps. The
-        # returned records belong only to the requested source, never the cache.
-        with self._overview_lock:
-            return list(
-                self._calculate_overview(owner, contribution_source=(collector, source))[
-                    "event_contributions"
-                ]
-            )
+        key = (owner, collector, source, self.ledger_revision())
+
+        def load() -> list[dict[str, Any]]:
+            # Separate from overview work: identical sources coalesce in the cache;
+            # different cold sources retain a bounded number of global identity maps.
+            with self._source_scan_slots:
+                return list(
+                    self._calculate_overview(owner, contribution_source=(collector, source))[
+                        "event_contributions"
+                    ]
+                )
+
+        selected: list[dict[str, Any]] = self._source_cache.get(key, load)
+        return selected
 
     def _calculate_overview(
         self,
@@ -587,7 +602,7 @@ class Domain:
             records.source_sessions(contribution_source) if contribution_source else None
         )
         chronological = records.chronological(scoped_sessions)
-        usages = UniqueUsages(records)
+        usages = UniqueUsages(records, sessions=scoped_sessions)
 
         def context_length(record: dict[str, Any]) -> int | None:
             if record["input"] is None:
