@@ -109,6 +109,18 @@ dispatch and the received response before decoding. Replaying a journal uses the
 saved response, never another upstream request. Source text and model responses
 remain outside HTTP errors and public diagnostics.
 
+Before preparing its first call, each analysis durably freezes its complete packed
+input beside its checkpoint. This execution artifact binds the exact title, ordered
+operation windows, source revision, IR body digest, model configuration and prompt
+digest. It is installed without replacement and verified on every resume. New jobs
+read raw IR through `SemanticStore.session_record`; mutable display attribution,
+task membership and current usage never become their model input. Legacy jobs may
+freeze their original display projection only when its full identity exactly
+matches the existing checkpoint. A mismatch requires reviewed recovery of the
+original input, rather than changing paid window boundaries or request digests.
+The source IR remains the content authority; the frozen artifact is the immutable
+input of one execution, not another editable IR store.
+
 The domain authorizes at most three continuations of a failed job with confirmed
 invalid output. Each continuation preserves job, batch, source and configuration
 identity, keeps every measured call, and uses later attempt IDs for unfinished

@@ -7,6 +7,8 @@ import hashlib
 import json
 import os
 import re
+import stat
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -401,6 +403,217 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _input_identity(
+    analysis_id: str,
+    title: str,
+    chunks: list[list[dict[str, Any]]],
+    config: dict[str, Any],
+    prompt: str,
+) -> str:
+    # This is the original paid-input identity, including its JSON serialization.
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "analysis_id": analysis_id,
+                "prompt": prompt,
+                "title": title,
+                "chunks": chunks,
+                "model": config["name"],
+                "route": config["route"],
+                "reasoning_effort": config.get("reasoning_effort", ""),
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+
+
+def prepare_model_input(
+    operations: list[dict[str, Any]],
+    title: str,
+    *,
+    analysis_id: str,
+    checkpoint: Path,
+    source_context: dict[str, str] | None = None,
+    fresh_input: dict[str, Any] | None = None,
+) -> tuple[list[list[dict[str, Any]]], str, dict[str, Any]]:
+    """Durably pin one execution input, without calling a model or changing paid identities.
+
+    Existing jobs require an exact match to their full original input identity.
+    Only jobs without checkpoints or prepared calls may select fresh raw IR.
+    This function also supports an explicitly reviewed, offline recovery prepare.
+    """
+    config = _configuration()
+    binding = source_context or {}
+    frozen_config = {
+        key: config.get(key, default)
+        for key, default in (
+            ("name", ""),
+            ("route", ""),
+            ("reasoning_effort", ""),
+            ("input_chars", 24000),
+            ("operation_chars", 2000),
+            ("output_tokens", 8192),
+        )
+    }
+    path = checkpoint.with_name(checkpoint.name + ".input.json")
+    system_sha = hashlib.sha256(SYSTEM.encode()).hexdigest()
+
+    def payload_digest(value: dict[str, Any]) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                {k: v for k, v in value.items() if k != "payload_sha256"},
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+
+    def validate(value: dict[str, Any]) -> tuple[list[list[dict[str, Any]]], str, dict[str, Any]]:
+        if (
+            value.get("schema") != "trajectory-model-input/1"
+            or value.get("analysis_id") != analysis_id
+            or value.get("source_context") != binding
+            or value.get("config") != frozen_config
+            or value.get("system_sha256") != system_sha
+            or value.get("pack_version") != "bounded-operation-evidence/1"
+            or value.get("payload_sha256") != payload_digest(value)
+            or value.get("identity_prompt_version") not in {LEGACY_PROMPT_VERSION, PROMPT_VERSION}
+            or not isinstance(value.get("title"), str)
+            or not isinstance(value.get("chunks"), list)
+        ):
+            raise SemanticModelError(
+                "Immutable model input integrity or configuration changed", retryable=False
+            )
+        chunks = value["chunks"]
+        if value.get("identity") != _input_identity(
+            analysis_id, value["title"], chunks, config, value["identity_prompt_version"]
+        ):
+            raise SemanticModelError("Immutable model input identity changed", retryable=False)
+        ids = [node.get("id") for chunk in chunks for node in chunk]
+        if any(not isinstance(oid, str) or not oid for oid in ids) or len(ids) != len(set(ids)):
+            raise SemanticModelError(
+                "Immutable model input has invalid operation identities", retryable=False
+            )
+        if fresh_input is not None and ids != [
+            node.get("id") for node in fresh_input["operations"]
+        ]:
+            raise SemanticModelError(
+                "Immutable model input does not match pinned IR operations", retryable=False
+            )
+        return (
+            chunks,
+            value["title"],
+            {
+                "schema": value["schema"],
+                "sha256": value["payload_sha256"],
+                "source_context": binding,
+                "origin": value["origin"],
+            },
+        )
+
+    def read_frozen() -> tuple[list[list[dict[str, Any]]], str, dict[str, Any]]:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor) as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
+                raise SemanticModelError("Unsafe immutable model input file", retryable=False)
+            value = json.load(stream)
+            os.fsync(stream.fileno())
+        directory_fd = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return validate(value)
+
+    legacy_paths = [checkpoint, checkpoint.with_name(checkpoint.name + ".v2")]
+    if any(p.is_symlink() for p in legacy_paths):
+        raise SemanticModelError("Unsafe analysis checkpoint path", retryable=False)
+    if path.exists() or path.is_symlink():
+        return read_frozen()
+    saved = [(p, json.loads(p.read_text())) for p in legacy_paths if p.is_file()]
+    has_journal = any(p.with_name(p.name + ".calls").is_dir() for p in legacy_paths)
+    if not saved and has_journal:
+        raise SemanticModelError("Existing model calls have no input checkpoint", retryable=False)
+    selected: dict[str, Any] = (
+        fresh_input
+        if not saved and fresh_input is not None
+        else {
+            "operations": operations,
+            "title": title,
+        }
+    )
+    operations, title = selected["operations"], selected["title"]
+    ids = [operation.get("id") for operation in operations]
+    if any(not isinstance(oid, str) or not oid for oid in ids) or len(ids) != len(set(ids)):
+        raise SemanticModelError("Operations require unique nonempty string identities")
+    chunks = _pack(operations, config)
+    prompt = PROMPT_VERSION
+    versions: tuple[str, ...]
+    if saved:
+        if saved[0][0] != checkpoint:
+            raise SemanticModelError("Legacy analysis checkpoint is missing", retryable=False)
+        current = saved[0][1]
+        if len(saved) > 1:
+            if current.get("identity") != _input_identity(
+                analysis_id, title, chunks, config, LEGACY_PROMPT_VERSION
+            ):
+                raise SemanticModelError("Ambiguous analysis checkpoint successor", retryable=False)
+            current = saved[1][1]
+            versions = (PROMPT_VERSION,)
+        else:
+            versions = (LEGACY_PROMPT_VERSION, PROMPT_VERSION)
+        matches = [
+            version
+            for version in versions
+            if current.get("identity")
+            == _input_identity(analysis_id, title, chunks, config, version)
+        ]
+        if not matches:
+            raise SemanticModelError(
+                "Analysis checkpoint configuration changed; review before retry", retryable=False
+            )
+        prompt = matches[0]
+    value = {
+        "schema": "trajectory-model-input/1",
+        "analysis_id": analysis_id,
+        "source_context": binding,
+        "config": frozen_config,
+        "system_sha256": system_sha,
+        "pack_version": "bounded-operation-evidence/1",
+        "title": title,
+        "chunks": chunks,
+        "origin": "verified_legacy_checkpoint" if saved else "raw_ir",
+        "identity_prompt_version": prompt,
+        "identity": _input_identity(analysis_id, title, chunks, config, prompt),
+    }
+    value["payload_sha256"] = payload_digest(value)
+    validate(value)
+    # One inode is installed exactly once. A competing writer cannot replace it.
+    descriptor, temporary_name = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            json.dump(value, stream, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            existing = read_frozen()
+            if existing[2]["sha256"] != value["payload_sha256"]:
+                raise SemanticModelError(
+                    "Concurrent model input initialization differs", retryable=False
+                ) from None
+            return existing
+        directory_fd = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return validate(value)
+
+
 def segment(
     operations: list[dict[str, Any]],
     title: str,
@@ -413,6 +626,8 @@ def segment(
     reconciled_calls: dict[str, dict[str, Any]] | None = None,
     should_pause: Callable[[], bool] | None = None,
     authorized_recomputations: list[dict[str, Any]] | None = None,
+    source_context: dict[str, str] | None = None,
+    fresh_input: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resume the same job; a new generation authorizes at most two later attempts.
 
@@ -424,10 +639,33 @@ def segment(
     if type(resume_generation) is not int or not 0 <= resume_generation <= 3:
         raise SemanticModelError("Invalid analysis resume generation", retryable=False)
     config = _configuration()
+    if (
+        (
+            (prior_progress or {}).get("completed_chunks", 0) > 0
+            or (prior_progress or {}).get("analysis_usage")
+        )
+        and checkpoint is not None
+        and not checkpoint.is_file()
+    ):
+        raise SemanticModelError(
+            "Successful prefix checkpoint is missing or older than acknowledged progress",
+            retryable=False,
+        )
     ids = [operation.get("id") for operation in operations]
     if any(not isinstance(oid, str) or not oid for oid in ids) or len(ids) != len(set(ids)):
         raise SemanticModelError("Operations require unique nonempty string identities")
-    chunks = _pack(operations, config)  # Keep canonical v1 boundaries for paid-prefix reuse.
+    input_reference = None
+    if checkpoint is not None:
+        chunks, title, input_reference = prepare_model_input(
+            operations,
+            title,
+            analysis_id=analysis_id,
+            checkpoint=checkpoint,
+            source_context=source_context,
+            fresh_input=fresh_input,
+        )
+    else:
+        chunks = _pack(operations, config)
     provenance: dict[str, Any] = {
         "backend": "jindu",
         "model": config["name"],
@@ -437,7 +675,7 @@ def segment(
         "prompt_version": PROMPT_VERSION,
         "membership_wire": MEMBERSHIP_WIRE,
         "created_at": datetime.now(UTC).isoformat(),
-        "operation_count": len(operations),
+        "operation_count": sum(len(chunk) for chunk in chunks),
         "request_timeout_seconds": config.get("timeout", 240),
         "analysis_usage": [],
         "input_policy": {
@@ -461,20 +699,7 @@ def segment(
     }
 
     def identity_for(prompt: str) -> str:
-        return hashlib.sha256(
-            json.dumps(
-                {
-                    "analysis_id": analysis_id,
-                    "prompt": prompt,
-                    "title": title,
-                    "chunks": chunks,
-                    "model": config["name"],
-                    "route": config["route"],
-                    "reasoning_effort": config.get("reasoning_effort", ""),
-                },
-                sort_keys=True,
-            ).encode()
-        ).hexdigest()
+        return _input_identity(analysis_id, title, chunks, config, prompt)
 
     identity = identity_for(PROMPT_VERSION)
     completed_chunks = 0
@@ -524,6 +749,8 @@ def segment(
             retryable=False,
         )
     _migrate_title_normalizations(provenance)
+    if input_reference is not None:
+        provenance["model_input"] = input_reference
     provenance["resume_generation"] = resume_generation
     for call in (prior_progress or {}).get("analysis_usage", []):
         _merge_usage(provenance["analysis_usage"], call)

@@ -156,11 +156,19 @@ class AnalysisRuntime:
             else:
                 from trajectory.product.semantic_model import PROMPT_VERSION, segment
 
-                detail = self.store.detail(
+                record = self.store.session_record(
                     job["owner"], job["session"], source_revision=job["source_revision"]
                 )
-                if detail["source_revision"] != job["source_revision"]:
+                if record["source_revision"] != job["source_revision"]:
                     raise ValueError("Source changed; request analysis of current revision")
+                parsed = json.loads(record["body"])
+                raw_input = {"operations": parsed.get("operations", []), "title": record["title"]}
+                input_context = {
+                    "source_revision": job["source_revision"],
+                    "ir_body_sha256": digest(record["body"]),
+                    "session_id": job["session"],
+                    "owner_hash": digest(job["owner"]),
+                }
                 self.store.pin_execution(
                     job,
                     {
@@ -189,14 +197,38 @@ class AnalysisRuntime:
                     or result.get("provenance", {}).get("prompt_version") != PROMPT_VERSION
                 ):
                     resume = self.store.resume_context(job)
+                    input_checkpoint = directory / ("chunks-" + job["id"] + ".json")
+                    legacy_paths = [
+                        input_checkpoint,
+                        input_checkpoint.with_name(input_checkpoint.name + ".v2"),
+                    ]
+                    if not input_checkpoint.with_name(
+                        input_checkpoint.name + ".input.json"
+                    ).exists() and any(
+                        path.exists() or path.with_name(path.name + ".calls").exists()
+                        for path in legacy_paths
+                    ):
+                        # Existing paid inputs used the legacy display projection.
+                        # It may be frozen only after its original full identity matches.
+                        detail = self.store.detail(
+                            job["owner"], job["session"], source_revision=job["source_revision"]
+                        )
+                        execution_input = {
+                            "operations": detail["operations"],
+                            "title": detail["session"]["title"],
+                        }
+                    else:
+                        execution_input = raw_input
                     result = segment(
-                        detail["operations"],
-                        detail["session"]["title"],
+                        execution_input["operations"],
+                        execution_input["title"],
                         analysis_id=job["id"],
                         prior_progress=resume["prior_progress"],
                         resume_generation=resume["generation"],
                         authorized_recomputations=resume["authorized_recomputations"],
-                        checkpoint=directory / ("chunks-" + job["id"] + ".json"),
+                        checkpoint=input_checkpoint,
+                        source_context=input_context,
+                        fresh_input=raw_input,
                         progress=lambda value: self.store.job_progress(job, value),
                         should_pause=self._pause_requested,
                     )
@@ -217,6 +249,9 @@ class AnalysisRuntime:
                             os.close(directory_fd)
                     finally:
                         temporary.unlink(missing_ok=True)
+                detail = self.store.detail(
+                    job["owner"], job["session"], source_revision=job["source_revision"]
+                )
                 result["provenance"]["source_revision"] = job["source_revision"]
                 result["provenance"]["profiler"] = self.profile(directory, detail, result)
                 self.store.save_analysis(

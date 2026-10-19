@@ -244,5 +244,8 @@ def test_successful_chunk_checkpoint_resumes_without_another_paid_request(tmp_pa
     assert path.stat().st_mode & 0o077 == 0
     import pytest
 
+    # Mutable display labels no longer replace an already frozen model input.
+    assert model.segment(operations, "changed", analysis_id="stable-job", checkpoint=path) == first
+    config["input_chars"] += 1
     with pytest.raises(model.SemanticModelError, match="configuration changed"):
-        model.segment(operations, "changed", analysis_id="stable-job", checkpoint=path)
+        model.segment(operations, "test", analysis_id="stable-job", checkpoint=path)

@@ -198,18 +198,19 @@ def test_runtime_new_job_explicitly_pins_new_ir_instead_of_stored_analysis(seede
         db.execute("UPDATE semantic_jobs SET status='complete' WHERE kind='parse'")
     queued = store.request_analysis("owner", sid, AnalysisRequest(mutation_id=uuid.uuid4().hex))
     observed = {}
-    original = store.detail
+    original = store.session_record
 
-    def detail(*args, **kwargs):
+    def record(*args, **kwargs):
         observed["pin"] = kwargs["source_revision"]
         return original(*args, **kwargs)
 
     def segment(operations, title, **kwargs):
         observed["ids"] = [op["id"] for op in operations]
         observed["job"] = kwargs["analysis_id"]
+        observed["source_context"] = kwargs["source_context"]
         raise semantic_model.SemanticModelError("fixture stops before any paid call")
 
-    monkeypatch.setattr(store, "detail", detail)
+    monkeypatch.setattr(store, "session_record", record)
     monkeypatch.setattr(semantic_model, "segment", segment)
     runtime = AnalysisRuntime(store)
     try:
@@ -219,6 +220,11 @@ def test_runtime_new_job_explicitly_pins_new_ir_instead_of_stored_analysis(seede
     assert observed["pin"] == new_revision
     assert observed["ids"][-1] == "appended-op"
     assert observed["job"] == queued["job_id"]
+    assert observed["source_context"]["source_revision"] == new_revision
+    assert (
+        observed["source_context"]["ir_body_sha256"]
+        == hashlib.sha256(original("owner", sid, new_revision)["body"].encode()).hexdigest()
+    )
 
 
 def test_http_revision_pin_and_331_unpinned_reader_keep_saved_snapshot(seeded):
