@@ -12,7 +12,8 @@ const sessions=[
 ];
 let posts=[],batchReads=0,failSubmit=true,failList=false,childQueued=false;const analysisPosts=[];
 const queries=[];
-const batch={batch_id:'batch-test',status:'running',total:2,concurrency:4,counts:{running:1,queued:1},items:[{session_id:'metadata',status:'running',progress:{completed_chunks:3,total_chunks:12,model:'glm-test'},elapsed_seconds:22},{session_id:'pending',status:'queued'}]};
+const detachedSession={id:'outside-list',display_title:'验证 CPM 编译器融合策略',cwd:'/research/embodied/ai-cpm',started_at:'2026-10-10T06:00:00Z',last_activity_at:'2026-10-19T07:30:00Z'};
+const batch={batch_id:'batch-test',status:'running',total:2,concurrency:4,counts:{running:1,queued:1},items:[{session_id:'metadata',status:'running',progress:{completed_chunks:3,total_chunks:12,model:'glm-test'},elapsed_seconds:22},{session_id:'outside-list',status:'queued',session:detachedSession}]};
 const server=http.createServer(async(req,res)=>{
  let body='';for await(const chunk of req)body+=chunk;
  res.setHeader('content-type','application/json');
@@ -63,7 +64,7 @@ const server=http.createServer(async(req,res)=>{
  await page.click('#submit-batch');await page.waitForFunction(()=>document.querySelector('#batch-feedback').textContent.includes('503'));
  failSubmit=false;await page.click('#submit-batch');await page.waitForSelector('.batch-panel');
  assert.equal(posts.length,2);assert.equal(posts[0].mutation_id,posts[1].mutation_id);assert.deepEqual(posts[1].session_ids,['metadata','pending']);assert.equal(posts[1].concurrency,4);
- assert((await page.locator('.batch-panel').innerText()).includes('已完成 0 / 2'));await page.getByText('查看各会话进度',{exact:true}).click();assert((await page.locator('.batch-panel').innerText()).includes('3 / 12 批'));
+ assert((await page.locator('.batch-panel').innerText()).includes('已完成 0 / 2'));await page.getByText('查看各会话进度',{exact:true}).click();assert((await page.locator('.batch-panel').innerText()).includes('3 / 12 批'));assert((await page.locator('.batch-panel').innerText()).includes('验证 CPM 编译器融合策略'));assert((await page.locator('.batch-panel').innerText()).includes('/research/embodied/ai-cpm'));assert(!(await page.locator('.batch-panel').innerText()).includes('outside-list'));await page.selectOption('#session-status','analyzed');await page.waitForFunction(()=>document.querySelectorAll('.session-button').length===2);assert((await page.locator('.batch-panel').innerText()).includes('验证 CPM 编译器融合策略'));assert.equal(await page.locator('[data-session-id="outside-list"]').count(),0);
  await page.reload();await page.waitForSelector('.batch-panel');assert(batchReads>=2);
  await page.selectOption('#session-status','all');await page.selectOption('#session-directory','/work/BatCave');await page.waitForSelector('[data-session-id="failed"]');assert.equal(await page.locator('.session-button').count(),2);
  await page.fill('#session-search','不存在的会话');await page.waitForFunction(()=>document.querySelector('#session-list').textContent.includes('当前筛选没有匹配会话'));
