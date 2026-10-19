@@ -114,7 +114,7 @@ Install the script at `~/.local/lib/trajectory/trajectory_source_sync.py`, the s
 configuration at `~/.config/trajectory/source-sync.json`, and both units at
 `~/.config/systemd/user/`. Enable with `systemctl --user enable --now
 trajectory-source-sync.timer`. Manual calls must use the same configuration/state.
-The timer starts one-shot jobs after the preceding job finishes; the OS lock also
+The timer starts one-shot jobs with a 20-chunk limit (at most 10 MiB) after the preceding job finishes; the OS lock also
 protects against concurrent Agent calls. This does not restart or reconfigure
 Sparkstead. The timer runs on the log-owning machine, not the remote BatCave server.
 
