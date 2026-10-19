@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-19
+
+### Changed
+
+- Route semantic model calls exclusively through Jindu using a dedicated native machine account and route allowlist.
+- Record stable per-attempt call IDs, gateway receipts and request durations; stop uncertain paid calls without automatic resend.
+- Remove direct supplier and Responses transports, preserving historical analysis results.
+
+Code stats vs v3.0.1: total 11307 text lines (baseline 11230), +139 (-62) = +77, 0.69% text-line change.
+
 ## [3.0.1] - 2026-10-19
 
 ### Fixed

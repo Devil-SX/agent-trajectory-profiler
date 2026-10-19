@@ -17,3 +17,5 @@ Developer architecture and protocol details are in [ARCHITECTURE.md](ARCHITECTUR
 The former local profiler, its database-query CLI and its React dashboard are retired from the current source. Their history remains in Git; historical user databases and source logs are preserved. Current release status is reported by authenticated service discovery rather than this document.
 
 Developer validation and remote-runner prerequisites are described in [ARCHITECTURE.md](ARCHITECTURE.md#development-validation).
+
+Model-based task analysis uses the BatCave Jindu gateway. Administrators configure an independent native machine account with the selected route and `jindu.invoke`/`jindu.read`; the service holds no upstream supplier credential. Discover allowed routes through authenticated Jindu Help. Analysis provenance records Jindu call/receipt IDs, per-request duration and provider-reported usage.

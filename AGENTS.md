@@ -27,3 +27,5 @@
 - Website UI must not contain Unicode U+00B7, including generated labels and accessibility text. Preserve quoted paper titles and original user data.
 - Use independent worktrees for concurrent changes and revalidate after integration.
 - Do not auto-use `todo_preview` or read/write `~/.todo/todo.md` without explicit user instruction.
+
+- BatCave 内置服务、后台分析、定时任务和其他自动化任务的模型调用统一通过津渡 Jindu 的认证 HTTP 接口。调用方仅保存模型、路由及最小权限机器账户连接；上游供应商凭据仅由 Jindu 持有。禁止新增供应商直连或失败直连回退。每次上游尝试使用稳定调用 ID；结果不确定时先核对 Jindu 回执，不自动换 ID 重发付费请求。

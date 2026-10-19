@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
@@ -25,21 +28,25 @@ root任务由系统维护，不需要输出；顶层任务parent_id使用root。
 
 
 class SemanticModelError(RuntimeError):
-    def __init__(self, message: str, provenance: dict[str, Any] | None = None):
+    def __init__(
+        self, message: str, provenance: dict[str, Any] | None = None, *, retryable: bool = True
+    ):
         super().__init__(message)
         self.provenance = provenance or {}
+        self.retryable = retryable
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        raise SemanticModelError("Model API redirects are prohibited")
+        raise SemanticModelError("Model API redirects are prohibited", retryable=False)
 
 
 def _configuration() -> dict[str, Any]:
-    names = ("BASE_URL", "NAME", "API_KEY", "API_MODE")
+    names = ("BASE_URL", "ROUTE", "API_KEY")
     config: dict[str, Any] = {
-        name.lower(): os.environ.get("TRAJECTORY_MODEL_" + name, "") for name in names
+        name.lower(): os.environ.get("TRAJECTORY_JINDU_" + name, "") for name in names
     }
+    config["name"] = os.environ.get("TRAJECTORY_MODEL_NAME", "")
     if not all(config.values()):
         raise SemanticModelError("Semantic model configuration is incomplete")
     url = urllib.parse.urlsplit(config["base_url"])
@@ -49,8 +56,10 @@ def _configuration() -> dict[str, Any]:
         url.scheme == "http" and url.hostname in {"127.0.0.1", "localhost", "::1"}
     ):
         raise SemanticModelError("Model API requires HTTPS")
-    if config["api_mode"] not in {"chat_completions", "chat", "responses"}:
-        raise SemanticModelError("Unsupported model API mode")
+    if not re.fullmatch(r"[a-z][a-z0-9-]{0,79}", config["route"]):
+        raise SemanticModelError("Invalid Jindu route")
+    if url.path.rstrip("/") != "/jindu/api/v1":
+        raise SemanticModelError("Jindu API base required; provider-direct calls are prohibited")
     try:
         config["input_chars"] = int(os.environ.get("TRAJECTORY_MODEL_INPUT_CHARS", "24000"))
         config["operation_chars"] = int(os.environ.get("TRAJECTORY_MODEL_OPERATION_CHARS", "2000"))
@@ -152,85 +161,83 @@ def _validate(tasks: Any, known: dict[str, dict[str, Any]], operation_ids: set[s
             current = combined[current]["parent_id"]
 
 
-def _request(config: dict[str, Any], packet: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
-    mode = config["api_mode"]
+def _request(
+    config: dict[str, Any], packet: dict[str, Any], call_id: str
+) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     messages = [
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": json.dumps(packet, ensure_ascii=False)},
     ]
     if len(json.dumps(messages, ensure_ascii=False)) > config["input_chars"]:
         raise SemanticModelError("Model request exceeds its configured input budget")
-    payload: dict[str, Any] = {"model": config["name"]}
-    if mode == "responses":
-        endpoint = "responses"
-        payload.update(
-            input=messages,
-            max_output_tokens=config["output_tokens"],
-            text={"format": {"type": "json_object"}},
-        )
-    else:
-        endpoint = "chat/completions"
-        payload.update(
-            messages=messages,
-            max_tokens=config["output_tokens"],
-            response_format={"type": "json_object"},
-        )
+    payload: dict[str, Any] = {
+        "model": config["name"],
+        "messages": messages,
+        "max_tokens": config["output_tokens"],
+        "response_format": {"type": "json_object"},
+    }
     request = urllib.request.Request(
-        config["base_url"].rstrip("/") + "/" + endpoint,
+        config["base_url"].rstrip("/") + "/routes/" + config["route"] + "/chat/completions",
         data=json.dumps(payload).encode(),
         method="POST",
         headers={
             "Authorization": "Bearer " + config["api_key"],
             "Content-Type": "application/json",
+            "X-Jindu-Call-ID": call_id,
         },
     )
     received_usage: dict[str, Any] = {}
+    metadata: dict[str, Any] = {"call_id": call_id, "route": config["route"]}
+    started = time.monotonic()
     try:
-        with urllib.request.build_opener(NoRedirect).open(
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect).open(
             request, timeout=config["timeout"]
         ) as response:
+            metadata["receipt_id"] = response.headers.get("X-Jindu-Receipt-ID", "")
             body = response.read(4 * 1024 * 1024 + 1)
         if len(body) > 4 * 1024 * 1024:
             raise SemanticModelError("Model response exceeds size limit")
         data = json.loads(body)
         if isinstance(data.get("usage"), dict):
             received_usage = data["usage"]
-        if mode == "responses":
-            if data.get("status") not in {None, "completed"}:
-                raise SemanticModelError("Model output was incomplete")
-            text = "".join(
-                part.get("text", "")
-                for item in data.get("output", [])
-                for part in item.get("content", [])
-                if part.get("type") == "output_text"
-            )
-        else:
-            choice = data["choices"][0]
-            if choice.get("finish_reason") != "stop" or choice["message"].get("tool_calls"):
-                raise SemanticModelError("Model output was incomplete or attempted a tool call")
-            text = choice["message"]["content"]
-        result = json.loads(text)
+        choice = data["choices"][0]
+        if choice.get("finish_reason") != "stop" or choice["message"].get("tool_calls"):
+            raise SemanticModelError("Model output was incomplete or attempted a tool call")
+        try:
+            result = json.loads(choice["message"]["content"])
+        except (ValueError, TypeError) as error:
+            raise SemanticModelError("Model output was not valid task JSON") from error
         usage = data.get("usage")
-        return result, usage if isinstance(usage, dict) else {}
+        metadata["elapsed_seconds"] = time.monotonic() - started
+        return result, usage if isinstance(usage, dict) else {}, metadata
     except SemanticModelError as exc:
         exc.provenance["failed_call_usage"] = received_usage
+        metadata["elapsed_seconds"] = time.monotonic() - started
+        exc.provenance["call"] = metadata
         raise
     except Exception as exc:
+        metadata["elapsed_seconds"] = time.monotonic() - started
+        if isinstance(exc, urllib.error.HTTPError):
+            metadata["http_status"] = exc.code
+            metadata["receipt_id"] = exc.headers.get("X-Jindu-Receipt-ID", "")
         # Provider response bodies and source text never appear in the error message.
         raise SemanticModelError(
-            "Model API request or structured response failed", {"failed_call_usage": received_usage}
+            "Jindu call failed or result uncertain; reconcile call ID before retry",
+            {"failed_call_usage": received_usage, "call": metadata},
+            retryable=False,
         ) from exc
 
 
-def segment(operations: list[dict[str, Any]], title: str) -> dict[str, Any]:
+def segment(operations: list[dict[str, Any]], title: str, *, analysis_id: str) -> dict[str, Any]:
     config = _configuration()
     ids = [operation.get("id") for operation in operations]
     if any(not isinstance(oid, str) or not oid for oid in ids) or len(ids) != len(set(ids)):
         raise SemanticModelError("Operations require unique nonempty string identities")
     provenance: dict[str, Any] = {
-        "backend": "model_api",
+        "backend": "jindu",
         "model": config["name"],
-        "api_mode": config["api_mode"],
+        "route": config["route"],
+        "analysis_id": analysis_id,
         "prompt_version": PROMPT_VERSION,
         "created_at": datetime.now(UTC).isoformat(),
         "operation_count": len(operations),
@@ -273,12 +280,17 @@ def segment(operations: list[dict[str, Any]], title: str) -> dict[str, Any]:
             for attempt in range(2):
                 usage_record: dict[str, Any] | None = None
                 try:
-                    result, usage = _request(config, packet)
+                    call_id = (
+                        "trajectory:"
+                        + hashlib.sha256(f"{analysis_id}:{index}:{attempt}".encode()).hexdigest()
+                    )
+                    result, usage, call = _request(config, packet, call_id)
                     usage_record = {
                         "chunk": index + 1,
                         "attempt": attempt + 1,
                         "usage": usage,
                         "valid": False,
+                        **call,
                     }
                     provenance["analysis_usage"].append(usage_record)
                     if not isinstance(result, dict) or set(result) != {"tasks"}:
@@ -294,9 +306,10 @@ def segment(operations: list[dict[str, Any]], title: str) -> dict[str, Any]:
                                 "attempt": attempt + 1,
                                 "failed": True,
                                 "usage": exc.provenance.get("failed_call_usage", {}),
+                                **exc.provenance.get("call", {}),
                             }
                         )
-                    if attempt == 1:
+                    if attempt == 1 or not exc.retryable:
                         raise
                     # A single bounded repair asks the model to reconsider the same
                     # evidence. The server never edits or invents task membership.

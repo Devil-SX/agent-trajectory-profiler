@@ -118,7 +118,9 @@ class AnalysisRuntime:
                     != os.environ.get("TRAJECTORY_MODEL_NAME")
                     or result.get("provenance", {}).get("prompt_version") != PROMPT_VERSION
                 ):
-                    result = segment(detail["operations"], detail["session"]["title"])
+                    result = segment(
+                        detail["operations"], detail["session"]["title"], analysis_id=job["id"]
+                    )
                     temporary = checkpoint.with_name(".model-result-" + job["id"] + ".json")
                     try:
                         descriptor = os.open(

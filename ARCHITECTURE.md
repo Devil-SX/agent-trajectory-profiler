@@ -66,3 +66,9 @@ commits invalidate it, while raw uploads and request traces do not. Authorizatio
 is checked before every request and is never cached here. Source collection
 progress is distinct from price coverage and does not prove cross-generation
 alignment with separately delivered source bytes.
+
+## Model invocation authority
+
+Semantic analysis calls Jindu's authenticated chat-completion route through an independent native machine account. Jindu owns upstream credentials, route policy and the invocation ledger. Trajectory stores only the Jindu API base, route, machine Key and model selection. Supplier-direct and Responses transports have been removed; there is no direct fallback.
+
+Each job, chunk and attempt determines a stable X-Jindu-Call-ID. The stored analysis provenance contains route, call ID, receipt ID, per-request elapsed time and reported usage, including failed bounded repairs. Only received model output that fails structural validation permits one repair with a distinct attempt ID. HTTP errors, disconnects and uncertain outcomes stop the job for reconciliation rather than automatically creating another charge. Existing completed analyses retain their historical provenance.
