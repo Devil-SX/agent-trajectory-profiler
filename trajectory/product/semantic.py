@@ -577,6 +577,21 @@ class SemanticStore:
 
             db.execute("UPDATE semantic_job_times SET finished=? WHERE job=?", (stamp(), job["id"]))
 
+    def park_job(self, job: dict[str, Any]) -> None:
+        """Return a checkpointed job to the same queue without authorizing new attempts."""
+        with self.domain.connect() as db:
+            db.execute(
+                "UPDATE semantic_jobs SET status='queued',message=?,updated=? "
+                "WHERE id=? AND owner=? AND source_revision=? AND status='running'",
+                (
+                    "Analysis saved at a window boundary, awaiting worker availability",
+                    stamp(),
+                    job["id"],
+                    job["owner"],
+                    job["source_revision"],
+                ),
+            )
+
     def pin_execution(self, job: dict[str, Any], configuration: dict[str, Any]) -> None:
         body = json.dumps(configuration, sort_keys=True)
         with self.domain.connect() as db:

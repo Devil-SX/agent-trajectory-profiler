@@ -100,6 +100,24 @@ Semantic analysis calls Jindu's authenticated chat-completion route through an i
 
 Each job, chunk and attempt determines a stable X-Jindu-Call-ID. The stored analysis provenance contains route, call ID, receipt ID, per-request elapsed time and reported usage, including failed bounded repairs. Only received model output that fails structural validation permits one repair with a distinct attempt ID. HTTP errors, disconnects and uncertain outcomes stop the job for reconciliation rather than automatically creating another charge. Existing completed analyses retain their historical provenance.
 
+The current membership wire uses window-local integer indices. The model must
+assign each index exactly once; validation maps indices to unchanged canonical
+operation IDs. Canonical packing boundaries are retained when migrating an
+unfinished v1 checkpoint, and the migration records its original digest and
+completed prefix. A private, fsynced call journal records preparation before
+dispatch and the received response before decoding. Replaying a journal uses the
+saved response, never another upstream request. Source text and model responses
+remain outside HTTP errors and public diagnostics.
+
+The domain authorizes at most three continuations of a failed job with confirmed
+invalid output. Each continuation preserves job, batch, source and configuration
+identity, keeps every measured call, and uses later attempt IDs for unfinished
+windows. Uncertain or missing receipts block continuation. The same operation
+and eligibility projection serve the workbench and external Agents. Closing the
+worker gate parks active analysis at the next durable window boundary after its
+current request finishes; reopening the gate continues that same checkpoint
+without consuming another failure-recovery authorization.
+
 ## Analysis workbench and scheduling
 
 The single workbench preserves directory, activity-time, search and analysis-state filters.

@@ -6,9 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Continue failed analyses from saved windows through the workbench and the same authenticated, idempotent API, preserving job and batch identity and all measured usage.
+- Persist private model-call journals before dispatch and decoding, and migrate unfinished checkpoints without replaying successful windows.
+
 ### Changed
 
 - Retain at most two compact ledger snapshots so account and global views can alternate without evicting each other; source contributions remain uncached.
+- Use compact window-local membership indices with precise validation feedback, and allow in-flight analysis to park at durable window boundaries during maintenance.
+- Wait longer than the gateway's upstream request deadline and retain the request timeout in call provenance.
 
 ## [3.2.3] - 2026-10-19
 

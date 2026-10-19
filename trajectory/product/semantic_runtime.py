@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from trajectory.product.semantic import SemanticStore, digest
+from trajectory.product.semantic_model import AnalysisPaused
 
 
 class AnalysisRuntime:
@@ -95,6 +96,10 @@ class AnalysisRuntime:
             self.lease = lease
             self.store.recover_jobs()
         return True
+
+    def _pause_requested(self) -> bool:
+        gate = os.environ.get("TRAJECTORY_WORKER_GATE")
+        return self.stopping or bool(gate and not Path(gate).is_file())
 
     def tick(self) -> bool:
         """Dispatch independent sessions while one process owns the coordinator lease."""
@@ -190,6 +195,7 @@ class AnalysisRuntime:
                         resume_generation=resume["generation"],
                         checkpoint=directory / ("chunks-" + job["id"] + ".json"),
                         progress=lambda value: self.store.job_progress(job, value),
+                        should_pause=self._pause_requested,
                     )
                     temporary = checkpoint.with_name(".model-result-" + job["id"] + ".json")
                     try:
@@ -218,6 +224,9 @@ class AnalysisRuntime:
                     expected_revision=detail["analysis_revision"],
                 )
             self.store.finish_job(job)
+            return True
+        except AnalysisPaused:
+            self.store.park_job(job)
             return True
         except Exception as error:
             if job is not None:

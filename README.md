@@ -27,3 +27,9 @@ HTTP interface discovered in Help. Select sessions and a bounded concurrency;
 progress, errors, model usage and elapsed time remain available after reload.
 The server configuration selects the Jindu model and reasoning effort. Recorded
 provenance identifies the configuration actually used by each analysis.
+
+Failed analyses with confirmed invalid model output can continue from saved
+windows in the workbench. The same authenticated resume operation appears in
+Help. Continuation keeps the original job and batch, reuses completed windows,
+and retains unsuccessful call usage. Uncertain calls remain blocked for receipt
+reconciliation. Refreshing the page does not restart paid analysis.
