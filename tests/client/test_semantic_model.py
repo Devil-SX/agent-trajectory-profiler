@@ -37,7 +37,7 @@ class SemanticModelTests(unittest.TestCase):
                     self.end_headers()
                     return
                 packet = json.loads(request["messages"][1]["content"])
-                ids = [o["id"] for o in packet["operations"]]
+                ids = [o["index"] for o in packet["operations"]]
                 if outer.reverse:
                     ids.reverse()
                 result = {
@@ -46,7 +46,7 @@ class SemanticModelTests(unittest.TestCase):
                             "id": "repair",
                             "parent_id": "root",
                             "title": "修复同步",
-                            "operation_ids": (
+                            "operation_indices": (
                                 ids[:-1]
                                 if outer.invalid or outer.invalid_once and len(outer.requests) == 1
                                 else ids
@@ -221,7 +221,7 @@ def test_successful_chunk_checkpoint_resumes_without_another_paid_request(tmp_pa
         return (
             {
                 "tasks": [
-                    {"id": "task", "parent_id": "root", "title": "Test", "operation_ids": ["op1"]}
+                    {"id": "task", "parent_id": "root", "title": "Test", "operation_indices": [0]}
                 ]
             },
             {"prompt_tokens": 12},
