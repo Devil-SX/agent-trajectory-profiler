@@ -2,6 +2,7 @@
 
 import json
 import logging
+import sqlite3
 from typing import Any
 
 LOGGER = logging.getLogger("trajectory.request_errors")
@@ -26,7 +27,19 @@ def log_request_exception(request_id: str, error: BaseException) -> None:
             )
             frame_budget -= 1
             trace = trace.tb_next
-        exceptions.append({"type": type(current).__name__, "frames": frames})
+        entry: dict[str, Any] = {"type": type(current).__name__, "frames": frames}
+        if isinstance(current, sqlite3.Error):
+            sqlite_code = getattr(current, "sqlite_errorcode", None)
+            name = getattr(current, "sqlite_errorname", None)
+            if isinstance(sqlite_code, int):
+                entry["sqlite_errorcode"] = sqlite_code
+            if (
+                isinstance(name, str)
+                and name.startswith("SQLITE_")
+                and all(character in "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789" for character in name)
+            ):
+                entry["sqlite_errorname"] = name
+        exceptions.append(entry)
         if current.__cause__ is not None:
             pending.append(current.__cause__)
         elif current.__context__ is not None and not current.__suppress_context__:

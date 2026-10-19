@@ -66,3 +66,31 @@ def test_chained_exception_values_and_exception_groups_remain_private(caplog):
         "ValueError",
     }
     assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_real_sqlite_busy_snapshot_records_native_codes_not_sql(tmp_path, caplog):
+    import sqlite3
+
+    path = tmp_path / "fixture.sqlite"
+    with sqlite3.connect(path) as initialize:
+        initialize.execute("PRAGMA journal_mode=WAL")
+        initialize.execute("CREATE TABLE fixture(value TEXT)")
+    reader = sqlite3.connect(path)
+    reader.execute("BEGIN")
+    reader.execute("SELECT * FROM fixture").fetchall()
+    with sqlite3.connect(path) as writer:
+        writer.execute("INSERT INTO fixture VALUES('private fixture contents')")
+    try:
+        reader.execute("INSERT INTO fixture VALUES('private SQL must not be logged')")
+    except sqlite3.OperationalError as error:
+        with caplog.at_level(logging.ERROR, logger="trajectory.request_errors"):
+            log_request_exception("1" * 32, error)
+    else:
+        raise AssertionError("Expected SQLite read-to-write snapshot conflict")
+    finally:
+        reader.close()
+    logged = json.loads(caplog.records[-1].getMessage().removeprefix("request_failure "))
+    entry = logged["exceptions"][0]
+    assert entry["sqlite_errorcode"] == sqlite3.SQLITE_BUSY_SNAPSHOT
+    assert entry["sqlite_errorname"] == "SQLITE_BUSY_SNAPSHOT"
+    assert "private" not in caplog.text and "database is locked" not in caplog.text
