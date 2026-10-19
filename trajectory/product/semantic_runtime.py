@@ -193,6 +193,7 @@ class AnalysisRuntime:
                         analysis_id=job["id"],
                         prior_progress=resume["prior_progress"],
                         resume_generation=resume["generation"],
+                        authorized_recomputations=resume["authorized_recomputations"],
                         checkpoint=directory / ("chunks-" + job["id"] + ".json"),
                         progress=lambda value: self.store.job_progress(job, value),
                         should_pause=self._pause_requested,

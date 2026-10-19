@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from trajectory.product.contracts import (
     AnalysisBatchRequest,
     AnalysisRequest,
+    LostWindowRecomputeRequest,
     SourceChunk,
     TaskEdit,
 )
@@ -448,7 +449,16 @@ class SemanticStore:
             progress = db.execute(
                 "SELECT body FROM semantic_job_progress WHERE job=?", (job["id"],)
             ).fetchone()
+            recomputations = [
+                json.loads(item[0])["authorized_recomputation"]
+                for item in db.execute(
+                    "SELECT body FROM semantic_job_resumes WHERE job=? ORDER BY generation",
+                    (job["id"],),
+                )
+                if "authorized_recomputation" in json.loads(item[0])
+            ]
         return {
+            "authorized_recomputations": recomputations,
             "generation": row["generation"] if row else 0,
             "authorization": json.loads(row["body"]) if row else None,
             "prior_progress": json.loads(progress[0]) if progress else {},
@@ -456,8 +466,6 @@ class SemanticStore:
 
     def resume_analysis(self, owner: str, job_id: str, value: AnalysisRequest) -> dict[str, Any]:
         """Authorize bounded continuation of the same failed job, never a fresh analysis."""
-        from trajectory.product.semantic_model import PROMPT_VERSION
-
         body = "analysis.resume:" + job_id + ":" + value.model_dump_json()
         with self.domain.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -480,63 +488,222 @@ class SemanticStore:
             reason = self.resume_eligibility(dict(row), progress, generation)
             if reason != "eligible":
                 raise AnalysisResumeError(reason)
-            current = db.execute(
-                "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
-                (owner, row["session"]),
-            ).fetchone()
-            if current is None or current[0] != row["source_revision"]:
-                raise AnalysisResumeError("analysis_source_changed")
-            if db.execute(
-                "SELECT 1 FROM semantic_jobs WHERE owner=? AND session=? AND id<>? "
-                "AND status IN ('queued','running')",
-                (owner, row["session"], job_id),
-            ).fetchone():
-                raise AnalysisResumeError("another_analysis_active")
-            execution = db.execute(
-                "SELECT body FROM semantic_job_execution WHERE job=?", (job_id,)
-            ).fetchone()
-            if not execution:
-                raise AnalysisResumeError("execution_identity_missing")
-            old_execution = json.loads(execution[0])
-            if old_execution.get("prompt_version") not in {
-                "trajectory-task-hierarchy/1",
-                PROMPT_VERSION,
-            }:
-                raise AnalysisResumeError("unsupported_prompt_migration")
-            target = {**old_execution, "prompt_version": PROMPT_VERSION}
+            return self._continue_analysis(db, owner, row, progress, generation, value, body)
+
+    def recompute_lost_window(
+        self,
+        owner: str,
+        job_id: str,
+        value: LostWindowRecomputeRequest,
+        actor: dict[str, Any],
+        *,
+        verifier: Any = None,
+    ) -> dict[str, Any]:
+        """One explicit paid decision after read-only receipt verification, outside SQLite locks."""
+        from trajectory.product.receipt_verification import verify_lost_receipt
+
+        body = "analysis.recompute_lost_window:" + job_id + ":" + value.model_dump_json()
+        with self.domain.connect() as db:
+            prior = self.domain._prior(db, owner, value.mutation_id, body)
+            if prior:
+                return prior
+            if abs((datetime.now(UTC) - value.receipt_checked_at).total_seconds()) > 900:
+                raise AnalysisResumeError("receipt_check_not_fresh")
+            row, progress, generation, execution = self._lost_window_snapshot(
+                db, owner, job_id, value
+            )
+            snapshot = json.dumps([dict(row), progress, generation, execution], sort_keys=True)
+        # No SQL transaction spans this authenticated network read.
+        try:
+            proof = (verifier or verify_lost_receipt)(
+                value.call_id, value.receipt_id, execution["route"], execution["model"]
+            )
+        except Exception as error:
+            raise AnalysisResumeError("receipt_verification_unavailable") from error
+        receipt = proof["receipt"]
+        caller = proof["caller"]
+        if not (
+            caller.get("source_service") == "trajectory"
+            and caller.get("machine_client_id")
+            and caller.get("key_id")
+            and caller.get("account_id")
+            and "jindu.read" in caller.get("scopes", [])
+            and receipt.get("account_id") == caller["account_id"]
+            and receipt.get("source_service") == "trajectory"
+            and receipt.get("id") == value.receipt_id
+            and receipt.get("request_id") == value.call_id
+            and receipt.get("route") == execution["route"]
+            and receipt.get("model") == execution["model"]
+            and receipt.get("state") == "uncertain"
+            and receipt.get("finished") is not None
+        ):
+            raise AnalysisResumeError("receipt_verification_mismatch")
+        if any(
+            receipt.get(key) is not None
+            for key in ("input_tokens", "output_tokens", "cached_tokens")
+        ):
+            raise AnalysisResumeError("receipt_usage_reconciliation_required")
+        with self.domain.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            prior = self.domain._prior(db, owner, value.mutation_id, body)
+            if prior:
+                return prior
+            row, progress, generation, execution = self._lost_window_snapshot(
+                db, owner, job_id, value
+            )
+            if snapshot != json.dumps([dict(row), progress, generation, execution], sort_keys=True):
+                raise AnalysisResumeError("analysis_changed_during_receipt_check")
+            last = progress["analysis_usage"][-1]
             authorization = {
-                "generation": generation + 1,
-                "from_execution": old_execution,
-                "to_execution": target,
-                "completed_chunks": progress.get("completed_chunks", 0),
-                "previous_call_ids": [call.get("call_id") for call in progress["analysis_usage"]],
-                "policy": "received_invalid_only_preserve_completed_chunks",
+                "job_id": job_id,
+                "call_id": value.call_id,
+                "receipt_id": value.receipt_id,
+                "chunk": last["chunk"],
+                "attempt": last["attempt"],
+                "resume_generation": generation + 1,
+                "receipt_state": "uncertain_terminal",
+                "authorization_id": value.mutation_id,
+                "accept_possible_duplicate_charge": True,
             }
-            queued_at = stamp()
-            db.execute(
-                "INSERT INTO semantic_job_resumes VALUES(?,?,?,?)",
-                (job_id, generation + 1, json.dumps(authorization, sort_keys=True), queued_at),
-            )
-            db.execute(
-                "UPDATE semantic_jobs SET status='queued',message='',updated=? WHERE id=?",
-                (queued_at, job_id),
-            )
-            return self.domain._receipt(
+            return self._continue_analysis(
                 db,
                 owner,
-                value.mutation_id,
+                row,
+                progress,
+                generation,
+                value,
                 body,
-                "analysis.resume",
-                {
-                    "job_id": job_id,
-                    "session_id": row["session"],
-                    "status": "queued",
-                    "resume_generation": generation + 1,
-                    "queued_at": queued_at,
-                    "completed_chunks": progress.get("completed_chunks", 0),
-                    "source_revision": row["source_revision"],
+                operation="analysis.recompute_lost_window",
+                extra={
+                    "policy": "explicit_operator_recompute_missing_response",
+                    "authorized_recomputation": authorization,
+                    "receipt_verification": proof,
+                    "operator_decision": value.model_dump(mode="json"),
+                    "actor": actor,
+                    "authorized_at": stamp(),
                 },
             )
+
+    def _lost_window_snapshot(
+        self,
+        db: Any,
+        owner: str,
+        job_id: str,
+        value: LostWindowRecomputeRequest,
+    ) -> tuple[Any, dict[str, Any], int, dict[str, Any]]:
+        row = db.execute(
+            "SELECT * FROM semantic_jobs WHERE owner=? AND id=?", (owner, job_id)
+        ).fetchone()
+        if row is None:
+            raise PermissionError("Analysis job unavailable")
+        if row["kind"] != "analyze" or row["status"] != "failed":
+            raise AnalysisResumeError("analysis_not_failed")
+        progress_row = db.execute(
+            "SELECT body FROM semantic_job_progress WHERE job=?", (job_id,)
+        ).fetchone()
+        progress = json.loads(progress_row[0]) if progress_row else {}
+        calls = progress.get("analysis_usage", [])
+        last = calls[-1] if calls else {}
+        if not (
+            progress.get("state") == "failed"
+            and last.get("failed") is True
+            and last.get("call_id") == value.call_id
+            and (not last.get("receipt_id") or last["receipt_id"] == value.receipt_id)
+            and isinstance(last.get("chunk"), int)
+            and isinstance(last.get("attempt"), int)
+            and last["chunk"] == progress.get("completed_chunks", 0) + 1
+            and last["attempt"] > 0
+            and value.call_id
+            == "trajectory:"
+            + hashlib.sha256(f"{job_id}:{last['chunk']-1}:{last['attempt']-1}".encode()).hexdigest()
+        ):
+            raise AnalysisResumeError("last_lost_call_mismatch")
+        generation = db.execute(
+            "SELECT COALESCE(max(generation),0) FROM semantic_job_resumes WHERE job=?", (job_id,)
+        ).fetchone()[0]
+        if generation >= 3 or (generation + 1) * 2 <= last["attempt"] - 1:
+            raise AnalysisResumeError("resume_limit_reached")
+        execution = db.execute(
+            "SELECT body FROM semantic_job_execution WHERE job=?", (job_id,)
+        ).fetchone()
+        if not execution:
+            raise AnalysisResumeError("execution_identity_missing")
+        return row, progress, generation, json.loads(execution[0])
+
+    def _continue_analysis(
+        self,
+        db: Any,
+        owner: str,
+        row: Any,
+        progress: dict[str, Any],
+        generation: int,
+        value: AnalysisRequest,
+        body: str,
+        *,
+        operation: str = "analysis.resume",
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from trajectory.product.semantic_model import PROMPT_VERSION
+
+        job_id = row["id"]
+        current = db.execute(
+            "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
+            (owner, row["session"]),
+        ).fetchone()
+        if current is None or current[0] != row["source_revision"]:
+            raise AnalysisResumeError("analysis_source_changed")
+        if db.execute(
+            "SELECT 1 FROM semantic_jobs WHERE owner=? AND session=? AND id<>? "
+            "AND status IN ('queued','running')",
+            (owner, row["session"], job_id),
+        ).fetchone():
+            raise AnalysisResumeError("another_analysis_active")
+        execution = db.execute(
+            "SELECT body FROM semantic_job_execution WHERE job=?", (job_id,)
+        ).fetchone()
+        if not execution:
+            raise AnalysisResumeError("execution_identity_missing")
+        old_execution = json.loads(execution[0])
+        if old_execution.get("prompt_version") not in {
+            "trajectory-task-hierarchy/1",
+            PROMPT_VERSION,
+        }:
+            raise AnalysisResumeError("unsupported_prompt_migration")
+        target = {**old_execution, "prompt_version": PROMPT_VERSION}
+        authorization = {
+            "generation": generation + 1,
+            "from_execution": old_execution,
+            "to_execution": target,
+            "completed_chunks": progress.get("completed_chunks", 0),
+            "previous_call_ids": [call.get("call_id") for call in progress["analysis_usage"]],
+            "policy": "received_invalid_only_preserve_completed_chunks",
+            **(extra or {}),
+        }
+        queued_at = stamp()
+        db.execute(
+            "INSERT INTO semantic_job_resumes VALUES(?,?,?,?)",
+            (job_id, generation + 1, json.dumps(authorization, sort_keys=True), queued_at),
+        )
+        db.execute(
+            "UPDATE semantic_jobs SET status='queued',message='',updated=? WHERE id=?",
+            (queued_at, job_id),
+        )
+        return self.domain._receipt(
+            db,
+            owner,
+            value.mutation_id,
+            body,
+            operation,
+            {
+                "job_id": job_id,
+                "session_id": row["session"],
+                "status": "queued",
+                "resume_generation": generation + 1,
+                "queued_at": queued_at,
+                "completed_chunks": progress.get("completed_chunks", 0),
+                "source_revision": row["source_revision"],
+            },
+        )
 
     def claim_job(self) -> dict[str, Any] | None:
         with self.domain.connect() as db:

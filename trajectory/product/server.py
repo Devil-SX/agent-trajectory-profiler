@@ -23,6 +23,7 @@ from trajectory.product.contracts import (
     AnalysisRequest,
     Batch,
     Correction,
+    LostWindowRecomputeRequest,
     Price,
     SourceChunk,
     TaskEdit,
@@ -108,6 +109,15 @@ OPERATIONS: list[dict[str, Any]] = [
         "scope": "configure",
         "input": AnalysisRequest,
         "effect": "Queue semantic segmentation using the configured model; incurs model usage",
+    },
+    {
+        "id": "analysis_recompute_lost_window",
+        "method": "POST",
+        "path": "/api/analysis-jobs/{job_id}/recompute-lost-window",
+        "scope": "configure",
+        "input": LostWindowRecomputeRequest,
+        "effect": "Explicit operator decision to recompute one lost-response window after Jindu "
+        "receipt verification; may duplicate an unknown prior charge; never automatic retry",
     },
     {
         "id": "analysis_resume",
@@ -529,6 +539,18 @@ def create_app(
                     if not principal.machine_client:
                         raise HTTPException(403, "Uploads require a native machine account")
                     return await asyncio.to_thread(semantic.ingest_source, principal.account, value)
+                if identifier == "analysis_recompute_lost_window":
+                    return await asyncio.to_thread(
+                        semantic.recompute_lost_window,
+                        principal.account,
+                        request.path_params["job_id"],
+                        value,
+                        {
+                            "account_id": principal.account,
+                            "key_id": principal.key_id,
+                            "machine_client": principal.machine_client,
+                        },
+                    )
                 if identifier == "analysis_resume":
                     return await asyncio.to_thread(
                         semantic.resume_analysis,

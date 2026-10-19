@@ -111,6 +111,22 @@ class AnalysisRequest(BaseModel):
     mutation_id: str = Field(min_length=16, max_length=128)
 
 
+class LostWindowRecomputeRequest(AnalysisRequest):
+    call_id: str = Field(pattern=r"^trajectory:[0-9a-f]{64}$")
+    receipt_id: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    accept_possible_duplicate_charge: bool = Field(strict=True)
+    reason: str = Field(min_length=10, max_length=1000)
+    receipt_checked_at: datetime
+
+    @model_validator(mode="after")
+    def explicit_acceptance(self) -> "LostWindowRecomputeRequest":
+        if self.accept_possible_duplicate_charge is not True:
+            raise ValueError("Explicit acceptance of possible duplicate charge is required")
+        if self.receipt_checked_at.tzinfo is None:
+            raise ValueError("Receipt check requires an explicit timezone")
+        return self
+
+
 class AnalysisBatchRequest(AnalysisRequest):
     session_ids: list[str] = Field(min_length=1, max_length=200)
     concurrency: int = Field(default=4, ge=1, le=8)
