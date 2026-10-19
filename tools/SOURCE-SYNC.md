@@ -202,3 +202,37 @@ Status reports the selected source identities, names and sizes. An invocation
 without selectors retains normal all-source discovery. If an automatic timer also
 runs without selectors it retains its configured discovery scope; selection on a
 manual invocation does not silently reconfigure that timer.
+
+## Keeping an automatic root limited to selected sessions
+
+A root may set `only_sessions` to a list of native session UUIDs. The uploader
+reuses the CLI session selector when discovering files in that root. Other roots
+keep their normal discovery scope. For example, an authorized Pi root can track
+only two chosen sessions while Codex roots continue normal automatic collection:
+
+```json
+{
+  "local_root": "/home/user/.pi/agent/sessions",
+  "legacy_root": "\\\\wsl.localhost\\Ubuntu-22.04\\home\\user\\.pi\\agent\\sessions",
+  "ecosystem": "pi",
+  "allow_new_sources": true,
+  "only_sessions": [
+    "01a0f312-da54-77e1-99da-92e1d2b5568b",
+    "01a0f304-0850-7373-a518-9292f78d73c5"
+  ]
+}
+```
+
+An omitted allowlist discovers normally; an empty list discovers no files from
+that root. Invalid types and invalid UUIDs are rejected. The allowlist affects
+new work preparation only: existing pending outbox bodies replay unchanged even
+when their session has been excluded. Root authorization identity still consists
+of `local_root`, `legacy_root` and `ecosystem`; changing this discovery scope does
+not create another registration, collector or checkpoint/outbox chain. Explicit
+entries in the configuration's `sources` list remain explicitly selected.
+
+The isolated `batcave-wsl` source-sync suite passes 24 tests, including two selected
+Pi sessions, an excluded historical file never prepared, unchanged other-root
+discovery and actual HTTP replay of an excluded pending source. Ruff and Black
+pass with the repository configuration. No live configuration/state is changed
+by this verification.

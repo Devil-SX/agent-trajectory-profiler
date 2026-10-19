@@ -388,6 +388,54 @@ class SourceSyncTests(unittest.TestCase):
             [spec["legacy_path"] for spec in specs], sorted(spec["legacy_path"] for spec in specs)
         )
 
+    def test_root_session_allowlist_selects_two_and_keeps_other_roots(self):
+        selected = ["01a0f312-da54-77e1-99da-92e1d2b5568b", "01a0f304-0850-7373-a518-9292f78d73c5"]
+        excluded = "01a0f786-32c8-75a6-ab5b-552324ced973"
+        pi = self.root / "pi"
+        pi.mkdir()
+        for native in [*selected, excluded]:
+            (pi / (native + ".jsonl")).write_bytes(b"{}\n")
+        identity = self.root / "identity.json"
+        identity.write_text(
+            json.dumps(
+                {
+                    "collector": "collector",
+                    "sources": [sync.source_id("collector", self.spec["legacy_path"])],
+                }
+            )
+        )
+        root = {
+            "local_root": str(pi),
+            "legacy_root": r"C:\pi",
+            "ecosystem": "pi",
+            "allow_new_sources": True,
+        }
+        before = sync.root_identity(root)
+        root["only_sessions"] = selected
+        config = {
+            "legacy_identity_snapshot": str(identity),
+            "roots": [
+                root,
+                {"local_root": str(self.root), "legacy_root": r"C:\logs", "ecosystem": "codex"},
+            ],
+        }
+        with patch.object(sync, "registered_roots", return_value={before}):
+            collector, specs = sync.validate_manifest(config)
+            self.assertEqual({Path(spec["path"]).stem for spec in specs}, {*selected, "session"})
+            self.assertEqual(sync.root_identity(root), before)
+            for spec in specs:
+                self.state.prepare(collector, spec)
+            sources = {row[0] for row in self.state.db.execute("SELECT source FROM sources")}
+            self.assertNotIn(
+                sync.source_id(collector, sync.ntpath.join(r"C:\pi", excluded + ".jsonl")), sources
+            )
+            root["only_sessions"] = []
+            self.assertEqual(sync.validate_manifest(config)[1], [self.spec])
+            for bad in (None, "all", [None], ["invalid-uuid"]):
+                root["only_sessions"] = bad
+                with self.assertRaises(ValueError):
+                    sync.validate_manifest(config)
+
     def test_selectors_scope_new_work_by_source_or_native_session(self):
         native = "01a0f312-da54-77e1-99da-92e1d2b5568b"
         selected = {**self.spec, "path": str(self.root / (native + ".jsonl"))}
@@ -459,7 +507,8 @@ class SourceSyncTests(unittest.TestCase):
     def test_pending_body_replays_before_newer_source_is_prepared(self):
         self.state.prepare("collector", self.spec)
         original = self.state.next()[1]
-        new = self.root / "new.jsonl"
+        native = "01a0f312-da54-77e1-99da-92e1d2b5568b"
+        new = self.root / (native + ".jsonl")
         new.write_text("{}")
         posts = []
 
@@ -488,7 +537,11 @@ class SourceSyncTests(unittest.TestCase):
         thread.start()
         origin = f"http://127.0.0.1:{server.server_port}"
         identity = self.root / "identity.json"
-        new_spec = {"path": str(new), "legacy_path": r"C:\logs\new.jsonl", "ecosystem": "codex"}
+        new_spec = {
+            "path": str(new),
+            "legacy_path": sync.ntpath.join(r"C:\logs", native + ".jsonl"),
+            "ecosystem": "codex",
+        }
         identity.write_text(
             json.dumps(
                 {
@@ -509,7 +562,14 @@ class SourceSyncTests(unittest.TestCase):
                     "credential": str(credential),
                     "state": str(self.root / "state.sqlite"),
                     "legacy_identity_snapshot": str(identity),
-                    "sources": [new_spec, self.spec],
+                    "roots": [
+                        {
+                            "local_root": str(self.root),
+                            "legacy_root": r"C:\logs",
+                            "ecosystem": "codex",
+                            "only_sessions": [native],
+                        }
+                    ],
                 },
                 1,
                 sources=[sync.source_id("collector", new_spec["legacy_path"])],
@@ -519,6 +579,7 @@ class SourceSyncTests(unittest.TestCase):
             server.server_close()
             thread.join()
         self.assertEqual(result["chunks"], 1)
+        self.assertEqual(result["selected_sources"], 1)
         self.assertEqual(posts, [original])
         self.assertIsNone(
             self.state.db.execute(

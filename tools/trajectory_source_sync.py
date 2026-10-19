@@ -355,6 +355,17 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
                 "New-source discovery requires a registered source anchor "
                 "or authenticated root registration"
             )
+        if "only_sessions" in root:
+            sessions = root["only_sessions"]
+            if not isinstance(sessions, list) or not all(
+                isinstance(item, str) for item in sessions
+            ):
+                raise ValueError("only_sessions must be a list of native session UUIDs")
+            # Root authorization covers the mapping; this optional scope affects
+            # discovery only. Empty means discover none, not reset existing state.
+            discovered = (
+                select_sources(collector, discovered, sessions=sessions) if sessions else []
+            )
         for spec in discovered:
             identity = source_id(collector, spec["legacy_path"])
             if identity in known or allow_new:

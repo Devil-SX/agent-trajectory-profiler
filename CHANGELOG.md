@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Limit automatic source discovery per root to selected native sessions while preserving pending uploads and shared checkpoints.
+
 ## [3.2.0] - 2026-10-19
 
 ### Added
