@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Bound new task display titles without changing task identity, hierarchy or operation membership. Revalidate already paid title-only failures locally, retain original usage and raw reviews, and migrate title audit metadata to one versioned field.
+
 ## [3.4.1] - 2026-10-19
 
 ### Fixed
