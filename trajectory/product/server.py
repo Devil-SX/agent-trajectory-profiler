@@ -59,6 +59,14 @@ OPERATIONS: list[dict[str, Any]] = [
         "effect": "Online SQLite domain export with durable file, directory and verified receipt",
     },
     {
+        "id": "operation_read",
+        "method": "GET",
+        "path": "/api/sessions/{session_id}/operations/{operation_id}",
+        "scope": "read",
+        "effect": "Read one complete account-owned operation; source_revision pins the displayed "
+        "immutable parsed snapshot. No model usage",
+    },
+    {
         "id": "source_evidence",
         "method": "GET",
         "path": "/api/sessions/{session_id}/operations/{operation_id}/evidence",
@@ -502,10 +510,28 @@ def create_app(
                         semantic.batch_detail, principal.account, request.path_params["batch_id"]
                     )
                 if identifier == "analysis_read":
-                    return await asyncio.to_thread(
+                    detail = await asyncio.to_thread(
                         semantic.detail,
                         principal.account,
                         request.path_params["session_id"],
+                        source_revision=request.query_params.get("source_revision") or None,
+                    )
+                    return {
+                        **detail,
+                        "operations": [
+                            {
+                                **{key: value for key, value in operation.items() if key != "text"},
+                                "body_available": operation.get("text") is not None,
+                            }
+                            for operation in detail.get("operations", [])
+                        ],
+                    }
+                if identifier == "operation_read":
+                    return await asyncio.to_thread(
+                        semantic.operation,
+                        principal.account,
+                        request.path_params["session_id"],
+                        request.path_params["operation_id"],
                         source_revision=request.query_params.get("source_revision") or None,
                     )
                 if identifier == "source_evidence":

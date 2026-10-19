@@ -122,3 +122,61 @@ def test_online_backup_is_scoped_durable_and_replayable(tmp_path: Path) -> None:
     assert client.post(url, json=body, headers=headers).json() == receipt
     with sqlite3.connect(snapshot) as db:
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_analysis_metadata_and_lazy_operation_reader_share_authorized_snapshot(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from trajectory.product.semantic import SemanticStore
+
+    def authorize(request, scope):
+        if request.headers.get("authorization") == "Bearer owner" and scope in {None, "read"}:
+            return Principal("owner", scopes=("read",))
+        raise HTTPException(403, "Denied")
+
+    operation = {
+        "id": "op",
+        "kind": "tool",
+        "text": "long command\n" * 50000,
+        "title": "inspect",
+        "metrics": {"input": 120},
+        "location": {"source_line": 5},
+        "call_id": "call",
+    }
+    original = {"source_revision": "snapshot-one", "operations": [operation]}
+    calls = []
+
+    def detail(self, owner, sid, *, source_revision=None):
+        assert owner == "owner" and sid == "session"
+        return original
+
+    def read_operation(self, owner, sid, oid, *, source_revision=None):
+        calls.append((owner, sid, oid, source_revision))
+        if source_revision != "snapshot-one":
+            raise ValueError("Unknown retained source revision")
+        return operation
+
+    monkeypatch.setattr(SemanticStore, "detail", detail)
+    monkeypatch.setattr(SemanticStore, "operation", read_operation, raising=False)
+    client = TestClient(create_app(tmp_path / "lazy.db", authorize))
+    headers = {"Authorization": "Bearer owner"}
+    response = client.get("/trajectory/api/sessions/session/analysis", headers=headers)
+    assert response.status_code == 200
+    metadata = response.json()["operations"][0]
+    assert "text" not in metadata and metadata["body_available"] is True
+    assert metadata["metrics"] == operation["metrics"]
+    assert metadata["location"] == operation["location"]
+    assert metadata["call_id"] == "call"
+    assert len(response.content) < 1000
+    assert "text" in original["operations"][0]  # Do not mutate shared semantic results.
+    route = "/trajectory/api/sessions/session/operations/op"
+    assert client.get(route, params={"source_revision": "snapshot-one"}).status_code == 403
+    assert calls == []
+    complete = client.get(route, params={"source_revision": "snapshot-one"}, headers=headers)
+    assert complete.status_code == 200 and complete.json() == operation
+    assert calls == [("owner", "session", "op", "snapshot-one")]
+    assert (
+        client.get(route, params={"source_revision": "unknown"}, headers=headers).status_code == 409
+    )
+    tools = client.get("/trajectory/help", headers=headers).json()["tools"]
+    assert "operation_read" in {tool["name"] for tool in tools}

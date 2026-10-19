@@ -65,3 +65,5 @@ history; after history is populated, rollback must preserve that table and resto
 a history-aware reader before claiming historical-result availability. Legacy HTTP
 reads and statistical ingestion remain schema-compatible, but an old backend's parse
 and analysis worker gates must remain closed; its writer does not preserve history.
+
+Session analysis responses contain operation metadata, usage and source locations without execution bodies. Expanding execution evidence loads one operation through the authenticated operation reader, pinned to the displayed source revision. Original raw evidence remains a separate bounded read. Discover both operations and permissions through current HTTP Help.
