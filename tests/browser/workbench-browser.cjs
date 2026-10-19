@@ -10,7 +10,7 @@ const sessions=[
  {id:'failed',display_title:'失败的工作流',cwd:'/work/BatCave',last_activity_at:'2026-10-16T06:00:00Z',has_analysis:false,analysis_status:'failed'},
  {id:'running',display_title:'正在分类',cwd:'/work/BatCave',last_activity_at:'2026-10-15T06:00:00Z',has_analysis:false,analysis_status:'running'}
 ];
-let posts=[],batchReads=0,failSubmit=true,failList=false,childQueued=false;const analysisPosts=[];
+let posts=[],batchReads=0,failSubmit=true,failList=false,childQueued=false,pendingSnapshot=false;const analysisPosts=[];
 const queries=[];
 const detachedSession={id:'outside-list',display_title:'验证 CPM 编译器融合策略',cwd:'/research/embodied/ai-cpm',started_at:'2026-10-10T06:00:00Z',last_activity_at:'2026-10-19T07:30:00Z'};
 const batch={batch_id:'batch-test',status:'running',total:2,concurrency:4,counts:{running:1,queued:1},items:[{session_id:'metadata',status:'running',progress:{completed_chunks:3,total_chunks:12,model:'glm-test'},elapsed_seconds:22},{session_id:'outside-list',status:'queued',session:detachedSession}]};
@@ -33,7 +33,7 @@ const server=http.createServer(async(req,res)=>{
  if(url.pathname==='/trajectory/api/analysis-batches')return res.end(JSON.stringify({batches:[]}));
  if(url.pathname==='/trajectory/api/analysis-batches/batch-test'){batchReads++;return res.end(JSON.stringify(batch))}
  const match=url.pathname.match(/\/sessions\/([^/]+)\/analysis$/);
- if(match){if(match[1]==='child'&&req.method==='POST'){analysisPosts.push(JSON.parse(body));childQueued=true;return res.end(JSON.stringify({status:'queued'}))}const session=sessions.find(s=>s.id===match[1]);return res.end(JSON.stringify({session,has_analysis:session.has_analysis,status:session.id==='child'&&childQueued?'queued':session.analysis_status,coverage:{content_available:true,warnings:session.analysis_status==='stale'?['源记录已更新，旧分析未绑定当前证据']:[]},analysis_current:session.analysis_status!=='stale',analysis_cost:session.id==='complete'?{cost_status:'partial',known_subtotal_usd:0.123,calls:[{price:{source_url:'https://docs.z.ai/guides/overview/pricing',verified_at:'2026-10-19T04:00:00Z'}}]}:null,provenance:{model:'glm-test',reasoning_effort:'high',backend:'jindu',cost:null,chunks:2,analysis_usage:[{chunk:1,attempt:1,elapsed_seconds:1.2,valid:true,usage:{prompt_tokens:100,completion_tokens:20}}]},tasks:session.has_analysis&&session.analysis_status!=='stale'?[{id:'root',title:'优化 CPM',metrics:{input:100,known_subtotal_usd:0.1,cost_status:'complete'},segments:[]}]:[],operations:[]}))}
+ if(match){if(match[1]==='child'&&req.method==='POST'){analysisPosts.push(JSON.parse(body));childQueued=true;return res.end(JSON.stringify({status:'queued'}))}const session=sessions.find(s=>s.id===match[1]);return res.end(JSON.stringify({session,source_pending:pendingSnapshot&&session.id==='complete',analysis_matches_parsed:true,has_analysis:session.has_analysis,status:session.id==='child'&&childQueued?'queued':session.analysis_status,coverage:{content_available:true,warnings:session.analysis_status==='stale'?['源记录已更新，旧分析未绑定当前证据']:[]},analysis_current:session.analysis_status!=='stale',analysis_cost:session.id==='complete'?{cost_status:'partial',known_subtotal_usd:0.123,calls:[{price:{source_url:'https://docs.z.ai/guides/overview/pricing',verified_at:'2026-10-19T04:00:00Z'}}]}:null,provenance:{model:'glm-test',reasoning_effort:'high',backend:'jindu',cost:null,chunks:2,analysis_usage:[{chunk:1,attempt:1,elapsed_seconds:1.2,valid:true,usage:{prompt_tokens:100,completion_tokens:20}}]},tasks:session.has_analysis&&session.analysis_status!=='stale'?[{id:'root',title:'优化 CPM',metrics:{input:100,known_subtotal_usd:0.1,cost_status:'complete'},segments:[]}]:[],operations:[]}))}
  if(req.url.endsWith('.svg')){res.setHeader('content-type','image/svg+xml');return res.end('<svg xmlns="http://www.w3.org/2000/svg"/>')}
  res.setHeader('content-type','text/html');res.end(html);
 });
@@ -74,6 +74,7 @@ const server=http.createServer(async(req,res)=>{
  assert(queries.some(q=>q.analysis_status==='analyzed'));assert(queries.some(q=>q.cwd==='/work/BatCave'));
  failList=true;await page.click('#sessions-refresh');await page.waitForFunction(()=>document.querySelector('#sessions-state').textContent.includes('保留上次'));
  await page.locator('[data-session-id="complete"]').click();await page.waitForSelector('#analysis-view');
+ pendingSnapshot=true;await page.locator('[data-session-id="complete"]').click();await page.waitForFunction(()=>document.querySelector('#analysis-content')?.textContent.includes('当前展示已解析快照'));assert.equal(await page.locator('#analyze-session').count(),0);assert.equal(await page.locator('#analysis-view').count(),1);assert((await page.locator('#analysis-content').innerText()).includes('优化 CPM'));assert.equal(analysisPosts.length,1);
  await page.locator('#analysis-content').evaluate(n=>{const spacer=document.createElement('div');spacer.style.height='1600px';n.append(spacer);n.scrollTop=600});
  const paneBox=await page.locator('#analysis-content').boundingBox(),tabsBox=await page.locator('.analysis-tabs').boundingBox();assert(tabsBox.y>=paneBox.y-2&&tabsBox.y<paneBox.y+20);
  await page.getByRole('button',{name:'分段时间线',exact:true}).click();

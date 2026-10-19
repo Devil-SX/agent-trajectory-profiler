@@ -243,3 +243,128 @@ def test_failed_parser_removes_only_temporary_input_and_retains_archive(seeded, 
     assert b"".join(store.archive("owner", sid)[1]) == b"original\n"
     with store.domain.connect() as db:
         assert db.execute("SELECT status FROM semantic_jobs").fetchone()[0] == "failed"
+
+
+def append_source(store, value):
+    data = b"newly appended\n"
+    return store.ingest_source(
+        "machine",
+        value.model_copy(
+            update={
+                "mutation_id": uuid.uuid4().hex,
+                "start": value.end,
+                "end": value.end + len(data),
+                "source_bytes": value.end + len(data),
+                "content": base64.b64encode(data).decode(),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        ),
+    )
+
+
+def test_pending_append_preserves_analysis_snapshot_but_never_new_ledger_metrics(seeded):
+    store, sid, revision, value = seeded
+    analysis = {
+        "tasks": [
+            {"id": "root", "parent_id": None, "title": "Saved task", "operation_ids": ["op-0"]}
+        ],
+        "provenance": {
+            "model": "saved-model",
+            "analysis_usage": [{"usage": {"prompt_tokens": 30}}],
+        },
+    }
+    store.save_analysis("owner", sid, revision, analysis)
+    append_source(store, value)
+    detail = store.detail("owner", sid, contributions=[contribution(line=999)])
+    assert detail["has_analysis"] is True
+    assert detail["analysis_current"] is False
+    assert detail["analysis_matches_parsed"] is True
+    assert detail["source_pending"] is True
+    assert detail["source_revision"] == detail["analysis_source_revision"] == revision
+    assert detail["current_source_revision"] != revision
+    assert detail["tasks"][0]["title"] == "Saved task"
+    assert detail["tasks"][0]["metrics"]["input"] is None
+    assert detail["session"]["metrics"]["input"] is None
+    assert detail["provenance"] == analysis["provenance"]
+    assert any("快照" in w for w in detail["coverage"]["warnings"])
+    listing = store.sessions("owner", analysis_status="analyzed")
+    item = next(s for s in listing["sessions"] if s["id"] == sid)
+    assert item["has_analysis"] and item["source_pending"]
+    assert item["analysis_current"] is False
+    assert item["analysis_status"] == "stale"
+    assert store.sessions("owner", analysis_status="stale")["sessions"][0]["id"] == sid
+
+
+def test_evidence_reads_verified_same_generation_prefix_after_append(seeded):
+    store, sid, revision, value = seeded
+    append_source(store, value)
+    evidence = store.evidence("owner", sid, "op-0")
+    assert evidence["available"] is True
+    assert evidence["text"] == "original\n"
+    assert evidence["source_revision"] == revision
+    assert evidence["snapshot_current"] is False
+    assert evidence["current_source_revision"] != revision
+    # The transport rejects changing any durable prefix within the same generation.
+    changed = b"different"
+    with pytest.raises(ValueError, match="Overlapping"):
+        store.ingest_source(
+            "machine",
+            value.model_copy(
+                update={
+                    "mutation_id": uuid.uuid4().hex,
+                    "content": base64.b64encode(changed).decode(),
+                    "sha256": hashlib.sha256(changed).hexdigest(),
+                }
+            ),
+        )
+    assert store.evidence("owner", sid, "op-0")["text"] == "original\n"
+
+
+def test_legacy_snapshot_without_size_does_not_guess_historical_evidence(seeded):
+    import json
+
+    store, sid, _, value = seeded
+    with store.domain.connect() as db:
+        row = db.execute("SELECT body FROM semantic_sessions WHERE id=?", (sid,)).fetchone()
+        parsed = json.loads(row[0])
+        parsed.pop("source_snapshot")
+        db.execute("UPDATE semantic_sessions SET body=? WHERE id=?", (json.dumps(parsed), sid))
+    append_source(store, value)
+    assert store.evidence("owner", sid, "op-0")["available"] is False
+
+
+def test_existing_worker_complete_bytes_proves_same_generation_snapshot(seeded):
+    import json
+
+    store, sid, revision, value = seeded
+    with store.domain.connect() as db:
+        row = db.execute("SELECT body FROM semantic_sessions WHERE id=?", (sid,)).fetchone()
+        parsed = json.loads(row[0])
+        parsed.pop("source_snapshot")
+        parsed["complete_bytes"] = value.end
+        parsed["source_sha256"] = value.sha256
+        db.execute("UPDATE semantic_sessions SET body=? WHERE id=?", (json.dumps(parsed), sid))
+    append_source(store, value)
+    evidence = store.evidence("owner", sid, "op-0")
+    assert evidence["available"] and evidence["source_revision"] == revision
+    assert evidence["snapshot_current"] is False
+    with store.domain.connect() as db:
+        parsed["complete_bytes"] -= 1
+        db.execute("UPDATE semantic_sessions SET body=? WHERE id=?", (json.dumps(parsed), sid))
+    assert store.evidence("owner", sid, "op-0")["available"] is False
+
+
+def test_archive_snapshot_overrides_parser_claim_and_covers_partial_tail(seeded):
+    import json
+
+    store, sid, revision, value = seeded
+    record = store.session_record("owner", sid)
+    parsed = json.loads(record["body"])
+    parsed["complete_bytes"] = 1  # Worker coverage need not equal the archived input cursor.
+    parsed["source_snapshot"] = {"generation": "untrusted-parser", "received_bytes": 1}
+    source, _ = store.archive("owner", sid)
+    store.save_session("owner", sid, source, revision, parsed)
+    saved = json.loads(store.session_record("owner", sid)["body"])
+    assert saved["source_snapshot"] == {"generation": "first", "received_bytes": 9}
+    append_source(store, value)
+    assert store.evidence("owner", sid, "op-0")["text"] == "original\n"

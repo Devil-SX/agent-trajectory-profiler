@@ -38,6 +38,11 @@ def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def archive_revision(source: Any) -> str | None:
+    """The archive cursor is the single authority for received source identity."""
+    return digest(source["generation"] + ":" + str(source["received_bytes"])) if source else None
+
+
 COUNTERS = (
     "input",
     "output",
@@ -1078,6 +1083,13 @@ class SemanticStore:
                 raise ValueError(
                     "Source changed during parsing; current revision remains authoritative"
                 )
+            parsed = {
+                **parsed,
+                "source_snapshot": {
+                    "generation": current["generation"],
+                    "received_bytes": current["received_bytes"],
+                },
+            }
             self.domain.import_native_measurements(db, owner, source, revision, parsed)
             previous = db.execute(
                 "SELECT body FROM semantic_sessions WHERE owner=? AND id=?", (owner, sid)
@@ -1345,8 +1357,14 @@ class SemanticStore:
             contributions = self.domain.source_contributions(
                 owner, record["collector"], record["source"]
             )
-        attribution = self._measure_operations(owner, record, operations, contributions)
         with self.domain.connect() as db:
+            source = db.execute(
+                "SELECT generation,received_bytes FROM source_archives "
+                "WHERE owner=? AND collector=? AND source=?",
+                (owner, record["collector"], record["source"]),
+            ).fetchone()
+            current_source_revision = archive_revision(source)
+            source_pending = current_source_revision != record["source_revision"]
             collection = collection_progress(
                 db.execute(
                     "SELECT read_bytes,source_bytes,errors,unknown FROM sources "
@@ -1376,22 +1394,24 @@ class SemanticStore:
             resume = self.resume_state(
                 db, dict(job) if job else None, progress, record["source_revision"]
             )
-        current_analysis = (
+        # A pending append does not invalidate the saved analysis snapshot. Never
+        # estimate newer ledger records onto its old final operation, however.
+        if source_pending:
+            contributions = []
+        attribution = self._measure_operations(owner, record, operations, contributions)
+        analysis_matches_parsed = (
             analysis is not None and analysis["source_revision"] == record["source_revision"]
         )
-        value = json.loads(analysis["body"]) if current_analysis else {"tasks": []}
-        status = (
-            "complete"
-            if analysis and analysis["source_revision"] == record["source_revision"]
-            else "stale" if analysis else "not_started"
-        )
+        current_analysis = analysis_matches_parsed and not source_pending
+        value = json.loads(analysis["body"]) if analysis_matches_parsed else {"tasks": []}
+        status = "complete" if current_analysis else "stale" if analysis else "not_started"
         if (
             job
             and job["source_revision"] == record["source_revision"]
             and job["status"] in {"queued", "running", "failed"}
         ):
             status = job["status"]
-            if not current_analysis and progress:
+            if not analysis_matches_parsed and progress:
                 value["provenance"] = {
                     **progress,
                     "chunks": progress.get("total_chunks"),
@@ -1463,7 +1483,14 @@ class SemanticStore:
             "source_records are retained for provenance,",
         )
         warnings = [note for note in parser_notes if not str(note).startswith(generic_notes)]
-        if analysis and not current_analysis:
+        if source_pending:
+            warnings.append(
+                "源记录有更新，等待重新解析。当前内容为已解析快照，已有分析仅对应该快照；不会自动重新分析。"
+            )
+            warnings.append(
+                "最新账本无法证明属于当前快照，执行用量与任务开销保持未知；分析调用开销单独保留。"
+            )
+        if analysis and not analysis_matches_parsed:
             warnings.append(
                 "分析来自旧源版本；任务名称供参考，开销与证据仅覆盖仍可匹配的当前操作。"
             )
@@ -1492,6 +1519,10 @@ class SemanticStore:
             "resume": resume,
             "has_analysis": analysis is not None,
             "analysis_current": current_analysis,
+            "analysis_matches_parsed": analysis_matches_parsed,
+            "source_pending": source_pending,
+            "current_source_revision": current_source_revision,
+            "analysis_source_revision": analysis["source_revision"] if analysis else None,
             "message": job["message"] if job and status == "failed" else "",
             "analysis_revision": analysis["revision"] if analysis else "",
             "source_revision": record["source_revision"],
@@ -1586,14 +1617,19 @@ class SemanticStore:
                     (owner,),
                 )
             ]
-            archives = {
-                (row["collector"], row["source"]): collection_progress(row)
-                for row in db.execute(
-                    "SELECT collector,source,received_bytes AS read_bytes,source_bytes,"
-                    "0 AS errors,0 AS unknown "
-                    "FROM source_archives WHERE owner=?",
+            archive_rows = list(
+                db.execute(
+                    "SELECT collector,source,generation,received_bytes,"
+                    "received_bytes AS read_bytes,"
+                    "source_bytes,0 AS errors,0 AS unknown FROM source_archives WHERE owner=?",
                     (owner,),
                 )
+            )
+            archive_revisions = {
+                (row["collector"], row["source"]): archive_revision(row) for row in archive_rows
+            }
+            archives = {
+                (row["collector"], row["source"]): collection_progress(row) for row in archive_rows
             }
         native_to_id = {
             value["native_session_id"]: sid
@@ -1611,7 +1647,17 @@ class SemanticStore:
                 metadata.get(sid, {}),
             )
             has_analysis = bool(analysis)
-            current = has_analysis and analysis["source_revision"] == record.get("source_revision")
+            current_source_revision = archive_revisions.get(
+                (record.get("collector"), record.get("source"))
+            )
+            source_pending = bool(record) and current_source_revision != record.get(
+                "source_revision"
+            )
+            current = (
+                has_analysis
+                and not source_pending
+                and analysis["source_revision"] == record.get("source_revision")
+            )
             status = (
                 "complete"
                 if current
@@ -1659,6 +1705,10 @@ class SemanticStore:
                 "analysis_status": status,
                 "has_analysis": has_analysis,
                 "analysis_current": current,
+                "source_pending": source_pending,
+                "source_revision": record.get("source_revision"),
+                "current_source_revision": current_source_revision,
+                "analysis_source_revision": analysis.get("source_revision"),
                 "metrics": metrics,
                 "content_available": bool(record),
                 "collection": collection,
@@ -1765,11 +1815,24 @@ class SemanticStore:
                 "SELECT * FROM source_archives WHERE owner=? AND collector=? AND source=?",
                 (owner, record["collector"], record["source"]),
             ).fetchone()
-            if (
-                not source
-                or digest(source["generation"] + ":" + str(source["received_bytes"]))
-                != record["source_revision"]
-            ):
+            snapshot = parsed.get("source_snapshot") or {}
+            snapshot_size = snapshot.get("received_bytes")
+            # Existing worker output records complete_bytes. Accept it only when
+            # its exact cursor under the current immutable generation reproduces
+            # the stored revision; a trailing partial record cannot pass this test.
+            if not snapshot and source:
+                snapshot_size = parsed.get("complete_bytes")
+                snapshot = {"generation": source["generation"], "received_bytes": snapshot_size}
+            historical_prefix = bool(
+                source
+                and isinstance(snapshot_size, int)
+                and not isinstance(snapshot_size, bool)
+                and snapshot_size >= end
+                and source["received_bytes"] >= snapshot_size
+                and snapshot.get("generation") == source["generation"]
+                and archive_revision(snapshot) == record["source_revision"]
+            )
+            if archive_revision(source) != record["source_revision"] and not historical_prefix:
                 return {
                     "available": False,
                     "message": "源记录已更新，等待重新解析后查看原文。",
@@ -1793,6 +1856,9 @@ class SemanticStore:
             return {"available": False, "message": "源记录存在缺口，无法读取完整原文。", "text": ""}
         return {
             "available": True,
+            "source_revision": record["source_revision"],
+            "current_source_revision": archive_revision(source),
+            "snapshot_current": archive_revision(source) == record["source_revision"],
             "text": content.decode("utf-8", errors="replace"),
             "byte_start": start,
             "byte_end": end,

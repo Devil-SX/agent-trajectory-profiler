@@ -4,6 +4,13 @@ All notable changes to **BatCave Trajectory** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Distinguish saved analysis snapshots from newly appended source records, retaining task structure and analysis costs while withholding unverified execution usage.
+- Read historical evidence only when an immutable same-generation prefix exactly matches its stored source revision; pending sources no longer appear current.
+
 ## [3.3.0] - 2026-10-19
 
 ### Added
