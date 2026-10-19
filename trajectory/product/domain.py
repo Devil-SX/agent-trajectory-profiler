@@ -1,7 +1,9 @@
 """One transactional writer and one set of account-scoped metric semantics."""
 
+import fcntl
 import hashlib
 import json
+import os
 import sqlite3
 from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
@@ -263,7 +265,9 @@ class Domain:
             )
         return result
 
-    def overview(self, owner: str | None, since: str = "", until: str = "") -> dict[str, Any]:
+    def overview(
+        self, owner: str | None, since: str = "", until: str = "", *, contributions: bool = False
+    ) -> dict[str, Any]:
         with self.connect() as db:
             where, params = (" WHERE owner=?", (owner,)) if owner else ("", ())
             rows = db.execute(
@@ -373,6 +377,21 @@ class Domain:
                 "active_seconds_estimate": 0.0,
             }
 
+        event_metrics: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+
+        def event_bucket(record: dict[str, Any]) -> dict[str, Any]:
+            key = (record["owner"], record["collector"], record["source"], record["id"])
+            tokens = 0
+            if record["kind"] == "usage":
+                tokens = (record.get("input") or 0) + (record.get("output") or 0)
+                if not record.get("input_includes_cache"):
+                    tokens += record.get("cached") or 0
+                if record.get("input_includes_cache_write") is False:
+                    tokens += record.get("cache_write") or 0
+            return event_metrics.setdefault(
+                key, {**bucket(record["id"], ""), "record": record, "recorded_tokens": tokens}
+            )
+
         def date_for(record: dict[str, Any]) -> str:
             return (
                 datetime.fromisoformat(record["timestamp"])
@@ -446,6 +465,7 @@ class Domain:
                 groups[record["project"]],
                 days.setdefault(day, bucket(day, day)),
                 tasks[record["task"]],
+                *([event_bucket(record)] if contributions else []),
             )
             origin = record.get("input_origin")
             for target in targets:
@@ -540,7 +560,7 @@ class Domain:
                         subtotal += value * rates[field] / 1_000_000
             reasons = sorted(set(reasons))
             cost = None if reasons else subtotal
-            for target in (project, daily):
+            for target in (project, daily, *([event_bucket(record)] if contributions else [])):
                 target["calls"] += 1
                 if record["input"] is None or record["output"] is None:
                     target["unknown_usage"] += 1
@@ -585,6 +605,8 @@ class Domain:
                 start["project"], bucket(start["project"], start["project_name"])
             )
             target[metric] += (ending - beginning).total_seconds()
+            if contributions:
+                event_bucket(start)[metric] += (ending - beginning).total_seconds()
             while beginning < ending:
                 day = beginning.date().isoformat()
                 midnight = datetime.combine(beginning.date() + timedelta(days=1), time.min, zone)
@@ -658,7 +680,7 @@ class Domain:
                         "cause": "unknown",
                     }
                 )
-        for target in (*groups.values(), *days.values()):
+        for target in (*groups.values(), *days.values(), *event_metrics.values()):
             target["cost_status"] = (
                 "complete"
                 if not target["unpriced_calls"]
@@ -671,6 +693,7 @@ class Domain:
             if target["unpriced_calls"]:
                 target["estimated_usd"] = None
         return {
+            **({"event_contributions": list(event_metrics.values())} if contributions else {}),
             "schema": "trajectory-overview/1",
             "generated_at": now(),
             "projects": sorted(
@@ -736,5 +759,56 @@ class Domain:
         }
 
     def backup(self, target: Path) -> None:
+        """Export online, then persist file and directory before any success receipt."""
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as source, sqlite3.connect(target) as destination:
             source.backup(destination)
+        target.chmod(0o600)
+        with target.open("rb") as stream:
+            os.fsync(stream.fileno())
+        descriptor = os.open(target.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def online_backup(self, actor: str, mutation: str) -> dict[str, Any]:
+        directory = self.path.parent / "backups"
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        parent_fd = os.open(directory.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
+        body = json.dumps({"operation": "backup", "mutation_id": mutation}, sort_keys=True)
+        with (directory / "backup.lock").open("a") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            with self.connect() as db:
+                prior = self._prior(db, actor, mutation, body)
+            if prior:
+                return prior
+            target = directory / (
+                hashlib.sha256((actor + ":" + mutation).encode()).hexdigest() + ".sqlite"
+            )
+            self.backup(target)
+            with sqlite3.connect(f"file:{target}?mode=ro", uri=True) as check:
+                valid = check.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            if not valid:
+                raise ValueError("Backup integrity verification failed")
+            checksum = hashlib.sha256()
+            with target.open("rb") as stream:
+                while data := stream.read(1024 * 1024):
+                    checksum.update(data)
+            result = {
+                "mutation_id": mutation,
+                "path": str(target),
+                "sha256": checksum.hexdigest(),
+                "bytes": target.stat().st_size,
+                "fsynced": True,
+                "integrity_verified": True,
+                "full_system_restore_verified": False,
+                "created": now(),
+            }
+            with self.connect() as db:
+                result = self._receipt(db, actor, mutation, body, "backup", result)
+            return result

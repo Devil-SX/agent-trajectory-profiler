@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-19
+
+### Added
+
+- Authenticated raw-source synchronization with shared automatic/manual checkpoints, byte-range receipts and generation-safe replay.
+- Pinned agent-session normalization, validated model task hierarchy, AgentPProf profiles and interactive task tree, segments, metric flamegraph and original evidence.
+- Source/analysis revision guards, audited task edits, explicit missing-ledger and estimated-attribution states, and durable domain online backup.
+
+### Changed
+
+- Reuse the existing canonical usage ledger for every semantic task cost and human-input metric; raw content never creates another bill.
+- Run asynchronous parsing/analysis behind a cross-process lease and warm-deployment standby gate.
+
+### Removed
+
+- Retired local profiler CLI, duplicate parser/backend/frontend and their obsolete tests and dependency manifests. Git retains historical source; existing measured events and user logs are preserved.
+
+Code stats vs v2.2.0: total 10202 text lines (baseline 82886), +5001 (-77685) = -72684, -87.69% text-line change.
+
 ## [2.2.0] - 2026-10-12
 
 ### Added

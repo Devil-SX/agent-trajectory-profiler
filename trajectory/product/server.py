@@ -8,6 +8,7 @@ import os
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,8 +18,17 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from trajectory.product import VERSION
-from trajectory.product.contracts import Batch, Correction, Price
+from trajectory.product.contracts import (
+    AnalysisRequest,
+    Batch,
+    Correction,
+    Price,
+    SourceChunk,
+    TaskEdit,
+)
 from trajectory.product.domain import Domain
+from trajectory.product.semantic import SemanticStore
+from trajectory.product.semantic_runtime import AnalysisRuntime
 
 
 @dataclass(frozen=True)
@@ -37,6 +47,66 @@ class CollectorBinding(BaseModel):
 
 
 OPERATIONS: list[dict[str, Any]] = [
+    {
+        "id": "backup",
+        "method": "POST",
+        "path": "/api/backups",
+        "scope": "backup",
+        "input": AnalysisRequest,
+        "effect": "Online SQLite domain export with durable file, directory and verified receipt",
+    },
+    {
+        "id": "source_evidence",
+        "method": "GET",
+        "path": "/api/sessions/{session_id}/operations/{operation_id}/evidence",
+        "scope": "read",
+        "effect": "Read a bounded account-owned original source record for an operation",
+    },
+    {
+        "id": "source_append",
+        "method": "POST",
+        "path": "/api/source-chunks",
+        "scope": "upload",
+        "input": SourceChunk,
+        "effect": "Durably append an authenticated source range; never duplicate usage",
+    },
+    {
+        "id": "source_progress",
+        "method": "GET",
+        "path": "/api/source-progress",
+        "scope": "upload",
+        "effect": "Read bound source upload progress, without source content",
+    },
+    {
+        "id": "sessions",
+        "method": "GET",
+        "path": "/api/sessions",
+        "scope": "read",
+        "effect": "Read normalized sessions and task-analysis availability",
+    },
+    {
+        "id": "analysis_read",
+        "method": "GET",
+        "path": "/api/sessions/{session_id}/analysis",
+        "scope": "read",
+        "effect": "Read task hierarchy, measured costs and account-owned source evidence",
+    },
+    {
+        "id": "analysis_run",
+        "method": "POST",
+        "path": "/api/sessions/{session_id}/analysis",
+        "scope": "configure",
+        "input": AnalysisRequest,
+        "effect": "Queue semantic segmentation using the configured model; incurs model usage",
+    },
+    {
+        "id": "task_edit",
+        "method": "POST",
+        "path": "/api/sessions/{session_id}/tasks",
+        "scope": "configure",
+        "input": TaskEdit,
+        "effect": "Audit task rename, sibling merge or split and recalculate attribution",
+    },
     {
         "id": "request_traces",
         "method": "GET",
@@ -165,14 +235,36 @@ def create_app(
     machine_verifier: Callable[[str, str], bool] | None = None,
 ) -> FastAPI:
     domain = Domain(path)
+    semantic = SemanticStore(domain)
+    runtime = AnalysisRuntime(semantic)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> Any:
+        async def consume() -> None:
+            while True:
+                await asyncio.to_thread(runtime.process_next)
+                await asyncio.sleep(1)
+
+        task = asyncio.create_task(consume())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            runtime.close()
+
     app = FastAPI(
         title="BatCave Trajectory",
         version=VERSION,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
     app.state.domain = domain
+    app.state.semantic = semantic
+    app.state.analysis_runtime = runtime
     original_authorizer = authorizer
 
     def tracked_authorizer(request: Request, scope: str | None) -> Principal:
@@ -324,6 +416,36 @@ def create_app(
             try:
                 if identifier == "request_traces":
                     return await asyncio.to_thread(domain.traces)
+                if identifier == "source_progress":
+                    if not principal.machine_client:
+                        raise HTTPException(
+                            403, "Source progress requires a native machine account"
+                        )
+                    return await asyncio.to_thread(
+                        semantic.source_progress,
+                        principal.account,
+                        request.query_params.get("collector", ""),
+                        request.query_params.get("source", ""),
+                    )
+                if identifier == "sessions":
+                    return await asyncio.to_thread(
+                        semantic.sessions,
+                        principal.account,
+                        request.query_params.get("project", ""),
+                        request.query_params.get("since", ""),
+                        request.query_params.get("until", ""),
+                    )
+                if identifier == "analysis_read":
+                    return await asyncio.to_thread(
+                        semantic.detail, principal.account, request.path_params["session_id"]
+                    )
+                if identifier == "source_evidence":
+                    return await asyncio.to_thread(
+                        semantic.evidence,
+                        principal.account,
+                        request.path_params["session_id"],
+                        request.path_params["operation_id"],
+                    )
                 if identifier in ("overview", "platform"):
                     return await asyncio.to_thread(
                         domain.overview,
@@ -345,6 +467,28 @@ def create_app(
                     chunks.extend(chunk)
                 body = bytes(chunks)
                 value = operation["input"].model_validate_json(body)
+                if identifier == "backup":
+                    return await asyncio.to_thread(
+                        domain.online_backup, principal.account, value.mutation_id
+                    )
+                if identifier == "source_append":
+                    if not principal.machine_client:
+                        raise HTTPException(403, "Uploads require a native machine account")
+                    return await asyncio.to_thread(semantic.ingest_source, principal.account, value)
+                if identifier == "analysis_run":
+                    return await asyncio.to_thread(
+                        semantic.request_analysis,
+                        principal.account,
+                        request.path_params["session_id"],
+                        value,
+                    )
+                if identifier == "task_edit":
+                    return await asyncio.to_thread(
+                        semantic.edit_task,
+                        principal.account,
+                        request.path_params["session_id"],
+                        value,
+                    )
                 if identifier == "ingest":
                     if not principal.machine_client:
                         raise HTTPException(403, "Uploads require a native machine account")

@@ -20,7 +20,7 @@ Release candidates are built and tested on batcave-wsl in isolated databases and
 
 ## Legacy retirement
 
-The 2.0 wheel includes only the `trajectory` package marker and `trajectory.product`. Legacy local CLI, database query API, frontend and native parser are excluded from installation. The old implementation has been removed from current source; its history remains available in Git. Current tests are `tests/product`, client tests where present and the browser scripts in `tests/browser`. No old namespace is needed to collect production tests. User databases are migrated through SQLite Backup API, never by copying an active DB/WAL pair.
+The current wheel includes only the `trajectory` package marker and `trajectory.product`. Legacy local CLI, database query API, frontend and native parser are excluded from installation. The old implementation has been removed from current source; its history remains available in Git. Current tests are `tests/product`, client tests where present and the browser scripts in `tests/browser`. No old namespace is needed to collect production tests. User databases are migrated through SQLite Backup API, never by copying an active DB/WAL pair.
 
 
 ## Unified analysis and presentation
@@ -38,3 +38,23 @@ Current Python requires 3.12 or newer; the wheel contains only the product packa
 The retirement audit in `docs/LEGACY-RETIREMENT-AUDIT.md` records the old dependency closure. It is migration evidence, not a second operations guide. Historical benchmark documents retain their original source/date and do not certify the new pipeline.
 
 The optional GitHub workflow is manual (`workflow_dispatch`) and requires a separately registered self-hosted runner with labels `linux` and `batcave-test`. Set repository variable `BATCAVE_HTTP_TEST_PYZ` to a readable immutable shared HTTP artifact. The workflow reuses this artifact through `PYTHONPATH`, without vendoring its source. Runner registration and a successful CI run are separate from SSH-based remote acceptance; neither is presumed by this source configuration.
+
+## Dependency ownership
+
+Agent-session 0.5.17 is a pinned Rust crate in `native/session-worker`, with its
+Cargo.lock tracked. AgentPProf is built from immutable commit
+`60cc321ceb4b677fec1a69df6ec055a456b75675` by `scripts/native/build-workers.sh`.
+The component manifest pins output hashes; the installer verifies binaries and
+licenses before copying them into the release. Neither dependency is a mutable
+submodule or a runtime checkout of upstream main. The Python service calls the
+worker's versioned JSONL protocol and the profiler CLI, keeping dependency schemas
+behind adapters. Upgrades require fixture and real-source acceptance.
+
+`semantic.py` stores source archives, normalized snapshots, job state and task
+membership in the same domain SQLite database. It never owns a second measured
+ledger. The background runtime uses a cross-process lease and an explicit standby
+gate during warm deployment. Model output is cached per source/prompt/model
+revision so a profiler failure can be retried without charging the model again.
+The current parser rebuilds a changed complete snapshot; it does not claim an
+incremental parse algorithm. Large histories therefore require bounded delivery
+and measured capacity planning.

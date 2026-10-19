@@ -102,7 +102,11 @@ def test_native_machine_sync_idempotency_scope_revocation_and_server_attribution
     help_response = client.get(
         "/trajectory/help", headers={"Authorization": "Bearer machine"}
     ).json()
-    assert [tool["name"] for tool in help_response["tools"]] == ["ingest"]
+    assert {tool["name"] for tool in help_response["tools"]} == {
+        "ingest",
+        "source_append",
+        "source_progress",
+    }
     assert (
         "project" not in client.get("/trajectory/protocol").json()["$defs"]["Record"]["properties"]
     )

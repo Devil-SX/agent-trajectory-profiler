@@ -1,4 +1,4 @@
-"""The single wire contract; no prompts, credentials or source code are transported."""
+"""Authoritative contracts for measured events, source evidence and analysis."""
 
 from datetime import UTC, datetime
 from typing import Literal
@@ -86,6 +86,38 @@ class Correction(BaseModel):
     task: str = Field(min_length=1, max_length=128)
     project: str = Field(min_length=1, max_length=200)
     project_name: str = Field(min_length=1, max_length=200)
+
+
+class SourceChunk(BaseModel):
+    """A replayable source range; content does not create a second usage ledger."""
+
+    model_config = ConfigDict(extra="forbid")
+    schema_id: Literal["trajectory-source-chunk/1"]
+    mutation_id: str = Field(min_length=16, max_length=128)
+    collector: str = Field(min_length=1, max_length=100)
+    source: str = Field(pattern=r"^[a-f0-9]{64}$")
+    ecosystem: Literal["codex", "claude_code"]
+    generation: str = Field(min_length=1, max_length=128)
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    source_bytes: int = Field(ge=0)
+    content: str = Field(max_length=710000)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_name: str = Field(default="session.jsonl", max_length=250)
+
+
+class AnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mutation_id: str = Field(min_length=16, max_length=128)
+
+
+class TaskEdit(AnalysisRequest):
+    analysis_revision: str = Field(min_length=1, max_length=128)
+    action: Literal["rename", "merge", "split"]
+    task_id: str = Field(min_length=1, max_length=128)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    other_task_id: str | None = Field(default=None, max_length=128)
+    operation_id: str | None = Field(default=None, max_length=128)
 
 
 class PriceRates(BaseModel):
