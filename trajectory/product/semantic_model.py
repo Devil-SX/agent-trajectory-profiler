@@ -312,6 +312,9 @@ def segment(
                     "state": state,
                     "analysis_usage": provenance["analysis_usage"],
                     "model": provenance["model"],
+                    "route": provenance["route"],
+                    "reasoning_effort": provenance["reasoning_effort"],
+                    "created_at": provenance["created_at"],
                     "analysis_cost": provenance["cost"],
                 }
             )

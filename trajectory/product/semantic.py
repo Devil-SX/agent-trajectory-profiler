@@ -547,7 +547,11 @@ class SemanticStore:
                         "analysis_usage": provenance.get(
                             "analysis_usage", progress.get("analysis_usage", [])
                         ),
-                        "analysis_cost": provenance.get("cost", progress.get("analysis_cost")),
+                        "analysis_cost": (
+                            self.domain.analysis_cost(owner, provenance or progress)
+                            if provenance.get("analysis_usage") or progress.get("analysis_usage")
+                            else None
+                        ),
                     }
                 )
         counts = {
@@ -956,6 +960,7 @@ class SemanticStore:
             "operations": operations,
             "unassigned_operation_ids": [o["id"] for o in operations if o["id"] not in memberships],
             "provenance": value.get("provenance", {}),
+            "analysis_cost": self.domain.analysis_cost(owner, value.get("provenance", {})),
             "coverage": {
                 "parser": parsed.get("parser"),
                 "parser_coverage": parser_coverage,
