@@ -1,3 +1,5 @@
+> Historical evidence from 2026-03-16 for the retired local profiler. Commands, source paths and results below are preserved for provenance and are not current usage or acceptance instructions.
+
 # Codex Summary Benchmark 2026-03-16
 
 ## Metadata

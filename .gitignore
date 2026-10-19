@@ -59,14 +59,10 @@ tests/fixtures/private/
 
 # Local generated artifacts
 .sisyphus/
-frontend/test-results/
-frontend/playwright-report/
+tests/browser/node_modules/
+browser-evidence/
 
 /survey/
 
-# Lockfile managed locally; not tracked in this repo
-uv.lock
-
-# Rust native extension
-Cargo.lock
+# Rust build output
 target/

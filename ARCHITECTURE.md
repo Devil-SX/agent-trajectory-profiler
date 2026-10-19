@@ -20,4 +20,21 @@ Release candidates are built and tested on batcave-wsl in isolated databases and
 
 ## Legacy retirement
 
-The 2.0 wheel includes only the `trajectory` package marker and `trajectory.product`. Legacy local CLI, database query API, frontend and native parser are excluded from installation. Their old namespace and repository history remain available until replacement verification permits cleanup. User databases are migrated through SQLite Backup API, never by copying an active DB/WAL pair.
+The 2.0 wheel includes only the `trajectory` package marker and `trajectory.product`. Legacy local CLI, database query API, frontend and native parser are excluded from installation. The old implementation has been removed from current source; its history remains available in Git. Current tests are `tests/product`, client tests where present and the browser scripts in `tests/browser`. No old namespace is needed to collect production tests. User databases are migrated through SQLite Backup API, never by copying an active DB/WAL pair.
+
+
+## Unified analysis and presentation
+
+The remote domain remains the authority for operation identity, durable source revisions, real usage and human-origin metrics. Agent-session is consumed through a pinned worker adapter; parser-specific source handling must not leak into the browser. Semantic segmentation produces task membership and hierarchy over canonical operations. AgentPProf aggregates supplied metrics into profile paths; it does not replace missing counters with estimated billable usage.
+
+`dashboard.html` is the only installed web entry. Its authenticated API views share project/date filters. Task trees, operation-order timelines and metric-width flamegraphs are different views of the same analysis. Original operation evidence remains accessible. Mutation IDs and analysis revisions guard task-name, merge and split edits against replay and stale writes. Analysis jobs are asynchronous and display incomplete and failed states explicitly.
+
+Automatic collectors and Agent-invoked synchronization must use one source identity and durable checkpoint/outbox chain. Their transports may differ, but source revision and consumption deduplication remain shared; replacing the parser must not reset delivery state or duplicate existing usage. Old metadata-only input cannot produce semantic task labels without original execution evidence.
+
+## Development validation
+
+Current Python requires 3.12 or newer; the wheel contains only the product packages declared in pyproject.toml. Current browser assertions are executable scripts under `tests/browser`, with dependencies isolated there. CI requires a remote isolated BatCave runner and uses disposable directories under `/home/saveer/BatCave/tests`, with no production database mounted. Missing runtime dependencies or test runners are explicit failures.
+
+The retirement audit in `docs/LEGACY-RETIREMENT-AUDIT.md` records the old dependency closure. It is migration evidence, not a second operations guide. Historical benchmark documents retain their original source/date and do not certify the new pipeline.
+
+The optional GitHub workflow is manual (`workflow_dispatch`) and requires a separately registered self-hosted runner with labels `linux` and `batcave-test`. Set repository variable `BATCAVE_HTTP_TEST_PYZ` to a readable immutable shared HTTP artifact. The workflow reuses this artifact through `PYTHONPATH`, without vendoring its source. Runner registration and a successful CI run are separate from SSH-based remote acceptance; neither is presumed by this source configuration.

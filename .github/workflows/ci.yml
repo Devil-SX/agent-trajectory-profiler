@@ -1,132 +1,72 @@
-name: CI
+name: Current product quality
 
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+  workflow_dispatch:
 
+# The registered runner must be an isolated test runner on batcave-wsl. It must
+# not run production identities or expose production databases to test jobs.
 jobs:
-  backend-quality:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: uv sync --all-extras
-
-      - name: Lint (ruff)
-        run: uv run ruff check . --ignore E501
-
-      - name: Format check (black)
-        run: uv run black --check .
-
-      - name: Type check (mypy)
-        run: uv run mypy .
-
-      - name: Run tests
-        run: uv run pytest --tb=short
-
-  frontend-static-checks:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Install backend dependencies for OpenAPI export
-        run: uv sync --all-extras
-
-      - name: API contract freshness
-        working-directory: frontend
-        run: npm run typegen:check
-
-      - name: ESLint
-        working-directory: frontend
-        run: npm run lint
-
-      - name: Playwright tag contract
-        working-directory: frontend
-        run: npm run test:check-tags
-
-      - name: Type check
-        working-directory: frontend
-        run: npm run type-check
-
-      - name: Unit tests
-        working-directory: frontend
-        run: npm run test:unit
-
-      - name: Build
-        working-directory: frontend
-        run: npm run build
-
-  frontend-e2e-smoke:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ["1/2", "2/2"]
+  product-quality:
+    runs-on: [self-hosted, linux, batcave-test]
+    timeout-minutes: 25
     env:
-      PLAYWRIGHT_SHARD: ${{ matrix.shard }}
-      PLAYWRIGHT_WORKERS: "50%"
-
+      BATCAVE_TEST_ROOT: /home/saveer/BatCave/tests
+      BATCAVE_HTTP_TEST_PYZ: ${{ vars.BATCAVE_HTTP_TEST_PYZ }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
-      - name: Install Playwright browser
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Run smoke E2E shard
-        working-directory: frontend
-        run: npm run test:e2e:smoke:shard
-
-      - name: Upload Playwright report on failure
-        if: failure()
+          node-version: '24'
+      - name: Create disposable remote test workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$BATCAVE_TEST_ROOT"
+          test -n "$BATCAVE_HTTP_TEST_PYZ"
+          test -r "$BATCAVE_HTTP_TEST_PYZ"
+          test_workspace=$(mktemp -d "$BATCAVE_TEST_ROOT/trajectory-ci-${GITHUB_RUN_ID}-XXXXXX")
+          git archive HEAD | tar -x -C "$test_workspace"
+          echo "TRAJECTORY_TEST_WORKSPACE=$test_workspace" >> "$GITHUB_ENV"
+      - name: Install isolated Python test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$TRAJECTORY_TEST_WORKSPACE"
+          uv python install 3.12
+          uv sync --frozen --group dev
+          echo "PYTHONPATH=$BATCAVE_HTTP_TEST_PYZ" >> "$GITHUB_ENV"
+      - name: Check current Python source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$TRAJECTORY_TEST_WORKSPACE"
+          uv run --no-sync ruff check trajectory tests scripts
+          uv run --no-sync black --check trajectory tests scripts
+          uv run --no-sync mypy trajectory
+      - name: Run current domain and client tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$TRAJECTORY_TEST_WORKSPACE"
+          test_paths=(tests/product)
+          if test -d tests/client; then test_paths+=(tests/client); fi
+          uv run --no-sync pytest "${test_paths[@]}" --tb=short
+      - name: Run current dashboard acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$TRAJECTORY_TEST_WORKSPACE"
+          npm ci --prefix tests/browser
+          tests/browser/node_modules/.bin/playwright install chromium
+          mkdir -p browser-evidence
+          export PLAYWRIGHT_MODULE="$TRAJECTORY_TEST_WORKSPACE/tests/browser/node_modules/playwright"
+          node tests/browser/dashboard-browser.cjs trajectory/product/dashboard.html browser-evidence
+          node tests/browser/semantic-analysis-browser.cjs trajectory/product/dashboard.html browser-evidence
+      - name: Keep remote acceptance evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-smoke-${{ matrix.shard }}
-          path: frontend/playwright-report
+          name: trajectory-product-${{ github.run_id }}
+          path: ${{ env.TRAJECTORY_TEST_WORKSPACE }}/browser-evidence
+          if-no-files-found: ignore
