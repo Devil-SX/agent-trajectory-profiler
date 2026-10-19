@@ -442,3 +442,173 @@ def test_pause_before_request_prepares_no_uncertain_attempt(tmp_path, monkeypatc
         )
     assert json.loads(path.read_text())["completed_chunks"] == 0
     assert not list(tmp_path.glob("*.calls/*.json"))
+
+
+def lost_attempt():
+    return {
+        "call_id": call_id("same-job", 0, 0),
+        "chunk": 1,
+        "attempt": 1,
+        "receipt_id": "terminal-lost-receipt",
+        "failed": True,
+        "uncertain": True,
+        "usage": {},
+    }
+
+
+def recomputation_authorization():
+    return {
+        "job_id": "same-job",
+        "call_id": call_id("same-job", 0, 0),
+        "receipt_id": "terminal-lost-receipt",
+        "chunk": 1,
+        "attempt": 1,
+        "resume_generation": 1,
+        "receipt_state": "uncertain_terminal",
+        "authorization_id": "domain-operator-authorization",
+        "accept_possible_duplicate_charge": True,
+    }
+
+
+def test_explicit_terminal_lost_response_authorization_preserves_unknown_cost(
+    tmp_path, monkeypatch
+):
+    _, operations = setup(monkeypatch)
+    path = tmp_path / "checkpoint.json"
+    original = lost_attempt()
+    calls = []
+    monkeypatch.setattr(
+        model,
+        "_request",
+        lambda cfg, packet, identity: (calls.append(identity) or returned(identity, [0])),
+    )
+    result = model.segment(
+        operations[:2],
+        "目标",
+        analysis_id="same-job",
+        checkpoint=path,
+        prior_progress={"completed_chunks": 0, "analysis_usage": [original]},
+        resume_generation=1,
+        authorized_recomputations=[recomputation_authorization()],
+    )
+    assert calls == [call_id("same-job", 0, 2), call_id("same-job", 1, 2)]
+    assert result["provenance"]["analysis_usage"][0] == original
+    assert result["provenance"]["analysis_usage"][0]["usage"] == {}
+    assert result["provenance"]["authorized_recomputations"] == [recomputation_authorization()]
+    monkeypatch.setattr(
+        model, "_request", lambda *args: pytest.fail("completed recomputation is reusable")
+    )
+    replay = model.segment(
+        operations[:2],
+        "目标",
+        analysis_id="same-job",
+        checkpoint=path,
+        resume_generation=1,
+        authorized_recomputations=[recomputation_authorization()],
+    )
+    assert replay["tasks"] == result["tasks"]
+    with pytest.raises(model.SemanticModelError, match="Uncertain"):
+        model.segment(
+            operations[:2], "目标", analysis_id="same-job", checkpoint=path, resume_generation=2
+        )
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"job_id": "another-job"},
+        {"receipt_id": "wrong-receipt"},
+        {"receipt_id": ""},
+        {"call_id": call_id("another-job", 0, 0)},
+        {"attempt": 2},
+        {"chunk": 2},
+        {"resume_generation": 0},
+        {"resume_generation": 2},
+        {"receipt_state": "sent"},
+        {"receipt_state": "unknown"},
+        {"receipt_state": "rejected"},
+        {"authorization_id": ""},
+        {"accept_possible_duplicate_charge": False},
+    ],
+)
+def test_lost_authorization_requires_exact_domain_terminal_proof(override, tmp_path, monkeypatch):
+    _, operations = setup(monkeypatch)
+    monkeypatch.setattr(
+        model, "_request", lambda *args: pytest.fail("invalid authorization must never dispatch")
+    )
+    with pytest.raises(model.SemanticModelError):
+        model.segment(
+            operations[:1],
+            "目标",
+            analysis_id="same-job",
+            checkpoint=tmp_path / "checkpoint.json",
+            prior_progress={"completed_chunks": 0, "analysis_usage": [lost_attempt()]},
+            resume_generation=1,
+            authorized_recomputations=[recomputation_authorization() | override],
+        )
+
+
+def test_prepared_journal_authorization_does_not_rewrite_original_state(tmp_path, monkeypatch):
+    _, operations = setup(monkeypatch)
+    path = tmp_path / "checkpoint.json"
+    monkeypatch.setattr(model, "_request", lambda *args: (_ for _ in ()).throw(SystemExit("lost")))
+    with pytest.raises(SystemExit):
+        model.segment(operations[:1], "目标", analysis_id="same-job", checkpoint=path)
+    old_file = next(tmp_path.glob("*.calls/*.json"))
+    old_bytes = old_file.read_bytes()
+    calls = []
+    monkeypatch.setattr(
+        model,
+        "_request",
+        lambda cfg, packet, identity: (calls.append(identity) or returned(identity, [0])),
+    )
+    model.segment(
+        operations[:1],
+        "目标",
+        analysis_id="same-job",
+        checkpoint=path,
+        resume_generation=1,
+        authorized_recomputations=[recomputation_authorization()],
+    )
+    assert calls == [call_id("same-job", 0, 2)]
+    assert old_file.read_bytes() == old_bytes
+    assert json.loads(old_bytes)["state"] == "prepared"
+
+
+def test_one_authorized_lost_call_never_authorizes_another_uncertain_call(tmp_path, monkeypatch):
+    _, operations = setup(monkeypatch)
+    path = tmp_path / "checkpoint.json"
+    calls = []
+
+    def uncertain(cfg, packet, identity):
+        calls.append(identity)
+        raise model.SemanticModelError(
+            "new uncertain call",
+            {"call": {"call_id": identity, "receipt_id": "new-uncertain"}},
+            retryable=False,
+        )
+
+    monkeypatch.setattr(model, "_request", uncertain)
+    with pytest.raises(model.SemanticModelError):
+        model.segment(
+            operations[:1],
+            "目标",
+            analysis_id="same-job",
+            checkpoint=path,
+            prior_progress={"completed_chunks": 0, "analysis_usage": [lost_attempt()]},
+            resume_generation=1,
+            authorized_recomputations=[recomputation_authorization()],
+        )
+    assert calls == [call_id("same-job", 0, 2)]
+    monkeypatch.setattr(
+        model, "_request", lambda *args: pytest.fail("different uncertain call remains blocked")
+    )
+    with pytest.raises(model.SemanticModelError, match="Uncertain"):
+        model.segment(
+            operations[:1],
+            "目标",
+            analysis_id="same-job",
+            checkpoint=path,
+            resume_generation=2,
+            authorized_recomputations=[recomputation_authorization()],
+        )

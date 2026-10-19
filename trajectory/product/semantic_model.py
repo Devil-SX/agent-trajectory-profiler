@@ -336,11 +336,14 @@ def segment(
     resume_generation: int = 0,
     reconciled_calls: dict[str, dict[str, Any]] | None = None,
     should_pause: Callable[[], bool] | None = None,
+    authorized_recomputations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Resume the same job; a new generation authorizes at most two later attempts.
 
     Unknown prepared calls require an explicit receipt reconciliation. A completed
     receipt without its response body cannot restore semantic membership.
+    Lost-response recomputation requires a fresh domain-verified authorization
+    argument with explicit duplicate-charge consent; a checkpoint never grants it.
     """
     if type(resume_generation) is not int or not 0 <= resume_generation <= 3:
         raise SemanticModelError("Invalid analysis resume generation", retryable=False)
@@ -464,6 +467,92 @@ def segment(
             value = json.loads(path.read_text())
             journals[value["call_id"]] = value
 
+    acknowledgments: dict[str, dict[str, Any]] = {}
+    for authorization in authorized_recomputations or []:
+        required = {
+            "job_id",
+            "call_id",
+            "receipt_id",
+            "chunk",
+            "attempt",
+            "resume_generation",
+            "receipt_state",
+            "authorization_id",
+            "accept_possible_duplicate_charge",
+        }
+        if not isinstance(authorization, dict) or not required.issubset(authorization):
+            raise SemanticModelError("Lost-response authorization is incomplete", retryable=False)
+        original_chunk, original_attempt = authorization["chunk"], authorization["attempt"]
+        generation = authorization["resume_generation"]
+        if (
+            authorization["job_id"] != analysis_id
+            or type(original_chunk) is not int
+            or not 1 <= original_chunk <= len(chunks)
+            or type(original_attempt) is not int
+            or original_attempt < 1
+            or type(generation) is not int
+            or not 1 <= generation <= resume_generation
+            or generation * 2 <= original_attempt - 1
+            or authorization["accept_possible_duplicate_charge"] is not True
+            or authorization["receipt_state"]
+            not in {"uncertain_terminal", "completed_response_unavailable"}
+            or any(
+                not isinstance(authorization[key], str)
+                or not authorization[key].strip()
+                or authorization[key].strip() != authorization[key]
+                or len(authorization[key]) > 200
+                for key in ("receipt_id", "authorization_id")
+            )
+        ):
+            raise SemanticModelError(
+                "Lost-response authorization does not match this job or generation", retryable=False
+            )
+        expected = (
+            "trajectory:"
+            + hashlib.sha256(
+                f"{analysis_id}:{original_chunk - 1}:{original_attempt - 1}".encode()
+            ).hexdigest()
+        )
+        if authorization["call_id"] != expected:
+            raise SemanticModelError(
+                "Lost-response authorization has a different call identity", retryable=False
+            )
+        if expected in acknowledgments and acknowledgments[expected] != authorization:
+            raise SemanticModelError("Conflicting lost-response authorizations", retryable=False)
+        acknowledgments[expected] = copy.deepcopy(authorization)
+
+    def explicitly_acknowledged(value: dict[str, Any]) -> bool:
+        authorization = acknowledgments.get(value.get("call_id", ""))
+        if authorization is None:
+            return False
+        receipt_id = value.get("receipt_id") or value.get("call", {}).get("receipt_id")
+        if (
+            value.get("chunk") != authorization["chunk"]
+            or value.get("attempt") != authorization["attempt"]
+            or receipt_id
+            and receipt_id != authorization["receipt_id"]
+        ):
+            raise SemanticModelError(
+                "Lost-response authorization receipt or window mismatch", retryable=False
+            )
+        return True
+
+    for call_id in acknowledgments:
+        evidence = [
+            value
+            for value in provenance["analysis_usage"]
+            if value.get("call_id") == call_id
+            and value.get("failed")
+            and value.get("uncertain", not value.get("retryable", False))
+        ]
+        if call_id in journals and journals[call_id]["state"] in {"prepared", "uncertain"}:
+            evidence.append(journals[call_id])
+        if not evidence or not all(explicitly_acknowledged(value) for value in evidence):
+            raise SemanticModelError(
+                "Lost-response authorization has no matching unresolved attempt", retryable=False
+            )
+    provenance["authorized_recomputations"] = list(acknowledgments.values())
+
     def save_checkpoint() -> None:
         if checkpoint_path is not None:
             _atomic_json(
@@ -513,13 +602,18 @@ def segment(
                     "analysis_cost": provenance["cost"],
                     "resume_generation": resume_generation,
                     "prompt_version": PROMPT_VERSION,
+                    "authorized_recomputations": provenance.get("authorized_recomputations", []),
                 }
             )
 
     try:
         # An increased generation must never hide a previous unresolved paid call.
         for call in provenance["analysis_usage"]:
-            if call.get("failed") and call.get("uncertain", not call.get("retryable", False)):
+            if (
+                call.get("failed")
+                and call.get("uncertain", not call.get("retryable", False))
+                and not explicitly_acknowledged(call)
+            ):
                 raise SemanticModelError(
                     "Uncertain Jindu call requires receipt reconciliation",
                     {"call": call},
@@ -527,6 +621,9 @@ def segment(
                 )
         for value in list(journals.values()):
             if value["state"] not in {"prepared", "uncertain"}:
+                continue
+            if explicitly_acknowledged(value):
+                # Keep the original uncertain state and unknown usage untouched.
                 continue
             receipt = (reconciled_calls or {}).get(value["call_id"], {})
             if receipt.get("state") == "rejected_no_dispatch":
