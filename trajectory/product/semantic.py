@@ -10,11 +10,17 @@ import base64
 import bisect
 import hashlib
 import json
+import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from trajectory.product.contracts import AnalysisRequest, SourceChunk, TaskEdit
+from trajectory.product.contracts import (
+    AnalysisBatchRequest,
+    AnalysisRequest,
+    SourceChunk,
+    TaskEdit,
+)
 from trajectory.product.session_metadata import extract as extract_metadata
 
 if TYPE_CHECKING:
@@ -116,6 +122,14 @@ class SemanticStore:
                 CREATE TABLE IF NOT EXISTS semantic_jobs(
                     id TEXT PRIMARY KEY,owner TEXT,session TEXT,kind TEXT,status TEXT,
                     source_revision TEXT,message TEXT,created TEXT,updated TEXT);
+                CREATE TABLE IF NOT EXISTS semantic_batches(
+                    id TEXT PRIMARY KEY,owner TEXT,concurrency INTEGER,created TEXT);
+                CREATE TABLE IF NOT EXISTS semantic_batch_items(
+                    batch TEXT,session TEXT,job TEXT,PRIMARY KEY(batch,session));
+                CREATE TABLE IF NOT EXISTS semantic_job_execution(job TEXT PRIMARY KEY,body TEXT);
+                CREATE TABLE IF NOT EXISTS semantic_job_progress(job TEXT PRIMARY KEY,body TEXT);
+                CREATE TABLE IF NOT EXISTS semantic_job_times(
+                    job TEXT PRIMARY KEY,started TEXT,finished TEXT);
                 CREATE INDEX IF NOT EXISTS semantic_jobs_pending ON semantic_jobs(status,created);
                 CREATE TABLE IF NOT EXISTS semantic_session_metadata(
                     owner TEXT,session TEXT,body TEXT,updated TEXT,
@@ -260,6 +274,13 @@ class SemanticStore:
         ).fetchone()
         if row:
             return str(row[0])
+        uncertain = db.execute(
+            "SELECT id FROM semantic_jobs WHERE owner=? AND session=? AND kind=? "
+            "AND source_revision=? AND status='failed' AND message LIKE '%result uncertain%'",
+            (owner, sid, kind, revision),
+        ).fetchone()
+        if uncertain:
+            raise ValueError("Prior Jindu result uncertain; reconcile original job before retry")
         identifier = uuid.uuid4().hex
         db.execute(
             "INSERT INTO semantic_jobs VALUES(?,?,?,?,?,?,?,?,?)",
@@ -298,7 +319,9 @@ class SemanticStore:
                 "analysis.request",
                 {
                     "job_id": job,
-                    "status": "queued",
+                    "status": db.execute(
+                        "SELECT status FROM semantic_jobs WHERE id=?", (job,)
+                    ).fetchone()[0],
                     "session_id": sid,
                 },
             )
@@ -306,12 +329,14 @@ class SemanticStore:
     def claim_job(self) -> dict[str, Any] | None:
         with self.domain.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            db.execute(
-                "UPDATE semantic_jobs SET status='queued' WHERE status='running' AND updated<?",
-                ((datetime.now(UTC) - timedelta(minutes=30)).isoformat(),),
-            )
             row = db.execute(
-                "SELECT * FROM semantic_jobs WHERE status='queued' ORDER BY created LIMIT 1"
+                "SELECT j.* FROM semantic_jobs j WHERE j.status='queued' AND NOT EXISTS ("
+                "SELECT 1 FROM semantic_jobs active WHERE active.owner=j.owner "
+                "AND active.session=j.session AND active.status='running') AND NOT EXISTS ("
+                "SELECT 1 FROM semantic_batch_items i JOIN semantic_batches b ON b.id=i.batch "
+                "WHERE i.job=j.id AND (SELECT count(*) FROM semantic_batch_items x "
+                "JOIN semantic_jobs r ON r.id=x.job WHERE x.batch=b.id AND r.status='running') "
+                ">=b.concurrency) ORDER BY j.created LIMIT 1"
             ).fetchone()
             if not row:
                 return None
@@ -319,7 +344,17 @@ class SemanticStore:
                 "UPDATE semantic_jobs SET status='running',updated=? WHERE id=?",
                 (stamp(), row["id"]),
             )
-            return dict(row)
+            db.execute(
+                "INSERT INTO semantic_job_times VALUES(?,?,NULL) "
+                "ON CONFLICT(job) DO UPDATE SET finished=NULL",
+                (row["id"], stamp()),
+            )
+            return {**dict(row), "status": "running"}
+
+    def recover_jobs(self) -> None:
+        """Only the exclusive coordinator may recover interrupted jobs."""
+        with self.domain.connect() as db:
+            db.execute("UPDATE semantic_jobs SET status='queued' WHERE status='running'")
 
     def finish_job(self, job: dict[str, Any], error: str = "") -> None:
         with self.domain.connect() as db:
@@ -327,6 +362,168 @@ class SemanticStore:
                 "UPDATE semantic_jobs SET status=?,message=?,updated=? WHERE id=?",
                 ("failed" if error else "complete", error[:500], stamp(), job["id"]),
             )
+
+            db.execute("UPDATE semantic_job_times SET finished=? WHERE job=?", (stamp(), job["id"]))
+
+    def pin_execution(self, job: dict[str, Any], configuration: dict[str, Any]) -> None:
+        body = json.dumps(configuration, sort_keys=True)
+        with self.domain.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            prior = db.execute(
+                "SELECT body FROM semantic_job_execution WHERE job=?", (job["id"],)
+            ).fetchone()
+            if prior and prior[0] != body:
+                raise ValueError(
+                    "Analysis execution configuration changed; review original job before retry"
+                )
+            db.execute(
+                "INSERT OR IGNORE INTO semantic_job_execution VALUES(?,?)", (job["id"], body)
+            )
+
+    def job_progress(self, job: dict[str, Any], progress: dict[str, Any]) -> None:
+        with self.domain.connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO semantic_job_progress VALUES(?,?)",
+                (job["id"], json.dumps(progress)),
+            )
+            db.execute("UPDATE semantic_jobs SET updated=? WHERE id=?", (stamp(), job["id"]))
+
+    def request_batch(self, owner: str, value: AnalysisBatchRequest) -> dict[str, Any]:
+        body = "analysis.batch:" + value.model_dump_json()
+        maximum = max(1, min(8, int(os.environ.get("TRAJECTORY_ANALYSIS_CONCURRENCY", "4"))))
+        if value.concurrency > maximum:
+            raise ValueError(f"Concurrency exceeds configured maximum {maximum}")
+        with self.domain.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            prior = self.domain._prior(db, owner, value.mutation_id, body)
+            if prior:
+                return prior
+            sessions = list(dict.fromkeys(value.session_ids))
+            revisions = []
+            for sid in sessions:
+                row = db.execute(
+                    "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
+                    (owner, sid),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("Session unavailable or content has not finished parsing")
+                revisions.append(row[0])
+            batch_id = uuid.uuid4().hex
+            db.execute(
+                "INSERT INTO semantic_batches VALUES(?,?,?,?)",
+                (batch_id, owner, value.concurrency, stamp()),
+            )
+            items = []
+            for sid, revision in zip(sessions, revisions, strict=True):
+                job_id = self._queue(db, owner, sid, "analyze", revision)
+                db.execute(
+                    "INSERT INTO semantic_batch_items VALUES(?,?,?)", (batch_id, sid, job_id)
+                )
+                status = db.execute(
+                    "SELECT status FROM semantic_jobs WHERE id=?", (job_id,)
+                ).fetchone()[0]
+                items.append({"session_id": sid, "job_id": job_id, "status": status})
+            return self.domain._receipt(
+                db,
+                owner,
+                value.mutation_id,
+                body,
+                "analysis.batch",
+                {"batch_id": batch_id, "items": items, "concurrency": value.concurrency},
+            )
+
+    def batches(self, owner: str) -> dict[str, Any]:
+        with self.domain.connect() as db:
+            ids = [
+                r[0]
+                for r in db.execute(
+                    "SELECT id FROM semantic_batches WHERE owner=? ORDER BY created DESC LIMIT 50",
+                    (owner,),
+                )
+            ]
+        return {"batches": [self.batch_detail(owner, identifier) for identifier in ids]}
+
+    def batch_detail(self, owner: str, batch_id: str) -> dict[str, Any]:
+        with self.domain.connect() as db:
+            batch = db.execute(
+                "SELECT * FROM semantic_batches WHERE owner=? AND id=?", (owner, batch_id)
+            ).fetchone()
+            if batch is None:
+                raise PermissionError("Batch unavailable")
+            rows = db.execute(
+                "SELECT j.*,t.started,t.finished FROM semantic_batch_items i "
+                "JOIN semantic_jobs j ON j.id=i.job LEFT JOIN semantic_job_times t ON t.job=j.id "
+                "WHERE i.batch=? ORDER BY j.created,j.id",
+                (batch_id,),
+            ).fetchall()
+            items = []
+            for row in rows:
+                analysis = db.execute(
+                    "SELECT body FROM semantic_analyses WHERE owner=? AND session=? "
+                    "AND source_revision=?",
+                    (owner, row["session"], row["source_revision"]),
+                ).fetchone()
+                provenance = json.loads(analysis[0]).get("provenance", {}) if analysis else {}
+                if row["status"] == "failed":
+                    failed = db.execute(
+                        "SELECT body FROM audit WHERE actor=? AND id=? "
+                        "AND operation='analysis.failed'",
+                        (owner, row["id"]),
+                    ).fetchone()
+                    if failed:
+                        provenance = json.loads(failed[0]).get("provenance", {})
+                progress_row = db.execute(
+                    "SELECT body FROM semantic_job_progress WHERE job=?", (row["id"],)
+                ).fetchone()
+                progress = json.loads(progress_row[0]) if progress_row else {}
+                elapsed = (
+                    (
+                        (
+                            datetime.fromisoformat(row["finished"])
+                            if row["finished"]
+                            else datetime.now(UTC)
+                        )
+                        - datetime.fromisoformat(row["started"])
+                    ).total_seconds()
+                    if row["started"]
+                    else None
+                )
+                items.append(
+                    {
+                        "session_id": row["session"],
+                        "job_id": row["id"],
+                        "status": row["status"],
+                        "last_error": row["message"],
+                        "created_at": row["created"],
+                        "updated_at": row["updated"],
+                        "started_at": row["started"],
+                        "finished_at": row["finished"],
+                        "elapsed_seconds": elapsed,
+                        "progress": progress,
+                        "analysis_usage": provenance.get(
+                            "analysis_usage", progress.get("analysis_usage", [])
+                        ),
+                        "analysis_cost": provenance.get("cost", progress.get("analysis_cost")),
+                    }
+                )
+        counts = {
+            state: sum(item["status"] == state for item in items)
+            for state in ("queued", "running", "complete", "failed")
+        }
+        status = (
+            "running"
+            if counts["running"]
+            else "queued" if counts["queued"] else "failed" if counts["failed"] else "complete"
+        )
+        return {
+            "batch_id": batch_id,
+            "status": status,
+            "counts": counts,
+            "total": len(items),
+            "concurrency": batch["concurrency"],
+            "created_at": batch["created"],
+            "items": items,
+        }
 
     def archive(self, owner: str, sid: str) -> tuple[dict[str, Any], list[bytes]]:
         with self.domain.connect() as db:

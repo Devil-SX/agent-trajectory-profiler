@@ -8,6 +8,7 @@ import os
 import selectors
 import subprocess
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,23 @@ class AnalysisRuntime:
         self.store = store
         self.child: subprocess.Popen[str] | None = None
         self.lock = threading.Lock()
+        self.parser_lock = threading.Lock()
+        self.capacity = max(1, min(8, int(os.environ.get("TRAJECTORY_ANALYSIS_CONCURRENCY", "4"))))
+        self.pool = ThreadPoolExecutor(max_workers=self.capacity)
+        self.futures: set[Future[bool]] = set()
+        self.lease: Any = None
+        self.stopping = False
         self.root = store.domain.path.parent / "analysis-artifacts"
 
     def close(self) -> None:
+        self.stopping = True
+        self.pool.shutdown(wait=True)
+        self._close_parser()
+        if self.lease is not None:
+            self.lease.close()
+            self.lease = None
+
+    def _close_parser(self) -> None:
         if self.child is not None:
             self.child.terminate()
             try:
@@ -57,7 +72,7 @@ class AnalysisRuntime:
         with selectors.DefaultSelector() as selector:
             selector.register(self.child.stdout, selectors.EVENT_READ)
             if not selector.select(timeout=180):
-                self.close()
+                self._close_parser()
                 raise ValueError("Session parser timed out")
         output = self.child.stdout.readline()
         value: dict[str, Any] = json.loads(output)
@@ -66,23 +81,51 @@ class AnalysisRuntime:
         result: dict[str, Any] = value["result"]
         return result
 
-    def process_next(self) -> bool:
+    def _coordinate(self) -> bool:
         gate = os.environ.get("TRAJECTORY_WORKER_GATE")
-        if gate and not Path(gate).is_file():
+        if self.stopping or (gate and not Path(gate).is_file()):
             return False
-        if not self.lock.acquire(blocking=False):
-            return False
-        job = None
-        lease = None
-        try:
+        if self.lease is None:
             lease = (self.store.domain.path.parent / "analysis-worker.lock").open("a")
             try:
                 fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
+                lease.close()
+                return False
+            self.lease = lease
+            self.store.recover_jobs()
+        return True
+
+    def tick(self) -> bool:
+        """Dispatch independent sessions while one process owns the coordinator lease."""
+        with self.lock:
+            self.futures = {future for future in self.futures if not future.done()}
+            # Relinquish the lease only after natural drain, before handoff.
+            gate = os.environ.get("TRAJECTORY_WORKER_GATE")
+            if not self.futures and gate and not Path(gate).is_file() and self.lease:
+                self.lease.close()
+                self.lease = None
+            if not self._coordinate():
+                return False
+            dispatched = False
+            while len(self.futures) < self.capacity:
+                job = self.store.claim_job()
+                if job is None:
+                    break
+                self.futures.add(self.pool.submit(self._process_job, job))
+                dispatched = True
+            return dispatched
+
+    def process_next(self) -> bool:
+        """Synchronous single-job entry retained for isolated integration exercises."""
+        with self.lock:
+            if not self._coordinate():
                 return False
             job = self.store.claim_job()
-            if job is None:
-                return False
+            return self._process_job(job) if job is not None else False
+
+    def _process_job(self, job: dict[str, Any]) -> bool:
+        try:
             directory = (
                 self.root / digest(job["owner"])[:24] / job["session"] / job["source_revision"]
             )
@@ -99,7 +142,8 @@ class AnalysisRuntime:
                         for chunk in chunks:
                             stream.write(chunk)
                     source_file.chmod(0o600)
-                    parsed = self.parse(source_file, source, job)
+                    with self.parser_lock:
+                        parsed = self.parse(source_file, source, job)
                     self.store.save_session(job["owner"], job["session"], source, actual, parsed)
                 finally:
                     # The domain archive is the authority; this is only parser input.
@@ -110,16 +154,39 @@ class AnalysisRuntime:
                 detail = self.store.detail(job["owner"], job["session"])
                 if detail["source_revision"] != job["source_revision"]:
                     raise ValueError("Source changed; request analysis of current revision")
+                self.store.pin_execution(
+                    job,
+                    {
+                        "model": os.environ.get("TRAJECTORY_MODEL_NAME", ""),
+                        "route": os.environ.get("TRAJECTORY_JINDU_ROUTE", ""),
+                        "reasoning_effort": os.environ.get("TRAJECTORY_MODEL_REASONING_EFFORT", ""),
+                        "prompt_version": PROMPT_VERSION,
+                        "source_revision": job["source_revision"],
+                        "input_chars": os.environ.get("TRAJECTORY_MODEL_INPUT_CHARS", "24000"),
+                        "operation_chars": os.environ.get(
+                            "TRAJECTORY_MODEL_OPERATION_CHARS", "2000"
+                        ),
+                        "output_tokens": os.environ.get("TRAJECTORY_MODEL_OUTPUT_TOKENS", "8192"),
+                    },
+                )
                 checkpoint = directory / "model-result.json"
                 result = json.loads(checkpoint.read_text()) if checkpoint.is_file() else None
                 if (
                     result is None
                     or result.get("provenance", {}).get("model")
                     != os.environ.get("TRAJECTORY_MODEL_NAME")
+                    or result.get("provenance", {}).get("route")
+                    != os.environ.get("TRAJECTORY_JINDU_ROUTE", "")
+                    or result.get("provenance", {}).get("reasoning_effort", "")
+                    != os.environ.get("TRAJECTORY_MODEL_REASONING_EFFORT", "")
                     or result.get("provenance", {}).get("prompt_version") != PROMPT_VERSION
                 ):
                     result = segment(
-                        detail["operations"], detail["session"]["title"], analysis_id=job["id"]
+                        detail["operations"],
+                        detail["session"]["title"],
+                        analysis_id=job["id"],
+                        checkpoint=directory / ("chunks-" + job["id"] + ".json"),
+                        progress=lambda value: self.store.job_progress(job, value),
                     )
                     temporary = checkpoint.with_name(".model-result-" + job["id"] + ".json")
                     try:
@@ -179,10 +246,6 @@ class AnalysisRuntime:
                             ),
                         )
             return True
-        finally:
-            if lease is not None:
-                lease.close()
-            self.lock.release()
 
     def profile(
         self, directory: Path, detail: dict[str, Any], analysis: dict[str, Any]

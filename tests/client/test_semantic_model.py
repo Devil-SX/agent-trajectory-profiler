@@ -177,6 +177,13 @@ class SemanticModelTests(unittest.TestCase):
         self.assertEqual(first, self.call_ids)
         self.assertNotEqual(first[0], first[1])
 
+    def test_configured_high_effort_is_forwarded_and_preserved(self):
+        os.environ["TRAJECTORY_MODEL_REASONING_EFFORT"] = "high"
+        result = model.segment([{"id": "a"}], "测试", analysis_id="high-effort-job")
+        self.assertEqual(self.requests[0]["reasoning_effort"], "high")
+        self.assertEqual(result["provenance"]["reasoning_effort"], "high")
+        self.assertEqual(self.paths, ["/jindu/api/v1/routes/test-route/chat/completions"])
+
     def test_direct_provider_configuration_is_rejected(self):
         os.environ["TRAJECTORY_JINDU_BASE_URL"] = "https://api.deepseek.com"
         with self.assertRaises(model.SemanticModelError):
@@ -200,3 +207,42 @@ class SemanticModelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_successful_chunk_checkpoint_resumes_without_another_paid_request(tmp_path, monkeypatch):
+    config = {"name": "test", "route": "test-route", "operation_chars": 100, "input_chars": 10000}
+    monkeypatch.setattr(model, "_configuration", lambda: config)
+    operations = [{"id": "op1", "evidence_truncated": False}]
+    monkeypatch.setattr(model, "_pack", lambda operations, config: [[operations[0]]])
+    calls = []
+
+    def invoke(config, packet, call_id):
+        calls.append(call_id)
+        return (
+            {
+                "tasks": [
+                    {"id": "task", "parent_id": "root", "title": "Test", "operation_ids": ["op1"]}
+                ]
+            },
+            {"prompt_tokens": 12},
+            {"call_id": call_id},
+        )
+
+    monkeypatch.setattr(model, "_request", invoke)
+    progress = []
+    path = tmp_path / "checkpoint.json"
+    first = model.segment(
+        operations, "test", analysis_id="stable-job", checkpoint=path, progress=progress.append
+    )
+    replay = model.segment(
+        operations, "test", analysis_id="stable-job", checkpoint=path, progress=progress.append
+    )
+    assert replay == first
+    assert len(calls) == 1
+    assert progress[-1]["completed_chunks"] == 1
+    assert progress[-1]["analysis_usage"][0]["usage"] == {"prompt_tokens": 12}
+    assert path.stat().st_mode & 0o077 == 0
+    import pytest
+
+    with pytest.raises(model.SemanticModelError, match="configuration changed"):
+        model.segment(operations, "changed", analysis_id="stable-job", checkpoint=path)

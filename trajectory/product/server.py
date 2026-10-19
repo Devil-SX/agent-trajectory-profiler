@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from trajectory.product import VERSION
 from trajectory.product.contracts import (
+    AnalysisBatchRequest,
     AnalysisRequest,
     Batch,
     Correction,
@@ -98,6 +99,28 @@ OPERATIONS: list[dict[str, Any]] = [
         "scope": "configure",
         "input": AnalysisRequest,
         "effect": "Queue semantic segmentation using the configured model; incurs model usage",
+    },
+    {
+        "id": "analysis_batch_run",
+        "method": "POST",
+        "path": "/api/analysis-batches",
+        "scope": "configure",
+        "input": AnalysisBatchRequest,
+        "effect": "Idempotently queue account-owned sessions with bounded parallel model usage",
+    },
+    {
+        "id": "analysis_batch_list",
+        "method": "GET",
+        "path": "/api/analysis-batches",
+        "scope": "read",
+        "effect": "Read the latest 50 account-owned analysis batches",
+    },
+    {
+        "id": "analysis_batch_read",
+        "method": "GET",
+        "path": "/api/analysis-batches/{batch_id}",
+        "scope": "read",
+        "effect": "Read batch queue, progress, errors, elapsed time and model usage",
     },
     {
         "id": "task_edit",
@@ -242,7 +265,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> Any:
         async def consume() -> None:
             while True:
-                await asyncio.to_thread(runtime.process_next)
+                await asyncio.to_thread(runtime.tick)
                 await asyncio.sleep(1)
 
         task = asyncio.create_task(consume())
@@ -252,7 +275,7 @@ def create_app(
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
-            runtime.close()
+            await asyncio.to_thread(runtime.close)
 
     app = FastAPI(
         title="BatCave Trajectory",
@@ -441,6 +464,12 @@ def create_app(
                         limit=int(request.query_params.get("limit", "0")),
                         cursor=request.query_params.get("cursor", ""),
                     )
+                if identifier == "analysis_batch_list":
+                    return await asyncio.to_thread(semantic.batches, principal.account)
+                if identifier == "analysis_batch_read":
+                    return await asyncio.to_thread(
+                        semantic.batch_detail, principal.account, request.path_params["batch_id"]
+                    )
                 if identifier == "analysis_read":
                     return await asyncio.to_thread(
                         semantic.detail, principal.account, request.path_params["session_id"]
@@ -481,6 +510,8 @@ def create_app(
                     if not principal.machine_client:
                         raise HTTPException(403, "Uploads require a native machine account")
                     return await asyncio.to_thread(semantic.ingest_source, principal.account, value)
+                if identifier == "analysis_batch_run":
+                    return await asyncio.to_thread(semantic.request_batch, principal.account, value)
                 if identifier == "analysis_run":
                     return await asyncio.to_thread(
                         semantic.request_analysis,

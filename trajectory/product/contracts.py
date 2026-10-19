@@ -111,6 +111,11 @@ class AnalysisRequest(BaseModel):
     mutation_id: str = Field(min_length=16, max_length=128)
 
 
+class AnalysisBatchRequest(AnalysisRequest):
+    session_ids: list[str] = Field(min_length=1, max_length=200)
+    concurrency: int = Field(default=4, ge=1, le=8)
+
+
 class TaskEdit(AnalysisRequest):
     analysis_revision: str = Field(min_length=1, max_length=128)
     action: Literal["rename", "merge", "split"]

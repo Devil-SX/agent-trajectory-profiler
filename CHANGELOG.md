@@ -8,13 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Show original session directories, timestamps and first user messages, and filter actual stored analysis results.
 - Authorize new ecosystem roots through the existing authenticated machine/collector binding and select individual native sessions without dropping pending uploads.
 - Parse Pi native sessions through the unified worker, retaining branch, source usage and directory metadata.
+- Submit account-owned analysis batches through one idempotent HTTP queue, with bounded concurrent sessions, per-session progress, elapsed time, usage and explicit unknown costs.
+- Resume successful model chunks from durable checkpoints and pin route, model, reasoning effort and source configuration across restarts.
 
 ### Fixed
 
 - Quarantine malformed JSONL records with explicit partial coverage and original byte locations instead of rejecting the entire source.
 - Reuse the source synchronizer checkpoint and outbox for Pi collection.
+- Drain active analysis jobs before coordinator lease handoff and prevent uncertain Jindu calls from being resubmitted under a new paid identity.
 
 ## [3.1.0] - 2026-10-19
 

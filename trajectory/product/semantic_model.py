@@ -10,7 +10,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 PROMPT_VERSION = "trajectory-task-hierarchy/1"
@@ -49,6 +51,10 @@ def _configuration() -> dict[str, Any]:
     config["name"] = os.environ.get("TRAJECTORY_MODEL_NAME", "")
     if not all(config.values()):
         raise SemanticModelError("Semantic model configuration is incomplete")
+    effort = os.environ.get("TRAJECTORY_MODEL_REASONING_EFFORT", "")
+    if effort and effort not in {"low", "medium", "high", "max"}:
+        raise SemanticModelError("Invalid model reasoning effort")
+    config["reasoning_effort"] = effort
     url = urllib.parse.urlsplit(config["base_url"])
     if url.username or url.password or url.query or url.fragment:
         raise SemanticModelError("Unsafe model API URL")
@@ -176,6 +182,8 @@ def _request(
         "max_tokens": config["output_tokens"],
         "response_format": {"type": "json_object"},
     }
+    if config.get("reasoning_effort"):
+        payload["reasoning_effort"] = config["reasoning_effort"]
     request = urllib.request.Request(
         config["base_url"].rstrip("/") + "/routes/" + config["route"] + "/chat/completions",
         data=json.dumps(payload).encode(),
@@ -228,7 +236,14 @@ def _request(
         ) from exc
 
 
-def segment(operations: list[dict[str, Any]], title: str, *, analysis_id: str) -> dict[str, Any]:
+def segment(
+    operations: list[dict[str, Any]],
+    title: str,
+    *,
+    analysis_id: str,
+    checkpoint: Path | None = None,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     config = _configuration()
     ids = [operation.get("id") for operation in operations]
     if any(not isinstance(oid, str) or not oid for oid in ids) or len(ids) != len(set(ids)):
@@ -237,6 +252,7 @@ def segment(operations: list[dict[str, Any]], title: str, *, analysis_id: str) -
         "backend": "jindu",
         "model": config["name"],
         "route": config["route"],
+        "reasoning_effort": config.get("reasoning_effort", ""),
         "analysis_id": analysis_id,
         "prompt_version": PROMPT_VERSION,
         "created_at": datetime.now(UTC).isoformat(),
@@ -262,8 +278,49 @@ def segment(operations: list[dict[str, Any]], title: str, *, analysis_id: str) -
     provenance["truncated_operations"] = sum(
         int(node["evidence_truncated"]) for chunk in chunks for node in chunk
     )
+    identity = hashlib.sha256(
+        json.dumps(
+            {
+                "analysis_id": analysis_id,
+                "prompt": PROMPT_VERSION,
+                "title": title,
+                "chunks": chunks,
+                "model": config["name"],
+                "route": config["route"],
+                "reasoning_effort": config.get("reasoning_effort", ""),
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    completed_chunks = 0
+    if checkpoint is not None and checkpoint.is_file():
+        saved = json.loads(checkpoint.read_text())
+        if saved.get("identity") != identity:
+            raise SemanticModelError(
+                "Analysis checkpoint configuration changed; review before retry", retryable=False
+            )
+        known = saved["known"]
+        provenance = saved["provenance"]
+        completed_chunks = saved["completed_chunks"]
+
+    def report(completed: int, state: str) -> None:
+        if progress is not None:
+            progress(
+                {
+                    "completed_chunks": completed,
+                    "total_chunks": len(chunks),
+                    "state": state,
+                    "analysis_usage": provenance["analysis_usage"],
+                    "model": provenance["model"],
+                    "analysis_cost": provenance["cost"],
+                }
+            )
+
     try:
         for index, chunk in enumerate(chunks):
+            if index < completed_chunks:
+                continue
+            report(index, "requesting")
             # Carry task identities across windows without copying accumulated operation lists.
             existing = [
                 {key: task[key] for key in ("id", "parent_id", "title")}
@@ -309,6 +366,7 @@ def segment(operations: list[dict[str, Any]], title: str, *, analysis_id: str) -
                                 **exc.provenance.get("call", {}),
                             }
                         )
+                    report(index, "failed" if attempt == 1 or not exc.retryable else "repairing")
                     if attempt == 1 or not exc.retryable:
                         raise
                     # A single bounded repair asks the model to reconsider the same
@@ -327,6 +385,29 @@ def segment(operations: list[dict[str, Any]], title: str, *, analysis_id: str) -
                     known[task["id"]]["operation_ids"].extend(task["operation_ids"])
                 else:
                     known[task["id"]] = task
+            if checkpoint is not None:
+                temporary = checkpoint.with_suffix(".tmp")
+                descriptor = os.open(temporary, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+                with os.fdopen(descriptor, "w") as stream:
+                    json.dump(
+                        {
+                            "identity": identity,
+                            "known": known,
+                            "provenance": provenance,
+                            "completed_chunks": index + 1,
+                        },
+                        stream,
+                        ensure_ascii=False,
+                    )
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, checkpoint)
+                directory_fd = os.open(checkpoint.parent, os.O_DIRECTORY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            report(index + 1, "complete" if index + 1 == len(chunks) else "segmenting")
         return {"tasks": list(known.values()), "provenance": provenance}
     except SemanticModelError as exc:
         exc.provenance = provenance
