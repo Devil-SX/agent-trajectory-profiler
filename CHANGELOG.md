@@ -4,11 +4,17 @@ All notable changes to **BatCave Trajectory** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [3.4.0] - 2026-10-19
+
+### Added
+
+- Read retained analysis inputs through the authenticated analysis and source-evidence endpoints with explicit revision pins, without starting parsing or model calls.
 
 ### Fixed
 
 - Retain referenced parsed snapshots when newer source records are parsed, keeping saved task trees and revision-pinned evidence available without inventing historical execution measurements.
+
+Code stats vs v3.3.1: total 19244 text lines (baseline 18559), +744 (-59) = +685, 3.69% text-line change.
 
 ## [3.3.1] - 2026-10-19
 
