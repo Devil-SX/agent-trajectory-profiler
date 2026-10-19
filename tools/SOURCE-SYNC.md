@@ -98,8 +98,14 @@ Dynamic source roots supplement the optional explicit `sources` list:
 }
 ```
 
-New files are deferred until the existing collector has registered their canonical
-source ID. Its next scan makes them eligible; no second source identity is created.
+By default, new files are deferred until the existing collector registers their
+canonical source ID. A root may explicitly set `allow_new_sources: true` after its
+local/legacy mapping has at least one currently registered deterministic source-ID
+anchor. The uploader then derives new source IDs from the same collector and
+exact legacy-root spelling without waiting for Sparkstead. When Sparkstead later
+discovers those files, it computes the identical ID. An unanchored root is rejected;
+this option does not authorize arbitrary explicit source paths or a new collector.
+Resolved source paths must remain inside their declared local root.
 The state is private, endpoint-bound and collector-bound; changing the target or
 collector fails rather than silently reusing offsets against another destination.
 

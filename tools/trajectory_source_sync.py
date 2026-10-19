@@ -293,22 +293,41 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
     else:
         raise ValueError("Existing collector identity and source membership are required")
     specs = list(config.get("sources", []))
+    anchored_new_sources = set()
     for root in config.get("roots", []):
         local_root = Path(root["local_root"])
         legacy_root = root["legacy_root"]
+        if not local_root.is_absolute() or not (
+            ntpath.isabs(legacy_root) or Path(legacy_root).is_absolute()
+        ):
+            raise ValueError("Source roots must be absolute")
+        discovered = []
         for path in sorted(local_root.rglob("*.jsonl")):
+            if not path.resolve().is_relative_to(local_root.resolve()):
+                raise ValueError("Source symlink escapes its authorized root")
             relative = path.relative_to(local_root)
             legacy_path = (
                 ntpath.join(legacy_root, *relative.parts)
                 if "\\" in legacy_root or ":" in legacy_root
                 else str(Path(legacy_root).joinpath(relative))
             )
-            # The legacy worker may not have discovered the newest file yet.
-            # Defer that file, rather than invent an independent source identity.
-            if source_id(collector, legacy_path) in known:
-                specs.append(
-                    {"path": str(path), "legacy_path": legacy_path, "ecosystem": root["ecosystem"]}
-                )
+            discovered.append(
+                {"path": str(path), "legacy_path": legacy_path, "ecosystem": root["ecosystem"]}
+            )
+        allow_new = root.get("allow_new_sources", False)
+        if not isinstance(allow_new, bool):
+            raise ValueError("allow_new_sources must be a boolean")
+        anchors = sum(source_id(collector, spec["legacy_path"]) in known for spec in discovered)
+        if allow_new and not anchors:
+            raise ValueError(
+                "New-source discovery requires a registered source anchor in this root"
+            )
+        for spec in discovered:
+            identity = source_id(collector, spec["legacy_path"])
+            if identity in known or allow_new:
+                specs.append(spec)
+                if identity not in known:
+                    anchored_new_sources.add(identity)
     unique = {}
     for spec in specs:
         identity = source_id(collector, spec["legacy_path"])
@@ -319,7 +338,10 @@ def validate_manifest(config: dict) -> tuple[str, list[dict]]:
     for spec in specs:
         if spec["ecosystem"] not in {"codex", "claude_code"}:
             raise ValueError("Unsupported ecosystem")
-        if source_id(collector, spec["legacy_path"]) not in known:
+        if (
+            source_id(collector, spec["legacy_path"]) not in known
+            and source_id(collector, spec["legacy_path"]) not in anchored_new_sources
+        ):
             raise ValueError("Source path does not match the existing collector")
         if not Path(spec["path"]).is_file():
             raise ValueError("Source file is unavailable")

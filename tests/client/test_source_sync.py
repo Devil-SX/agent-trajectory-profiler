@@ -256,6 +256,71 @@ class SourceSyncTests(unittest.TestCase):
             2,
         )
 
+    def test_anchored_root_can_discover_new_sources_before_legacy_worker(self):
+        legacy_root = r"C:\logs"
+        identity = self.root / "identity.json"
+        identity.write_text(
+            json.dumps(
+                {
+                    "collector": "collector",
+                    "sources": [sync.source_id("collector", legacy_root + r"\session.jsonl")],
+                }
+            )
+        )
+        (self.root / "new.jsonl").write_text("{}")
+        config = {
+            "legacy_identity_snapshot": str(identity),
+            "roots": [
+                {
+                    "local_root": str(self.root),
+                    "legacy_root": legacy_root,
+                    "ecosystem": "codex",
+                    "allow_new_sources": True,
+                }
+            ],
+        }
+        collector, specs = sync.validate_manifest(config)
+        self.assertEqual(len(specs), 2)
+        new = next(spec for spec in specs if spec["path"].endswith("new.jsonl"))
+        expected = sync.source_id(collector, legacy_root + r"\new.jsonl")
+        self.assertEqual(sync.source_id(collector, new["legacy_path"]), expected)
+        # Legacy discovery later produces exactly the same ID and manifest.
+        identity.write_text(
+            json.dumps(
+                {
+                    "collector": collector,
+                    "sources": [
+                        sync.source_id(collector, legacy_root + r"\session.jsonl"),
+                        expected,
+                    ],
+                }
+            )
+        )
+        self.assertEqual(sync.validate_manifest(config)[1], specs)
+
+    def test_allow_new_sources_requires_correct_root_anchor_and_explicit_boolean(self):
+        identity = self.root / "identity.json"
+        identity.write_text(
+            json.dumps(
+                {
+                    "collector": "collector",
+                    "sources": [sync.source_id("collector", r"C:\logs\session.jsonl")],
+                }
+            )
+        )
+        root = {
+            "local_root": str(self.root),
+            "legacy_root": r"D:\wrong",
+            "ecosystem": "codex",
+            "allow_new_sources": True,
+        }
+        config = {"legacy_identity_snapshot": str(identity), "roots": [root]}
+        with self.assertRaisesRegex(ValueError, "anchor"):
+            sync.validate_manifest(config)
+        root["allow_new_sources"] = "true"
+        with self.assertRaisesRegex(ValueError, "boolean"):
+            sync.validate_manifest(config)
+
     def test_state_cannot_silently_change_endpoint_or_collector(self):
         self.state.bind("collector", "https://example.com/trajectory/api/source-chunks")
         self.state.bind("collector", "https://example.com/trajectory/api/source-chunks")
