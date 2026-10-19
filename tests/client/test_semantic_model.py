@@ -18,6 +18,8 @@ class SemanticModelTests(unittest.TestCase):
         self.requests = []
         self.invalid = False
         self.truncate = False
+        self.invalid_once = False
+        self.reverse = False
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -26,13 +28,19 @@ class SemanticModelTests(unittest.TestCase):
                 outer.requests.append(request)
                 packet = json.loads(request["messages"][1]["content"])
                 ids = [o["id"] for o in packet["operations"]]
+                if outer.reverse:
+                    ids.reverse()
                 result = {
                     "tasks": [
                         {
                             "id": "repair",
                             "parent_id": "root",
                             "title": "修复同步",
-                            "operation_ids": ids[:-1] if outer.invalid else ids,
+                            "operation_ids": (
+                                ids[:-1]
+                                if outer.invalid or outer.invalid_once and len(outer.requests) == 1
+                                else ids
+                            ),
                         }
                     ]
                 }
@@ -97,6 +105,8 @@ class SemanticModelTests(unittest.TestCase):
         self.invalid = True
         with self.assertRaises(model.SemanticModelError) as caught:
             model.segment([{"id": "a"}], "测试")
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(len(caught.exception.provenance["analysis_usage"]), 2)
         self.assertEqual(
             caught.exception.provenance["analysis_usage"][0]["usage"]["prompt_tokens"], 42
         )
@@ -109,6 +119,21 @@ class SemanticModelTests(unittest.TestCase):
         self.assertEqual(
             caught.exception.provenance["analysis_usage"][0]["usage"]["prompt_tokens"], 42
         )
+
+    def test_one_bounded_repair_accounts_for_both_calls(self):
+        self.invalid_once = True
+        result = model.segment([{"id": "a"}, {"id": "b"}], "修复同步")
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(len(result["provenance"]["analysis_usage"]), 2)
+        self.assertFalse(result["provenance"]["analysis_usage"][0]["valid"])
+        self.assertTrue(result["provenance"]["analysis_usage"][1]["valid"])
+        packet = json.loads(self.requests[1]["messages"][1]["content"])
+        self.assertIn("validation_feedback", packet)
+
+    def test_membership_is_returned_in_original_operation_order(self):
+        self.reverse = True
+        result = model.segment([{"id": "z"}, {"id": "a"}], "修复同步")
+        self.assertEqual(result["tasks"][1]["operation_ids"], ["z", "a"])
 
     def test_missing_model_config_never_falls_back(self):
         del os.environ["TRAJECTORY_MODEL_API_KEY"]

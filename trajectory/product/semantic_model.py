@@ -270,21 +270,51 @@ def segment(operations: list[dict[str, Any]], title: str) -> dict[str, Any]:
                 "existing_tasks": existing,
                 "operations": chunk,
             }
-            result, usage = _request(config, packet)
-            provenance["analysis_usage"].append({"chunk": index + 1, "usage": usage})
-            if not isinstance(result, dict) or set(result) != {"tasks"}:
-                raise SemanticModelError("Invalid model response schema")
-            _validate(result["tasks"], known, {node["id"] for node in chunk})
+            for attempt in range(2):
+                usage_record: dict[str, Any] | None = None
+                try:
+                    result, usage = _request(config, packet)
+                    usage_record = {
+                        "chunk": index + 1,
+                        "attempt": attempt + 1,
+                        "usage": usage,
+                        "valid": False,
+                    }
+                    provenance["analysis_usage"].append(usage_record)
+                    if not isinstance(result, dict) or set(result) != {"tasks"}:
+                        raise SemanticModelError("Invalid model response schema")
+                    _validate(result["tasks"], known, {node["id"] for node in chunk})
+                    usage_record["valid"] = True
+                    break
+                except SemanticModelError as exc:
+                    if usage_record is None:
+                        provenance["analysis_usage"].append(
+                            {
+                                "chunk": index + 1,
+                                "attempt": attempt + 1,
+                                "failed": True,
+                                "usage": exc.provenance.get("failed_call_usage", {}),
+                            }
+                        )
+                    if attempt == 1:
+                        raise
+                    # A single bounded repair asks the model to reconsider the same
+                    # evidence. The server never edits or invents task membership.
+                    packet["validation_feedback"] = (
+                        "上次输出未通过结构校验，请完整重新生成；错误："
+                        + str(exc)
+                        + "。严格使用operations中的ID，每个ID恰好出现一次；"
+                        "不要输出root任务，所有父节点必须存在，ID只使用ASCII。"
+                    )
             for task in result["tasks"]:
+                task["operation_ids"].sort(
+                    key={node["id"]: i for i, node in enumerate(chunk)}.__getitem__
+                )
                 if task["id"] in known:
                     known[task["id"]]["operation_ids"].extend(task["operation_ids"])
                 else:
                     known[task["id"]] = task
         return {"tasks": list(known.values()), "provenance": provenance}
     except SemanticModelError as exc:
-        if "failed_call_usage" in exc.provenance:
-            provenance["analysis_usage"].append(
-                {"failed": True, "usage": exc.provenance["failed_call_usage"]}
-            )
         exc.provenance = provenance
         raise
