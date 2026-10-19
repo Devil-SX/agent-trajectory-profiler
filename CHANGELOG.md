@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Wait longer than the gateway's upstream request deadline and retain the request timeout in call provenance.
 - Show failed batch progress separately from successful results and keep continuation decisions consistent across the API and workbench.
 
-Code stats vs v3.2.3: total 17283 text lines (baseline 15663), +1749 (-129) = +1620, 10.34% text-line change.
+Code stats vs v3.2.3: total 18358 text lines (baseline 15663), +2826 (-131) = +2695, 17.21% text-line change.
 
 ## [3.2.3] - 2026-10-19
 
