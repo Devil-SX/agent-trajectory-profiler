@@ -6,7 +6,7 @@ import json
 import os
 import sqlite3
 import threading
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from itertools import chain
 from pathlib import Path
@@ -36,8 +36,7 @@ class Domain:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self._overview_lock = threading.Lock()
-        self._overview_key: tuple[Any, ...] | None = None
-        self._overview_value: dict[str, Any] | None = None
+        self._overview_cache: OrderedDict[tuple[Any, ...], dict[str, Any]] = OrderedDict()
         with self.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS request_traces(
@@ -477,18 +476,14 @@ class Domain:
             ).fetchone()
         key = (owner, since, until, revision[0] if revision else 0)
         with self._overview_lock:
-            if self._overview_key != key or self._overview_value is None:
-                # Keep one snapshot, so browsing many date filters cannot retain N ledgers.
-                self._overview_value = None
-                self._overview_key = None
-                value = self._calculate_overview(
-                    owner,
-                    since,
-                    until,
-                )
-                self._overview_key, self._overview_value = key, value
-            value = self._overview_value
-            return value
+            if key not in self._overview_cache:
+                # Two compact slots allow global/account alternation without retaining
+                # unbounded owners or date filters. Evict before building a new value.
+                if len(self._overview_cache) >= 2:
+                    self._overview_cache.popitem(last=False)
+                self._overview_cache[key] = self._calculate_overview(owner, since, until)
+            self._overview_cache.move_to_end(key)
+            return self._overview_cache[key]
 
     def overview(self, owner: str | None, since: str = "", until: str = "") -> dict[str, Any]:
         return {

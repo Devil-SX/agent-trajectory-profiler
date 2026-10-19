@@ -59,13 +59,24 @@ The current parser rebuilds a changed complete snapshot; it does not claim an
 incremental parse algorithm. Large histories therefore require bounded delivery
 and measured capacity planning.
 
-The domain memoizes one compact analytical snapshot by owner, filters and committed
-ledger audit revision. It retains project, day, task and source summaries, never a
+The domain memoizes at most two compact analytical snapshots in a fixed LRU cache,
+keyed by owner (including the global view), filters and committed ledger audit revision.
+Account and global views can alternate without evicting each other. A miss evicts
+before calculation when both slots are occupied; account/date fan-out cannot grow
+the number of cached snapshots. Both slots share the existing calculation lock.
+This is a count bound, not a constant-byte or constant-process-memory claim. It retains project, day, task and source summaries, never a
 whole-ledger array of event contributions. Session listings use source summaries.
 Task attribution requests contributions for one source through the same accounting
 calculator, preserving global consumption and interaction deduplication and session
 price tiers. Source reads serialize their transient scans rather than multiplying
 large identity maps across concurrent jobs.
+
+No expression indexes are added by this cache change. An isolated experiment showed
+that an owner/kind/time index can change the existing unordered request-route scan:
+for one task with conflicting project references, the selected project changed.
+Any future index proposal must explicitly preserve the baseline account primary-key
+order and global rowid order, with conflicting-project and tie-order regression tests;
+real-corpus output equality alone is insufficient evidence.
 
 `ledger_scan.py` replays SQLite cursors in deterministic event or request-priority
 order. One read transaction covers classification, corrections, deduplication,

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Retain at most two compact ledger snapshots so account and global views can alternate without evicting each other; source contributions remain uncached.
+
 ## [3.2.3] - 2026-10-19
 
 ### Fixed
