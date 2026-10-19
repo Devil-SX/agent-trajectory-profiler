@@ -1,3 +1,4 @@
+from importlib.metadata import version
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -363,3 +364,10 @@ def test_collector_binding_requires_administrator_permission_in_addition_to_conf
         "/trajectory/help", headers={"Authorization": "Bearer ordinary-member"}
     ).json()
     assert "bind" not in [tool["name"] for tool in help_value["tools"]]
+
+
+def test_health_uses_installed_distribution_version(tmp_path: Path) -> None:
+    app = create_app(tmp_path / "version.sqlite", lambda request, scope: Principal("owner"))
+    response = TestClient(app).get("/trajectory/health")
+    assert response.status_code == 200
+    assert response.json()["version"] == version("batcave-trajectory")

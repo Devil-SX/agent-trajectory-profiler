@@ -1,4 +1,6 @@
 """Protocol ingestion and account-scoped remote trajectory analysis."""
 
-VERSION = "3.1.0"
+from importlib.metadata import version
+
+VERSION = version("batcave-trajectory")
 SCHEMA = "trajectory-batch/1"
