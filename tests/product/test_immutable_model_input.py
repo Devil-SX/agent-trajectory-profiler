@@ -142,13 +142,12 @@ def test_symlinks_are_rejected(setup, target):
         prepare(cp, raw)
 
 
-@pytest.mark.parametrize(
-    "prior", [{"completed_chunks": 5}, {"analysis_usage": [{"call_id": "paid"}]}]
-)
-def test_missing_paid_prefix_fails_before_creating_freeze(setup, prior):
+def test_missing_paid_prefix_fails_before_creating_freeze(setup):
     cp, _, raw = setup
     with pytest.raises(model.SemanticModelError, match="Successful prefix checkpoint"):
-        model.segment(raw, "标题", analysis_id="job", checkpoint=cp, prior_progress=prior)
+        model.segment(
+            raw, "标题", analysis_id="job", checkpoint=cp, prior_progress={"completed_chunks": 5}
+        )
     assert not cp.with_name(cp.name + ".input.json").exists()
 
 

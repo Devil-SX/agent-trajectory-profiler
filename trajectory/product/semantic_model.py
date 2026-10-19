@@ -640,10 +640,7 @@ def segment(
         raise SemanticModelError("Invalid analysis resume generation", retryable=False)
     config = _configuration()
     if (
-        (
-            (prior_progress or {}).get("completed_chunks", 0) > 0
-            or (prior_progress or {}).get("analysis_usage")
-        )
+        (prior_progress or {}).get("completed_chunks", 0) > 0
         and checkpoint is not None
         and not checkpoint.is_file()
     ):
