@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from trajectory.product.contracts import Batch, Correction, Price
 from trajectory.product.costing import quote_record, select_price, usage_record
-from trajectory.product.projects import classify_records
+from trajectory.product.ledger_scan import LedgerScan, UniqueUsages
 
 
 def now() -> str:
@@ -457,10 +457,8 @@ class Domain:
             "calls": quoted,
         }
 
-    def overview(
-        self, owner: str | None, since: str = "", until: str = "", *, contributions: bool = False
-    ) -> dict[str, Any]:
-        # Public summaries and semantic attribution share the same computed snapshot.
+    def _snapshot(self, owner: str | None, since: str = "", until: str = "") -> dict[str, Any]:
+        # Public and session summaries share a compact aggregate snapshot.
         # Only ledger mutations invalidate it; raw uploads and request traces do not.
         with self.connect() as db:
             revision = db.execute(
@@ -473,63 +471,72 @@ class Domain:
                 # Keep one snapshot, so browsing many date filters cannot retain N ledgers.
                 self._overview_value = None
                 self._overview_key = None
-                value = self._calculate_overview(owner, since, until, contributions=True)
+                value = self._calculate_overview(
+                    owner,
+                    since,
+                    until,
+                )
                 self._overview_key, self._overview_value = key, value
             value = self._overview_value
-            return (
-                dict(value)
-                if contributions
-                else {name: item for name, item in value.items() if name != "event_contributions"}
+            return value
+
+    def overview(self, owner: str | None, since: str = "", until: str = "") -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in self._snapshot(owner, since, until).items()
+            if key != "source_summaries"
+        }
+
+    def session_summaries(self, owner: str) -> list[dict[str, Any]]:
+        return list(self._snapshot(owner)["source_summaries"])
+
+    def source_contributions(self, owner: str, collector: str, source: str) -> list[dict[str, Any]]:
+        # Coalesce broad scans and bound concurrent transient identity maps. The
+        # returned records belong only to the requested source, never the cache.
+        with self._overview_lock:
+            return list(
+                self._calculate_overview(owner, contribution_source=(collector, source))[
+                    "event_contributions"
+                ]
             )
 
     def _calculate_overview(
-        self, owner: str | None, since: str = "", until: str = "", *, contributions: bool = False
+        self,
+        owner: str | None,
+        since: str = "",
+        until: str = "",
+        *,
+        contribution_source: tuple[str, str] | None = None,
     ) -> dict[str, Any]:
         with self.connect() as db:
+            db.execute("PRAGMA temp_store=FILE")
+            db.execute("PRAGMA cache_size=-4096")
             db.execute("BEGIN")
-            where, params = (" WHERE owner=?", (owner,)) if owner else ("", ())
-            rows = db.execute(
-                "SELECT owner,collector,source,body FROM events" + where, params
-            ).fetchall()
-            sources = [dict(row) for row in db.execute("SELECT * FROM sources" + where, params)]
-            corrections = {
-                (r["owner"], r["task"]): dict(r)
-                for r in db.execute("SELECT * FROM corrections" + where, params)
-            }
-            prices: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-            for row in db.execute("SELECT * FROM prices" + where + " ORDER BY effective", params):
-                prices[(row["owner"], row["model"])].append(json.loads(row["body"]))
-        records = []
-        for row in rows:
-            record = json.loads(row["body"])
-            record.update(owner=row["owner"], collector=row["collector"], source=row["source"])
-            records.append(record)
-        classify_records(records)
-        for record in records:
-            correction = corrections.get((record["owner"], record["task"]))
-            if correction:
-                record.update(
-                    project=correction["project"],
-                    project_name=correction["name"],
-                    evidence="corrected",
-                )
-        records.sort(key=lambda r: (r["timestamp"] or "", r["source_line"]))
-        seen: set[tuple[str, str, str]] = set()
-        usages = []
-        duplicates = 0
-        for record in reversed(records):
-            if record["kind"] != "usage":
-                continue
-            key = (
-                record["owner"],
-                record["ecosystem"],
-                record.get("consumption") or record["id"],
-            )
-            if key in seen:
-                duplicates += 1
-                continue
-            seen.add(key)
-            usages.append(record)
+            return self._calculate_snapshot(db, owner, since, until, contribution_source)
+
+    def _calculate_snapshot(
+        self,
+        db: sqlite3.Connection,
+        owner: str | None,
+        since: str,
+        until: str,
+        contribution_source: tuple[str, str] | None,
+    ) -> dict[str, Any]:
+        where, params = (" WHERE owner=?", (owner,)) if owner else ("", ())
+        sources = [dict(row) for row in db.execute("SELECT * FROM sources" + where, params)]
+        corrections = {
+            (r["owner"], r["task"]): dict(r)
+            for r in db.execute("SELECT * FROM corrections" + where, params)
+        }
+        prices: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+        for row in db.execute("SELECT * FROM prices" + where + " ORDER BY effective", params):
+            prices[(row["owner"], row["model"])].append(json.loads(row["body"]))
+        records = LedgerScan(db, owner, corrections)
+        scoped_sessions = (
+            records.source_sessions(contribution_source) if contribution_source else None
+        )
+        chronological = records.chronological(scoped_sessions)
+        usages = UniqueUsages(records)
 
         def context_length(record: dict[str, Any]) -> int | None:
             if record["input"] is None:
@@ -548,7 +555,12 @@ class Domain:
             return int(length)
 
         session_context: dict[tuple[str, str, str | None], int] = {}
+        models: set[str] = set()
         for usage in usages:
+            if scoped_sessions is not None and usage["session"] not in scoped_sessions:
+                continue
+            if usage.get("model"):
+                models.add(usage["model"])
             length = context_length(usage)
             if length is not None:
                 key = (usage["owner"], usage["session"], usage.get("model"))
@@ -596,19 +608,55 @@ class Domain:
             }
 
         event_metrics: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        source_metrics: dict[tuple[str, str, str], dict[str, Any]] = {}
+        token_events: set[tuple[str, str, str, str]] = set()
 
         def event_bucket(record: dict[str, Any]) -> dict[str, Any]:
             key = (record["owner"], record["collector"], record["source"], record["id"])
-            tokens = 0
-            if record["kind"] == "usage":
-                tokens = (record.get("input") or 0) + (record.get("output") or 0)
-                if not record.get("input_includes_cache"):
-                    tokens += record.get("cached") or 0
-                if record.get("input_includes_cache_write") is False:
-                    tokens += record.get("cache_write") or 0
-            return event_metrics.setdefault(
-                key, {**bucket(record["id"], ""), "record": record, "recorded_tokens": tokens}
+            if contribution_source is not None:
+                return event_metrics.setdefault(
+                    key,
+                    {
+                        **bucket(record["id"], ""),
+                        "record": record,
+                        "recorded_tokens": records.tokens(record),
+                    },
+                )
+            source_key = key[:3]
+            target = source_metrics.setdefault(
+                source_key,
+                {
+                    **bucket(record["source"], ""),
+                    "record": {
+                        field: record.get(field)
+                        for field in (
+                            "owner",
+                            "collector",
+                            "source",
+                            "session",
+                            "ecosystem",
+                            "project",
+                            "project_name",
+                            "timestamp",
+                        )
+                    },
+                    "recorded_tokens": 0,
+                    "last_timestamp": "",
+                },
             )
+            target["last_timestamp"] = max(target["last_timestamp"], record["timestamp"] or "")
+            if record["kind"] == "usage" and key not in token_events:
+                target["recorded_tokens"] += records.tokens(record)
+                token_events.add(key)
+            return target
+
+        def event_targets(record: dict[str, Any]) -> list[dict[str, Any]]:
+            if (
+                contribution_source is not None
+                and (record["collector"], record["source"]) != contribution_source
+            ):
+                return []
+            return [event_bucket(record)]
 
         def date_for(record: dict[str, Any]) -> str:
             return (
@@ -624,7 +672,9 @@ class Domain:
             day = date_for(record)
             return day == "unknown" or ((not since or day >= since) and (not until or day <= until))
 
-        for record in records:
+        unknown_timestamps = 0
+        for record in chronological:
+            unknown_timestamps += int(record["timestamp"] is None)
             if not included(record):
                 continue
             project = record["project"]
@@ -655,16 +705,7 @@ class Domain:
                 )
         request_seen: set[tuple[str, ...]] = set()
         request_duplicates = 0
-        requests = sorted(
-            (r for r in records if r["kind"] == "request"),
-            key=lambda r: (
-                r.get("input_origin") == "human",
-                r.get("input_chars") is not None,
-                r["timestamp"] or "",
-                r["source_line"],
-            ),
-            reverse=True,
-        )
+        requests = records.requests()
         for record in requests:
             if record["kind"] != "request" or not included(record):
                 continue
@@ -678,12 +719,14 @@ class Domain:
                 request_duplicates += 1
                 continue
             request_seen.add(request_identity)
+            if scoped_sessions is not None and record["session"] not in scoped_sessions:
+                continue
             day = date_for(record)
             targets = (
                 groups[record["project"]],
                 days.setdefault(day, bucket(day, day)),
                 tasks[record["task"]],
-                *([event_bucket(record)] if contributions else []),
+                *event_targets(record),
             )
             origin = record.get("input_origin")
             for target in targets:
@@ -699,6 +742,8 @@ class Domain:
                 else:
                     target["unknown_origin_interactions"] += 1
         for record in usages:
+            if scoped_sessions is not None and record["session"] not in scoped_sessions:
+                continue
             if not included(record):
                 continue
             day = date_for(record)
@@ -706,7 +751,7 @@ class Domain:
             project = groups.setdefault(
                 record["project"], bucket(record["project"], record["project_name"])
             )
-            candidates = prices.get((record["owner"], record.get("model")), [])
+            candidates = prices.get((record["owner"], str(record.get("model") or "")), [])
             price = select_price(candidates, record["timestamp"])
             context = context_length(record)
             if price and price.get("context_scope") == "session":
@@ -715,7 +760,7 @@ class Domain:
                 )
             subtotal, reasons = quote_record(record, price, context)
             cost = None if reasons else subtotal
-            for target in (project, daily, *([event_bucket(record)] if contributions else [])):
+            for target in (project, daily, *event_targets(record)):
                 target["calls"] += 1
                 if record["input"] is None or record["output"] is None:
                     target["unknown_usage"] += 1
@@ -760,8 +805,8 @@ class Domain:
                 start["project"], bucket(start["project"], start["project_name"])
             )
             target[metric] += (ending - beginning).total_seconds()
-            if contributions:
-                event_bucket(start)[metric] += (ending - beginning).total_seconds()
+            for contribution in event_targets(start):
+                contribution[metric] += (ending - beginning).total_seconds()
             while beginning < ending:
                 day = beginning.date().isoformat()
                 midnight = datetime.combine(beginning.date() + timedelta(days=1), time.min, zone)
@@ -772,9 +817,11 @@ class Domain:
                 beginning = boundary
 
         starts: dict[tuple[str, str, str], dict[str, Any]] = {}
-        anomalies = []
+        from collections import deque
+
+        anomalies: deque[dict[str, Any]] = deque(maxlen=200)
         previous: dict[tuple[str, str], dict[str, Any]] = {}
-        for record in records:
+        for record in records.chronological(scoped_sessions):
             visible = included(record)
             identity = (record["owner"], record["session"])
             prior = previous.get(identity)
@@ -835,7 +882,12 @@ class Domain:
                         "cause": "unknown",
                     }
                 )
-        for target in (*groups.values(), *days.values(), *event_metrics.values()):
+        for target in (
+            *groups.values(),
+            *days.values(),
+            *event_metrics.values(),
+            *source_metrics.values(),
+        ):
             target["cost_status"] = (
                 "complete"
                 if not target["unpriced_calls"]
@@ -848,7 +900,10 @@ class Domain:
             if target["unpriced_calls"]:
                 target["estimated_usd"] = None
         return {
-            **({"event_contributions": list(event_metrics.values())} if contributions else {}),
+            **(
+                {"event_contributions": list(event_metrics.values())} if contribution_source else {}
+            ),
+            "source_summaries": list(source_metrics.values()),
             "schema": "trajectory-overview/1",
             "generated_at": now(),
             "projects": sorted(
@@ -856,8 +911,8 @@ class Domain:
             ),
             "daily": sorted(days.values(), key=lambda r: r["id"]),
             "tasks": list(reversed(list(tasks.values())))[:500],
-            "anomalies": anomalies[-200:],
-            "models": sorted({r["model"] for r in usages if r.get("model")}),
+            "anomalies": list(anomalies),
+            "models": sorted(models),
             "coverage": {
                 "sources": len(sources),
                 "read_bytes": sum(r["read_bytes"] for r in sources),
@@ -865,13 +920,13 @@ class Domain:
                 "parse_errors": sum(r["errors"] for r in sources),
                 "unknown_events": sum(r["unknown"] for r in sources),
                 "latest_received": max((r["received"] for r in sources), default=None),
-                "deduplicated_usage_records": duplicates,
+                "deduplicated_usage_records": usages.duplicates,
                 "deduplicated_request_records": request_duplicates,
                 "request_deduplication": "Account, ecosystem and provider message identity "
                 "when present; "
                 "otherwise account, collector, source and stable projection ID; "
                 "cross-source copies without a provider message identity are not deduplicated",
-                "unknown_timestamps": sum(r["timestamp"] is None for r in records),
+                "unknown_timestamps": unknown_timestamps,
             },
             "pricing": {
                 "currency": "USD",

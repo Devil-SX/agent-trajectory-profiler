@@ -59,13 +59,29 @@ The current parser rebuilds a changed complete snapshot; it does not claim an
 incremental parse algorithm. Large histories therefore require bounded delivery
 and measured capacity planning.
 
-The domain memoizes one analytical snapshot by owner, filters and committed
-ledger audit revision. Public summaries and semantic attribution share this
-calculation; concurrent callers coalesce. Usage, price and project-correction
-commits invalidate it, while raw uploads and request traces do not. Authorization
-is checked before every request and is never cached here. Source collection
-progress is distinct from price coverage and does not prove cross-generation
-alignment with separately delivered source bytes.
+The domain memoizes one compact analytical snapshot by owner, filters and committed
+ledger audit revision. It retains project, day, task and source summaries, never a
+whole-ledger array of event contributions. Session listings use source summaries.
+Task attribution requests contributions for one source through the same accounting
+calculator, preserving global consumption and interaction deduplication and session
+price tiers. Source reads serialize their transient scans rather than multiplying
+large identity maps across concurrent jobs.
+
+`ledger_scan.py` replays SQLite cursors in deterministic event or request-priority
+order. One read transaction covers classification, corrections, deduplication,
+context and allocation. Decoded rows do not accumulate in a Python list. SQLite
+sorts use file-backed temporary storage and a 4 MiB page-cache budget; this budget
+does not cap Python maps or SQLite sorter allocations. Python retains classification
+routes, deduplication identities, per-session context/previous state, unpaired tools
+and output aggregates. Target-source contributions and normalized IR remain sized
+by that source. A large source or many unmatched calls still require explicit
+capacity measurement; this design does not claim constant process memory.
+
+Usage, price and project-correction commits invalidate the aggregate snapshot,
+while raw uploads and request traces do not. Authorization is checked before every
+request and is never cached here. Source collection progress is distinct from price
+coverage and does not prove alignment between generations. The retired internal
+`overview(contributions=True)` interface has no current implementation or caller.
 
 ## Model invocation authority
 

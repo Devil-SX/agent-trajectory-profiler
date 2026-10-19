@@ -495,8 +495,11 @@ class SemanticStore:
             if batch is None:
                 raise PermissionError("Batch unavailable")
             rows = db.execute(
-                "SELECT j.*,t.started,t.finished FROM semantic_batch_items i "
+                "SELECT j.*,t.started,t.finished,s.title AS session_title,s.agent AS session_agent,"
+                "m.body AS session_metadata FROM semantic_batch_items i "
                 "JOIN semantic_jobs j ON j.id=i.job LEFT JOIN semantic_job_times t ON t.job=j.id "
+                "LEFT JOIN semantic_sessions s ON s.owner=j.owner AND s.id=j.session "
+                "LEFT JOIN semantic_session_metadata m ON m.owner=j.owner AND m.session=j.session "
                 "WHERE i.batch=? ORDER BY j.created,j.id",
                 (batch_id,),
             ).fetchall()
@@ -535,6 +538,16 @@ class SemanticStore:
                 items.append(
                     {
                         "session_id": row["session"],
+                        "session": {
+                            **(
+                                json.loads(row["session_metadata"])
+                                if row["session_metadata"]
+                                else {}
+                            ),
+                            "id": row["session"],
+                            "title": row["session_title"],
+                            "agent": row["session_agent"],
+                        },
                         "job_id": row["id"],
                         "status": row["status"],
                         "last_error": row["message"],
@@ -841,7 +854,9 @@ class SemanticStore:
         metadata = extract_metadata(parsed, record["title"])
         operations = parsed.get("operations", [])
         if contributions is None:
-            contributions = self.domain.overview(owner, contributions=True)["event_contributions"]
+            contributions = self.domain.source_contributions(
+                owner, record["collector"], record["source"]
+            )
         attribution = self._measure_operations(owner, record, operations, contributions)
         with self.domain.connect() as db:
             collection = collection_progress(
@@ -973,6 +988,11 @@ class SemanticStore:
             "analysis_cost": self.domain.analysis_cost(owner, value.get("provenance", {})),
             "coverage": {
                 "parser": parsed.get("parser"),
+                "normalization": {
+                    "worker_version": parsed.get("worker_version"),
+                    "schema": parsed.get("schema"),
+                    "recorded_measurement_schema": parsed.get("recorded_measurement_schema"),
+                },
                 "parser_coverage": parser_coverage,
                 "parser_notes": parser_notes,
                 "warnings": warnings,
@@ -1008,12 +1028,10 @@ class SemanticStore:
             raise ValueError("Invalid session page")
         offset = int(cursor or "0")
         self.backfill_metadata(owner)
-        contributions = self.domain.overview(owner, contributions=True)["event_contributions"]
-        groups: dict[str, list[dict[str, Any]]] = {}
-        for contribution in contributions:
-            event = contribution["record"]
-            sid = self.session_id(event["collector"], event["source"])
-            groups.setdefault(sid, []).append(contribution)
+        groups = {
+            self.session_id(item["record"]["collector"], item["record"]["source"]): item
+            for item in self.domain.session_summaries(owner)
+        }
         with self.domain.connect() as db:
             ledger_sources = {
                 (row["collector"], row["source"]): collection_progress(row)
@@ -1069,8 +1087,8 @@ class SemanticStore:
         recent_jobs = {row["session"]: row for row in jobs}
         items = []
         for sid in groups.keys() | records.keys():
-            own = groups.get(sid, [])
-            event = own[0]["record"] if own else {}
+            own = groups.get(sid)
+            event = own["record"] if own else {}
             record, analysis, meta = (
                 records.get(sid, {}),
                 analyses.get(sid, {}),
@@ -1090,14 +1108,14 @@ class SemanticStore:
                 and job["status"] in {"queued", "running", "failed"}
             ):
                 status = job["status"]
-            measured_time = max((c["record"].get("timestamp") or "" for c in own), default="")
+            measured_time = own["last_timestamp"] if own else ""
             last = meta.get("last_activity_at") or measured_time or None
             key = (
                 record.get("collector") or event.get("collector"),
                 record.get("source") or event.get("source"),
             )
             collection = ledger_sources.get(key) or archives.get(key) or collection_progress(None)
-            metrics = total_metrics(own)
+            metrics = total_metrics([own]) if own else total_metrics([])
             metrics["collection_status"] = collection["status"]
             parent_native = meta.get("parent_native_session_id")
             item = {

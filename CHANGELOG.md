@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Limit automatic source discovery per root to selected native sessions while preserving pending uploads and shared checkpoints.
+- Stream ledger scans and cache compact source summaries instead of all raw event contributions; keep global deduplication, corrections and pricing semantics for source analysis.
+- Return batch session names from lightweight metadata and expose normalization adapter versions through analysis coverage.
 
 ## [3.2.0] - 2026-10-19
 

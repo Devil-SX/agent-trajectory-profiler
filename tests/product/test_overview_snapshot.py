@@ -54,9 +54,9 @@ def test_public_and_semantic_views_share_snapshot_and_refresh_committed_writes(
 
     monkeypatch.setattr(domain, "_calculate_overview", calculate)
     with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(lambda _: domain.overview("owner", contributions=True), range(4)))
+        results = list(pool.map(lambda _: domain.session_summaries("owner"), range(4)))
     assert len(calls) == 1
-    assert all(r["projects"][0]["input"] == 10 for r in results)
+    assert all(r[0]["input"] == 10 for r in results)
     assert "event_contributions" not in domain.overview("owner")
     assert len(calls) == 1
     domain.ingest("machine", batch(2, 20))

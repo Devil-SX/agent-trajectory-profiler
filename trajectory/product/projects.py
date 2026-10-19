@@ -55,38 +55,39 @@ def identify(text: str, mapping: dict[str, Any], cwd: str = "") -> tuple[str, st
     return "unassigned", "unknown"
 
 
+def request_route(record: dict[str, Any]) -> tuple[str, str] | None:
+    matches = [
+        identify(reference, {"paths": {}, "names": NAMES})
+        for reference in record.get("references", [])
+    ]
+    known = {key for key, _ in matches if key != "unassigned"}
+    key = next(iter(known)) if len(known) == 1 else "shared" if known else "unassigned"
+    return (key, "request") if key != "unassigned" else None
+
+
+def classify_record(record: dict[str, Any], routes: dict[tuple[str, str], tuple[str, str]]) -> None:
+    key, evidence = routes.get((record["owner"], record["task"]), ("unassigned", "unknown"))
+    workspace = record.get("workspace")
+    if key == "unassigned" and workspace:
+        key, _ = identify(workspace, {"paths": {}, "names": NAMES})
+        if key == "unassigned":
+            key = "repo-" + digest(workspace)[:20]
+        evidence = "inherited"
+    record.update(
+        project=key,
+        project_name=NAMES.get(
+            key,
+            workspace if key.startswith("repo-") else "公共运维" if key == "shared" else "未归属",
+        ),
+        evidence=evidence,
+    )
+
+
 def classify_records(records: list[dict[str, Any]]) -> None:
     """Remote authority: references are evidence, never collector-computed attribution."""
-    routes: dict[tuple[str, str], tuple[str, str]] = {}
+    routes = {}
     for record in records:
-        if record["kind"] != "request":
-            continue
-        matches = [
-            identify(reference, {"paths": {}, "names": NAMES})
-            for reference in record.get("references", [])
-        ]
-        known = {key for key, _ in matches if key != "unassigned"}
-        key = next(iter(known)) if len(known) == 1 else "shared" if known else "unassigned"
-        evidence = "request" if known else "unknown"
-        if key != "unassigned":
-            routes[(record["owner"], record["task"])] = (key, evidence)
+        if record["kind"] == "request" and (route := request_route(record)) is not None:
+            routes[(record["owner"], record["task"])] = route
     for record in records:
-        key, evidence = routes.get((record["owner"], record["task"]), ("unassigned", "unknown"))
-        workspace = record.get("workspace")
-        if key == "unassigned" and workspace:
-            key, _ = identify(workspace, {"paths": {}, "names": NAMES})
-            if key == "unassigned":
-                key = "repo-" + digest(workspace)[:20]
-            evidence = "inherited"
-        record.update(
-            project=key,
-            project_name=NAMES.get(
-                key,
-                (
-                    workspace
-                    if key.startswith("repo-")
-                    else "公共运维" if key == "shared" else "未归属"
-                ),
-            ),
-            evidence=evidence,
-        )
+        classify_record(record, routes)
