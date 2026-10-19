@@ -42,6 +42,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("Sync redirects are prohibited")
 
 
+def http_opener(config: dict):
+    mode = config.get("proxy", "environment")
+    if mode == "direct":
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+    if mode == "environment":
+        return urllib.request.build_opener(NoRedirect)
+    raise ValueError("Unsupported source-sync proxy mode")
+
+
 def credentials(path: Path, url: str) -> str:
     parsed = urllib.parse.urlsplit(url)
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -323,9 +332,7 @@ def remote_progress(config: dict, collector: str, source: str, token: str) -> di
     query = urllib.parse.urlencode({"collector": collector, "source": source})
     url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, query, ""))
     request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
-    with urllib.request.build_opener(NoRedirect).open(
-        request, timeout=config.get("timeout", 30)
-    ) as response:
+    with http_opener(config).open(request, timeout=config.get("timeout", 30)) as response:
         raw = response.read(16385)
     if len(raw) > 16384:
         raise ValueError("Oversized source-progress response")
@@ -370,7 +377,7 @@ def sync_once(config: dict, max_chunks: int = 100) -> dict:
                 guard_new_sources(state, config, collector, [spec], token)
                 return state.prepare(collector, spec)
 
-            opener = urllib.request.build_opener(NoRedirect)
+            opener = http_opener(config)
             while sent < max_chunks:
                 row = state.next()
                 if row is None:
@@ -411,7 +418,7 @@ def describe(config: dict) -> dict:
     help_url = f"{parsed.scheme}://{parsed.netloc}/trajectory/help"
     token = credentials(Path(config["credential"]), config["url"])
     request = urllib.request.Request(help_url, headers={"Authorization": "Bearer " + token})
-    with urllib.request.build_opener(NoRedirect).open(request, timeout=15) as response:
+    with http_opener(config).open(request, timeout=15) as response:
         help_data = json.loads(response.read(1024 * 1024))
     state_path = Path(config["state"])
     progress = []

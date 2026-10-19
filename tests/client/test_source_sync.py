@@ -262,6 +262,18 @@ class SourceSyncTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.state.bind("other-collector", "https://example.com/trajectory/api/source-chunks")
 
+    def test_direct_proxy_mode_is_per_opener_and_rejects_unknown_modes(self):
+        with patch.object(sync.urllib.request, "build_opener") as build:
+            sync.http_opener({"proxy": "direct"})
+            handlers = build.call_args.args
+            self.assertEqual(handlers[0].proxies, {})
+            self.assertIs(handlers[1], sync.NoRedirect)
+        with patch.object(sync.urllib.request, "build_opener") as build:
+            sync.http_opener({})
+            self.assertEqual(build.call_args.args, (sync.NoRedirect,))
+        with self.assertRaises(ValueError):
+            sync.http_opener({"proxy": "unknown"})
+
     def test_redirect_is_never_followed(self):
         with self.assertRaises(ValueError):
             sync.NoRedirect().redirect_request(None, None, None, None, None, None)

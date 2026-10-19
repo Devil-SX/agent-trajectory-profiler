@@ -134,3 +134,14 @@ rejected and require explicit verified recovery.
 Competing invocations report `state=busy` and exit successfully for rescheduling.
 They do not emit a traceback or acquire a second writer. The example unit runs at
 Nice 10 with idle I/O scheduling priority.
+
+## Explicit proxy transport
+
+The optional configuration field `proxy` accepts `environment` (default) or
+`direct`. Direct mode installs an empty `urllib.ProxyHandler` for this uploader's
+own HTTP opener, covering Help, progress and upload requests. It does not modify
+system proxy settings or process environment, and keeps the original HTTPS URL,
+TLS hostname and certificate verification. Use it when the service's confirmed
+public DNS route works directly and a local environment proxy causes handshake
+failures. A changed proxy transport never changes source identity, pending body,
+mutation ID or checkpoints.
