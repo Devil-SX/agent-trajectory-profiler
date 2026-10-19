@@ -569,6 +569,7 @@ def sync_once(config: dict, max_chunks: int = 100, sources=(), sessions=()) -> d
     state_path = Path(config["state"])
     sent = 0
     uploaded_bytes = 0
+    deferred = set()
     with process_lock(state_path.with_suffix(".lock")):
         state = SyncState(state_path)
         try:
@@ -576,8 +577,17 @@ def sync_once(config: dict, max_chunks: int = 100, sources=(), sessions=()) -> d
             token = credentials(Path(config["credential"]), config["url"])
 
             def prepare_source(spec):
+                source = source_id(collector, spec["legacy_path"])
+                if source in deferred:
+                    return False
                 guard_new_sources(state, config, collector, [spec], token)
-                return state.prepare(collector, spec)
+                try:
+                    return state.prepare(collector, spec)
+                except SourceValidationRace:
+                    # No checkpoint/outbox change occurred. Retry this source only
+                    # in the next invocation; stable sources must still progress.
+                    deferred.add(source)
+                    return False
 
             opener = http_opener(config)
             while sent < max_chunks:
@@ -610,6 +620,15 @@ def sync_once(config: dict, max_chunks: int = 100, sources=(), sessions=()) -> d
                 "pending": state.next() is not None,
                 "collector": collector,
                 "selected_sources": len(specs),
+                "deferred_sources": [
+                    {
+                        "source_id": source,
+                        "reason": "source_changed_during_validation",
+                        "retryable": True,
+                    }
+                    for source in sorted(deferred)
+                ],
+                "retryable": bool(deferred),
             }
         finally:
             state.close()

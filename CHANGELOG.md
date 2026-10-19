@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Defer only sources that change during prefix validation, allowing stable sources and existing outbox entries to progress while retaining checkpoint integrity and explicit retry status.
 - Identify source-sync validation races and safe error locations without logging private messages, paths or source contents, preserving the shared checkpoint and outbox.
 
 ## [3.4.0] - 2026-10-19

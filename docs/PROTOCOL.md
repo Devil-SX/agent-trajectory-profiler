@@ -95,8 +95,13 @@ Sparkstead discovery generates the same IDs. Unverified roots remain rejected.
 
 Retry diagnostics expose a code location and, for a source that changes during
 prefix validation, its canonical source ID with code
-`source_changed_during_validation`. That race leaves the checkpoint and outbox
-unchanged; the next scheduled run validates it again. Other failures retain the
+`source_changed_during_validation`. That race leaves that source's checkpoint and
+outbox unchanged. The invocation defers that source once, continues other sources
+and replays existing outbox entries first. The next scheduled run validates the
+deferred source again. Successful results list canonical IDs and fixed reasons in
+`deferred_sources`, with `retryable: true` when any source was deferred. `pending`
+describes only the durable outbox; `pending: false` does not mean deferred sources
+are fully synchronized. Other failures retain the
 generic `sync_operation_failed` code and the CLI function/line where they arose.
 Diagnostics never include exception messages, source paths, credentials or bodies.
 The `selected_sources` count describes the current invocation's discovery scope;

@@ -269,6 +269,135 @@ class SourceSyncTests(unittest.TestCase):
         self.assertNotIn("SECRET", output.getvalue())
         self.assertNotIn("private", output.getvalue())
 
+    def fake_sync(self, specs, prepare=None, limit=10, response=None):
+        posts = []
+
+        def send(request, timeout):
+            body = json.loads(request.data)
+            posts.append(body)
+            receipt = {
+                "durable": True,
+                "mutation_id": body["mutation_id"],
+                "accepted_bytes": body["end"] - body["start"],
+                "next_offset": body["end"],
+            }
+            return io.BytesIO(json.dumps(receipt if response is None else response).encode())
+
+        config = {
+            "url": "https://test.invalid/source-chunks",
+            "state": str(self.root / "state.sqlite"),
+            "credential": "unused",
+        }
+        with (
+            patch.object(sync, "validate_manifest", return_value=("collector", specs)),
+            patch.object(sync, "credentials", return_value="PRIVATE-KEY-NOT-LOGGED"),
+            patch.object(sync, "guard_new_sources"),
+            patch.object(sync, "http_opener", return_value=SimpleNamespace(open=send)),
+        ):
+            if prepare is None:
+                return sync.sync_once(config, limit), posts
+            with patch.object(sync.SyncState, "prepare", new=prepare):
+                return sync.sync_once(config, limit), posts
+
+    def test_racing_source_defers_once_while_pending_and_stable_sources_progress(self):
+        self.state.prepare("collector", self.spec)
+        original = self.ack(self.state.next())
+        self.path.write_bytes(self.path.read_bytes() + b"active append\n")
+        active_before = self.state.db.execute("SELECT * FROM sources").fetchall()
+        stable = {
+            **self.spec,
+            "path": str(self.root / "stable.jsonl"),
+            "legacy_path": r"C:\logs\stable.jsonl",
+        }
+        Path(stable["path"]).write_bytes(b"stable pending\n")
+        self.state.prepare("collector", stable)
+        pending = json.loads(self.state.next()[1])
+        Path(stable["path"]).write_bytes(b"stable pending\nmore stable\n")
+        real_prepare = sync.SyncState.prepare
+        active_calls = []
+
+        def race(state, collector, spec):
+            if spec != self.spec:
+                return real_prepare(state, collector, spec)
+            # Existing outbox was replayed before any attempt to prepare a source.
+            self.assertIsNone(state.next())
+            active_calls.append(spec)
+            stat = self.path.stat()
+            changed = SimpleNamespace(
+                st_dev=stat.st_dev,
+                st_ino=stat.st_ino,
+                st_size=stat.st_size + 1,
+                st_mtime_ns=stat.st_mtime_ns,
+                st_ctime_ns=stat.st_ctime_ns,
+            )
+            with patch.object(sync.os, "fstat", return_value=changed):
+                return real_prepare(state, collector, spec)
+
+        result, posts = self.fake_sync([self.spec, stable], race)
+        self.assertEqual(len(active_calls), 1)
+        self.assertEqual(posts[0], pending)
+        self.assertEqual(result["chunks"], 2)
+        self.assertFalse(result["pending"])
+        self.assertTrue(result["retryable"])
+        source = sync.source_id("collector", self.spec["legacy_path"])
+        self.assertEqual(
+            result["deferred_sources"],
+            [
+                {
+                    "source_id": source,
+                    "reason": "source_changed_during_validation",
+                    "retryable": True,
+                }
+            ],
+        )
+        self.assertEqual(
+            active_before[0],
+            self.state.db.execute("SELECT * FROM sources WHERE source=?", (source,)).fetchone(),
+        )
+        self.assertNotIn("PRIVATE", json.dumps(result))
+        self.assertNotIn(str(self.path), json.dumps(result))
+        following, next_posts = self.fake_sync([self.spec, stable])
+        self.assertEqual(following["chunks"], 1)
+        self.assertEqual(following["deferred_sources"], [])
+        self.assertFalse(following["retryable"])
+        self.assertEqual(next_posts[0]["generation"], original["generation"])
+        self.assertEqual(next_posts[0]["start"], original["end"])
+        ids = [body["mutation_id"] for body in posts + next_posts]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_all_racing_sources_stop_without_busy_retry_or_checkpoint_changes(self):
+        other = {**self.spec, "legacy_path": r"C:\logs\other.jsonl"}
+        calls = []
+
+        def race(state, collector, spec):
+            calls.append(spec)
+            raise sync.SourceValidationRace(sync.source_id(collector, spec["legacy_path"]))
+
+        result, posts = self.fake_sync([self.spec, other], race, limit=100)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result["chunks"], 0)
+        self.assertEqual(len(result["deferred_sources"]), 2)
+        self.assertTrue(result["retryable"])
+        self.assertFalse(result["pending"])
+        self.assertEqual(posts, [])
+        self.assertEqual(self.state.db.execute("SELECT count(*) FROM sources").fetchone()[0], 0)
+        self.assertIsNone(self.state.next())
+
+    def test_defer_does_not_swallow_other_validation_or_receipt_failures(self):
+        for error in (ValueError("invalid metadata"), sync.RecoveryRequired("explicit recovery")):
+            with self.subTest(error=type(error).__name__):
+
+                def fail(state, collector, spec, failure=error):
+                    raise failure
+
+                with self.assertRaises(type(error)):
+                    self.fake_sync([self.spec], fail)
+        self.state.prepare("collector", self.spec)
+        original = self.state.next()
+        with self.assertRaisesRegex(ValueError, "durable source receipt"):
+            self.fake_sync([self.spec], response={"durable": True})
+        self.assertEqual(original, self.state.next())
+
     def test_dynamic_roots_keep_existing_source_identity_and_defer_new_files(self):
         identity = self.root / "identity.json"
         legacy_root = r"\\wsl.localhost\Ubuntu\home\user\sessions"
