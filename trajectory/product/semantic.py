@@ -661,25 +661,37 @@ class SemanticStore:
         migrated = 0
         read_chars = 0
         with self.domain.connect() as db:
+            # Finalize the bounded ID cursor before entering any write transaction.
+            # A live WAL read snapshot cannot safely upgrade after another writer commits.
             rows = db.execute(
-                "SELECT s.id,s.title FROM semantic_sessions s "
+                "SELECT s.id FROM semantic_sessions s "
                 "LEFT JOIN semantic_session_metadata m ON m.owner=s.owner AND m.session=s.id "
                 "WHERE s.owner=? AND m.session IS NULL ORDER BY s.updated DESC LIMIT ?",
                 (owner, limit),
-            )
-            for row in rows:
-                snapshot = db.execute(
-                    "SELECT body FROM semantic_sessions WHERE owner=? AND id=?", (owner, row["id"])
-                ).fetchone()[0]
-                metadata = extract_metadata(json.loads(snapshot), row["title"])
+            ).fetchall()
+        for row in rows:
+            # One record per transaction bounds writer ownership. Recheck under the
+            # write lock so a concurrent parser or backfill remains authoritative.
+            with self.domain.connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                current = db.execute(
+                    "SELECT s.body,s.title FROM semantic_sessions s "
+                    "LEFT JOIN semantic_session_metadata m ON m.owner=s.owner AND m.session=s.id "
+                    "WHERE s.owner=? AND s.id=? AND m.session IS NULL",
+                    (owner, row["id"]),
+                ).fetchone()
+                if current is None:
+                    continue
+                snapshot = current["body"]
+                metadata = extract_metadata(json.loads(snapshot), current["title"])
                 db.execute(
-                    "INSERT OR IGNORE INTO semantic_session_metadata VALUES(?,?,?,?)",
+                    "INSERT INTO semantic_session_metadata VALUES(?,?,?,?)",
                     (owner, row["id"], json.dumps(metadata), stamp()),
                 )
                 migrated += 1
                 read_chars += len(snapshot)
-                if read_chars >= 16 * 1024 * 1024:
-                    break
+            if read_chars >= 16 * 1024 * 1024:
+                break
         return migrated
 
     def session_record(self, owner: str, sid: str) -> dict[str, Any]:

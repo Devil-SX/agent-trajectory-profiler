@@ -157,3 +157,108 @@ def test_parser_refresh_reuses_archive_and_invalidates_changed_membership(tmp_pa
     assert analyze["status"] == "queued"
     with pytest.raises(ValueError, match="active analysis"):
         store.request_parse("owner", sid, AnalysisRequest(mutation_id=uuid.uuid4().hex))
+
+
+def test_four_http_metadata_backfills_with_wal_writer(tmp_path, monkeypatch):
+    """Concurrent first reads migrate once without read-to-write WAL upgrades."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi.testclient import TestClient
+
+    import trajectory.product.semantic as semantic
+    from trajectory.product.server import Principal, create_app
+
+    store, add = seeded(tmp_path)
+    sessions = [add(i, "/research/embodied", f"原始任务 {i}", "2026-10-02")[0] for i in range(40)]
+    with store.domain.connect() as db:
+        db.execute("DELETE FROM semantic_session_metadata")
+        db.execute("CREATE TABLE fixture_writer (value INTEGER)")
+        db.execute("INSERT INTO fixture_writer VALUES(0)")
+    original_extract = semantic.extract_metadata
+    extracting = threading.Event()
+    stop = threading.Event()
+    writes = []
+
+    def slow_extract(parsed, title):
+        extracting.set()
+        time.sleep(0.004)
+        return original_extract(parsed, title)
+
+    monkeypatch.setattr(semantic, "extract_metadata", slow_extract)
+    app = create_app(store.domain.path, lambda request, scope: Principal("owner", scopes=("read",)))
+
+    def writer():
+        assert extracting.wait(5)
+        while not stop.is_set():
+            with store.domain.connect() as db:
+                db.execute("UPDATE fixture_writer SET value=value+1")
+            writes.append(True)
+            time.sleep(0.001)
+
+    barrier = threading.Barrier(4)
+
+    def read_wave():
+        barrier.wait(timeout=10)
+        # Do not start four independent application lifespans (and worker runtimes).
+        client = TestClient(app)
+        try:
+            response = client.get("/trajectory/api/sessions?analysis_status=analyzed&limit=100")
+            assert response.status_code == 200, response.text
+            assert response.json()["sessions"] == []
+        finally:
+            client.close()
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        worker = pool.submit(writer)
+        try:
+            for _ in range(3):
+                readers = [pool.submit(read_wave) for _ in range(4)]
+                for reader in readers:
+                    reader.result(timeout=30)
+        finally:
+            stop.set()
+            worker.result(timeout=20)
+    assert writes
+    with store.domain.connect() as db:
+        assert db.execute("SELECT value FROM fixture_writer").fetchone()[0] == len(writes)
+        rows = db.execute("SELECT session,body FROM semantic_session_metadata").fetchall()
+    assert {row["session"] for row in rows} == set(sessions)
+    assert len(rows) == 40
+    assert {json.loads(row["body"])["first_user_message"] for row in rows} == {
+        f"原始任务 {i}" for i in range(40)
+    }
+
+
+def test_backfill_rechecks_parser_metadata_after_waiting_for_writer(tmp_path, monkeypatch):
+    """A parser committed after candidate selection wins over legacy backfill."""
+    store, add = seeded(tmp_path)
+    sid, revision = add(1, "/old", "old", "2026-10-02")
+    with store.domain.connect() as db:
+        db.execute("DELETE FROM semantic_session_metadata")
+    source, _ = store.archive("owner", sid)
+    original_connect = store.domain.connect
+    calls = 0
+
+    def connect():
+        nonlocal calls
+        calls += 1
+        # First connection finalizes IDs; second acquires the per-record write lock.
+        if calls == 2:
+            monkeypatch.setattr(store.domain, "connect", original_connect)
+            store.save_session(
+                "owner",
+                sid,
+                source,
+                revision,
+                {
+                    "metadata": {"cwd": "/new", "first_user_message": "new parser metadata"},
+                    "operations": [],
+                },
+            )
+        return original_connect()
+
+    monkeypatch.setattr(store.domain, "connect", connect)
+    assert store.backfill_metadata("owner") == 0
+    assert store.sessions("owner")["sessions"][0]["first_user_message"] == "new parser metadata"
