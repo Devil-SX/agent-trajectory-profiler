@@ -28,6 +28,7 @@ from trajectory.product.contracts import (
     TaskEdit,
 )
 from trajectory.product.domain import Domain
+from trajectory.product.error_logging import log_request_exception
 from trajectory.product.semantic import SemanticStore
 from trajectory.product.semantic_runtime import AnalysisRuntime
 
@@ -312,7 +313,8 @@ def create_app(
         request.state.auth_outcome = "unconfirmed"
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as error:
+            log_request_exception(identifier, error)
             request.state.auth_outcome = "internal_error"
             response = JSONResponse(
                 {"error": "Request failed", "request_id": identifier}, status_code=500

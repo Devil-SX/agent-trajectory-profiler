@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Record internal request failures with server-generated request IDs, exception types and traceback frame locations, excluding credentials, exception values and business content.
+
 ## [3.2.1] - 2026-10-19
 
 ### Fixed
