@@ -81,13 +81,3 @@ def classify_record(record: dict[str, Any], routes: dict[tuple[str, str], tuple[
         ),
         evidence=evidence,
     )
-
-
-def classify_records(records: list[dict[str, Any]]) -> None:
-    """Remote authority: references are evidence, never collector-computed attribution."""
-    routes = {}
-    for record in records:
-        if record["kind"] == "request" and (route := request_route(record)) is not None:
-            routes[(record["owner"], record["task"])] = route
-    for record in records:
-        classify_record(record, routes)

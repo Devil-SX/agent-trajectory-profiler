@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-10-19
+
 ### Fixed
 
 - Limit automatic source discovery per root to selected native sessions while preserving pending uploads and shared checkpoints.
 - Stream ledger scans and cache compact source summaries instead of all raw event contributions; keep global deduplication, corrections and pricing semantics for source analysis.
 - Return batch session names from lightweight metadata and expose normalization adapter versions through analysis coverage.
+
+Code stats vs v3.2.0: total 14768 text lines (baseline 14226), +694 (-152) = +542, 3.81% text-line change.
 
 ## [3.2.0] - 2026-10-19
 
@@ -31,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Reuse the source synchronizer checkpoint and outbox for Pi collection.
 - Drain active analysis jobs before coordinator lease handoff and prevent uncertain Jindu calls from being resubmitted under a new paid identity.
 
-Code stats vs v3.1.0: total 14103 text lines (baseline 11307), +2965 (-169) = +2796, 24.73% text-line change.
+Code stats vs v3.1.0: total 14226 text lines (baseline 11307), +3089 (-170) = +2919, 25.82% text-line change.
 
 ## [3.1.0] - 2026-10-19
 
