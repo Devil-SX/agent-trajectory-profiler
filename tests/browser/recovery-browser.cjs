@@ -43,6 +43,9 @@ const server=http.createServer(async(req,res)=>{
   assert.equal(await page.locator('#analyze-session').count(),0);
   assert.equal(await page.locator('#analysis-content [data-resume-job]').count(),0);
   assert.equal(posts.length,0);
+  assert.equal(await page.locator('.batch-progress-complete').evaluate(n=>n.style.width),'0%');
+  assert.equal(await page.locator('.batch-progress-failed').evaluate(n=>n.style.width),'100%');
+  assert.match(await page.locator('.batch-panel [role=progressbar]').getAttribute('aria-valuetext'),/已完成 0，失败 2/);
   await page.locator('[data-session-id="recover"]').click();
   await page.waitForSelector('#analysis-content [data-resume-job="job-recover"]');
   assert.equal(await page.locator('#analyze-session').count(),0);
