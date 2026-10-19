@@ -240,3 +240,38 @@ def test_batch_http_help_schema_permissions_and_account_isolation(tmp_path):
     assert help_doc.status_code == 200
     operation = next(op for op in help_doc.json()["tools"] if op["name"] == "analysis_batch_run")
     assert "session_ids" in operation["input_schema"]["properties"]
+
+
+def test_running_detail_exposes_durable_usage_without_claiming_completed_analysis(tmp_path):
+    store, ids = seeded(tmp_path, 1)
+    store.request_batch("owner", request(ids, concurrency=1))
+    job = store.claim_job()
+    assert job
+    progress = {
+        "completed_chunks": 1,
+        "total_chunks": 3,
+        "state": "segmenting",
+        "model": "glm-5.3",
+        "backend": "jindu",
+        "route": "zai-glm-5-3",
+        "reasoning_effort": "high",
+        "created_at": "2026-10-19T00:00:00+00:00",
+        "analysis_usage": [
+            {
+                "call_id": "stable-progress-call",
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 25,
+                    "prompt_tokens_details": {"cached_tokens": 0},
+                },
+            }
+        ],
+    }
+    store.job_progress(job, progress)
+    detail = store.detail("owner", ids[0])
+    assert detail["status"] == "running"
+    assert detail["progress"]["completed_chunks"] == 1
+    assert detail["provenance"]["analysis_usage"] == progress["analysis_usage"]
+    assert detail["provenance"]["provisional"] is True
+    assert detail["analysis_cost"]["calls"][0]["call_id"] == "stable-progress-call"
+    assert not detail["has_analysis"] and detail["tasks"] == []

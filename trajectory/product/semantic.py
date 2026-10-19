@@ -874,6 +874,14 @@ class SemanticStore:
                 "ORDER BY created DESC LIMIT 1",
                 (owner, sid),
             ).fetchone()
+            progress_row = (
+                db.execute(
+                    "SELECT body FROM semantic_job_progress WHERE job=?", (job["id"],)
+                ).fetchone()
+                if job
+                else None
+            )
+        progress = json.loads(progress_row[0]) if progress_row else {}
         current_analysis = (
             analysis is not None and analysis["source_revision"] == record["source_revision"]
         )
@@ -889,6 +897,14 @@ class SemanticStore:
             and job["status"] in {"queued", "running", "failed"}
         ):
             status = job["status"]
+            if not current_analysis and progress:
+                value["provenance"] = {
+                    **progress,
+                    "chunks": progress.get("total_chunks"),
+                    "provisional": True,
+                }
+        else:
+            progress = {}
         tasks = value.get("tasks", [])
         by_id = {o["id"]: o for o in operations}
         memberships: dict[str, str] = {}
@@ -975,6 +991,7 @@ class SemanticStore:
                 "metrics": metrics,
             },
             "status": status,
+            "progress": progress,
             "has_analysis": analysis is not None,
             "analysis_current": current_analysis,
             "message": job["message"] if job and status == "failed" else "",
