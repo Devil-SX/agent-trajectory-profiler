@@ -22,6 +22,7 @@ from trajectory.product.contracts import (
     SourceChunk,
     TaskEdit,
 )
+from trajectory.product.read_cache import RevisionCache
 from trajectory.product.session_metadata import VERSION as METADATA_VERSION
 from trajectory.product.session_metadata import extract as extract_metadata
 from trajectory.product.session_metadata import read as read_metadata
@@ -120,6 +121,7 @@ class IRSnapshotUnavailable(ValueError):
 class SemanticStore:
     def __init__(self, domain: Domain):
         self.domain = domain
+        self._detail_cache = RevisionCache(max_bytes=32 * 1024**2, max_entries=8)
         with domain.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS source_archives(
@@ -1359,24 +1361,25 @@ class SemanticStore:
             for i, o in enumerate(operations)
         )
         keys = [pair[0] for pair in line_nodes]
+        call_nodes: dict[str, list[int]] = {}
+        source_nodes: dict[int, list[int]] = {}
+        for index, operation in enumerate(operations):
+            if operation.get("call_id"):
+                call_nodes.setdefault(operation["call_id"], []).append(index)
+        for source_line, index in line_nodes:
+            source_nodes.setdefault(source_line, []).append(index)
         exact = estimated = unassigned = 0
         for contribution in selected:
             event = contribution["record"]
             if not operations:
                 unassigned += 1
                 continue
-            matches = [
-                i
-                for i, operation in enumerate(operations)
-                if event.get("call") and operation.get("call_id") == event["call"]
-            ]
+            matches = call_nodes.get(event.get("call"), [])
             line = int(event.get("source_line") or 0)
             precise = len(matches) == 1
             method = "call_id" if precise else "ambiguous_call_id"
             if not matches:
-                same_line = [
-                    index for source_line, index in line_nodes if line > 0 and source_line == line
-                ]
+                same_line = source_nodes.get(line, []) if line > 0 else []
                 if len(same_line) == 1:
                     matches, precise, method = same_line, True, "source_line"
                 else:
@@ -1432,7 +1435,74 @@ class SemanticStore:
             "unassigned_records": unassigned,
         }
 
+    def _detail_revision(
+        self, owner: str, sid: str, source_revision: str | None
+    ) -> tuple[Any, ...] | None:
+        """Read cheap authority heads, never source/IR bodies or request traces."""
+        with self.domain.connect() as db:
+            db.execute("BEGIN")
+            session = db.execute(
+                "SELECT collector,source,source_revision,updated FROM semantic_sessions "
+                "WHERE owner=? AND id=?", (owner, sid)
+            ).fetchone()
+            if session is None:
+                return None
+            job = db.execute(
+                "SELECT id,status,updated FROM semantic_jobs WHERE owner=? AND session=? "
+                "AND kind='analyze' ORDER BY created DESC LIMIT 1", (owner, sid)
+            ).fetchone()
+            # Active progress and failed-job recovery eligibility are always read fresh.
+            if job and job["status"] != "complete":
+                return None
+            heads = [tuple(session), tuple(job) if job else None]
+            for query, params in (
+                ("SELECT revision,source_revision,updated FROM semantic_analyses "
+                 "WHERE owner=? AND session=?", (owner, sid)),
+                ("SELECT generation,received_bytes,source_bytes,updated FROM source_archives "
+                 "WHERE owner=? AND collector=? AND source=?", (owner, *tuple(session)[:2])),
+                ("SELECT revision,read_bytes,source_bytes,errors,unknown,received FROM sources "
+                 "WHERE owner=? AND collector=? AND source=?", (owner, *tuple(session)[:2])),
+                ("SELECT updated FROM semantic_session_metadata WHERE owner=? AND session=?",
+                 (owner, sid)),
+                ("SELECT rowid FROM audit WHERE operation IN ('ingest','price','correct') "
+                 "ORDER BY rowid DESC LIMIT 1", ()),
+            ):
+                row = db.execute(query, params).fetchone()
+                heads.append(tuple(row) if row else None)
+        return (owner, sid, source_revision, *heads)
+
     def detail(
+        self,
+        owner: str,
+        sid: str,
+        contributions: list[dict[str, Any]] | None = None,
+        *,
+        source_revision: str | None = None,
+    ) -> dict[str, Any]:
+        # Explicit contributions are used by isolated measurement callers and must
+        # never be confused with the canonical ledger revision.
+        if contributions is None:
+            for _ in range(2):
+                key = self._detail_revision(owner, sid, source_revision)
+                if key is None:
+                    break
+                result = self._detail_cache.get(
+                    key, lambda: self._detail(owner, sid, source_revision=source_revision)
+                )
+                if key == self._detail_revision(owner, sid, source_revision):
+                    return result
+        return self._detail(owner, sid, contributions, source_revision=source_revision)
+
+    def operation(
+        self, owner: str, sid: str, oid: str, *, source_revision: str | None = None
+    ) -> dict[str, Any]:
+        detail = self.detail(owner, sid, source_revision=source_revision)
+        for operation in detail["operations"]:
+            if operation["id"] == oid:
+                return operation
+        raise ValueError("Unknown operation")
+
+    def _detail(
         self,
         owner: str,
         sid: str,
@@ -1579,25 +1649,33 @@ class SemanticStore:
         for operation in operations:
             operation["task_id"] = memberships.get(operation["id"])
 
+        task_by_id = {task["id"]: task for task in tasks}
+        children: dict[str, list[str]] = {}
+        for task in tasks:
+            children.setdefault(task.get("parent_id"), []).append(task["id"])
+        member_cache: dict[str, set[str]] = {}
+
         def members(task_id: str, visiting: set[str]) -> set[str]:
             if task_id in visiting:
                 raise ValueError("Task hierarchy contains a cycle")
-            task = next(t for t in tasks if t["id"] == task_id)
+            if task_id in member_cache:
+                return member_cache[task_id]
+            task = task_by_id[task_id]
             result = set(task.get("operation_ids", []))
-            for child in tasks:
-                if child.get("parent_id") == task_id:
-                    result.update(members(child["id"], visiting | {task_id}))
+            for child in children.get(task_id, []):
+                result.update(members(child, visiting | {task_id}))
+            member_cache[task_id] = result
             return result
 
+        operation_index = {operation["id"]: index for index, operation in enumerate(operations)}
         for task in tasks:
             ids = members(task["id"], set())
             task["metrics"] = total_metrics([by_id[i]["metrics"] for i in ids if i in by_id])
             task["metrics"]["collection_status"] = collection["status"]
             task["segments"] = []
             previous = -2
-            for index, operation in enumerate(operations):
-                if operation["id"] not in ids:
-                    continue
+            for index in sorted(operation_index[oid] for oid in ids if oid in operation_index):
+                operation = operations[index]
                 if index != previous + 1:
                     task["segments"].append(
                         {
