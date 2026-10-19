@@ -4,12 +4,14 @@ All notable changes to **BatCave Trajectory** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [3.3.1] - 2026-10-19
 
 ### Fixed
 
 - Distinguish saved analysis snapshots from newly appended source records, retaining task structure and analysis costs while withholding unverified execution usage.
 - Read historical evidence only when an immutable same-generation prefix exactly matches its stored source revision; pending sources no longer appear current.
+
+Code stats vs v3.3.0: total 18559 text lines (baseline 18358), +230 (-29) = +201, 1.09% text-line change.
 
 ## [3.3.0] - 2026-10-19
 
