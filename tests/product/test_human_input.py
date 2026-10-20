@@ -226,14 +226,14 @@ def test_all_human_text_missing_is_unknown_with_observed_interactions(tmp_path):
 def test_human_coverage_is_idempotent_and_survives_parent_aggregation():
     from trajectory.product.semantic import total_metrics
 
-    values = dict(
-        human_interactions=0,
-        human_input_chars=0,
-        missing_human_input_chars=0,
-        unknown_origin_interactions=2,
-        agent_interactions=0,
-        system_interactions=0,
-    )
+    values = {
+        "human_interactions": 0,
+        "human_input_chars": 0,
+        "missing_human_input_chars": 0,
+        "unknown_origin_interactions": 2,
+        "agent_interactions": 0,
+        "system_interactions": 0,
+    }
     Domain.apply_human_input_coverage(values)
     first = dict(values)
     Domain.apply_human_input_coverage(values)
