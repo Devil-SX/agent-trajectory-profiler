@@ -35,8 +35,10 @@ bias. Model confidence, unavailable segmentation confidence, and unavailable
 human gold accuracy are separate fields. Source and analysis revisions,
 measurement hashes, model metadata and Jindu call/receipt IDs are retained.
 
-`research.js` mounts only when the dashboard tab is selected. Summary and
-paginated detail use the server's domain aggregation; immutable summary reads
+`research.js` mounts only when the dashboard tab is selected. Advanced filters,
+variance and hierarchy tables use the workbench disclosure pattern. Overview
+charts retain confidence intervals and sample counts; paginated stage details
+are fetched only when expanded. Summary and detail use the server's domain aggregation; immutable summary reads
 are cached by account, study revision and filters. CSV exports preserve
 unknowns and neutralize spreadsheet formula prefixes without editing stored
 titles. Updating a source analysis does not mutate an imported study: the UI
