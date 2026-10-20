@@ -1,5 +1,5 @@
 // Filter inputs live in one native disclosure; reopen it before each scoped edit.
-const openFilters = async page => {if(!await page.locator('#workspace-filters').evaluate(n=>n.open))await page.locator('#workspace-filters > summary').click();await page.locator('#session-status').waitFor({state:'visible'});};
+const openFilters = async page => {if(await page.locator('#batch-activity').count()&&await page.locator('#batch-activity').evaluate(n=>n.open)){await page.keyboard.press('Escape');assert.equal(await page.locator('#batch-activity').evaluate(n=>n.open),false);}if(!await page.locator('#workspace-filters').evaluate(n=>n.open))await page.locator('#workspace-filters > summary').click();await page.locator('#session-status').waitFor({state:'visible'});};
 const editFilter = async (page, method, ...args) => {await openFilters(page);await page[method](...args);if(await page.locator('#workspace-filters').evaluate(n=>n.open))await page.locator('#workspace-filters > summary').click();};
 const analysisText = async page => {await page.locator('.analysis-context-details').evaluateAll(ns=>ns.forEach(n=>{n.open=true;}));return page.locator('#analysis-content').innerText();};
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE);
