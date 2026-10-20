@@ -67,3 +67,15 @@ reads and statistical ingestion remain schema-compatible, but an old backend's p
 and analysis worker gates must remain closed; its writer does not preserve history.
 
 Session analysis responses contain operation metadata, usage and source locations without execution bodies. Expanding execution evidence loads one operation through the authenticated operation reader, pinned to the displayed source revision. Original raw evidence remains a separate bounded read. Discover both operations and permissions through current HTTP Help.
+
+### Query saved task phases
+
+Discover `task_query` through authenticated Help. `GET /trajectory/api/tasks`
+returns saved task titles, hierarchy, session identity and source/analysis
+revisions without execution text, ledger scans or model calls. Filter by
+`batch_id`, `session_id`, `cwd` (including subdirectories), `q` (title, ID or
+ancestor title) and `depth` (`0` session root, `1` main phases). Use `limit`
+(1–500, default 100) and the returned `next_cursor`; restart pagination if the
+query revision changes. A batch whose saved source was replaced reports an
+explicit skipped session. Direct operation counts are structure counts, not
+fees or elapsed time; use `analysis_read` for measured task costs.

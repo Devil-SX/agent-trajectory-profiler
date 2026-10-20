@@ -1799,6 +1799,129 @@ class SemanticStore:
             },
         }
 
+    def task_query(
+        self,
+        owner: str,
+        *,
+        batch_id: str = "",
+        session_id: str = "",
+        q: str = "",
+        cwd: str = "",
+        depth: int | None = None,
+        limit: int = 100,
+        cursor: str = "",
+    ) -> dict[str, Any]:
+        """Query saved task structure without loading IR, recalculating measures or models."""
+        if not 1 <= limit <= 500 or (depth is not None and not 0 <= depth <= 100):
+            raise ValueError("Invalid task query page or depth")
+        if len(q) > 1000 or len(cwd) > 4096:
+            raise ValueError("Task query filter too long")
+        with self.domain.connect() as db:
+            db.execute("BEGIN")
+            if (
+                batch_id
+                and not db.execute(
+                    "SELECT 1 FROM semantic_batches WHERE id=? AND owner=?", (batch_id, owner)
+                ).fetchone()
+            ):
+                raise PermissionError("Unknown analysis batch")
+            rows = db.execute(
+                "SELECT a.session,a.revision,a.source_revision,a.updated,a.body,"
+                "s.title,s.agent,s.source_revision AS parsed_revision,m.body AS metadata,"
+                "j.source_revision AS batch_revision "
+                "FROM semantic_analyses a JOIN semantic_sessions s "
+                "ON s.owner=a.owner AND s.id=a.session "
+                "LEFT JOIN semantic_session_metadata m ON m.owner=a.owner AND m.session=a.session "
+                "LEFT JOIN semantic_batch_items i ON i.session=a.session AND i.batch=? "
+                "LEFT JOIN semantic_jobs j ON j.id=i.job AND j.owner=a.owner "
+                "WHERE a.owner=? AND (?='' OR a.session=?) "
+                "AND (?='' OR i.batch IS NOT NULL) ORDER BY a.session",
+                (batch_id, owner, session_id, session_id, batch_id),
+            ).fetchall()
+        heads = [
+            (
+                row["session"],
+                row["revision"],
+                row["source_revision"],
+                row["metadata"],
+                row["parsed_revision"],
+                row["batch_revision"],
+                row["title"],
+                row["agent"],
+            )
+            for row in rows
+        ]
+        revision = digest(json.dumps([owner, batch_id, session_id, q, cwd, depth, heads]))
+        offset = 0
+        if cursor:
+            parts = cursor.split(":")
+            if len(parts) != 2 or parts[0] != revision or not parts[1].isdecimal():
+                raise ValueError("Task query changed; restart pagination")
+            offset = int(parts[1])
+        items = []
+        skipped = []
+        for row in rows:
+            # A later reanalysis must not silently substitute the original batch result.
+            if batch_id and row["batch_revision"] != row["source_revision"]:
+                skipped.append({"session_id": row["session"], "reason": "batch_snapshot_replaced"})
+                continue
+            meta = read_metadata(json.loads(row["metadata"])) if row["metadata"] else {}
+            directory = str(meta.get("cwd") or "")
+            if cwd and directory != cwd and not directory.startswith(cwd.rstrip("/") + "/"):
+                continue
+            tasks = json.loads(row["body"]).get("tasks", [])
+            by_id = {task["id"]: task for task in tasks}
+            for task in tasks:
+                ancestors = []
+                parent = task.get("parent_id")
+                while parent and parent in by_id:
+                    if parent == task["id"] or parent in ancestors:
+                        raise ValueError("Task hierarchy contains a cycle")
+                    ancestors.append(parent)
+                    parent = by_id[parent].get("parent_id")
+                ancestors.reverse()
+                if depth is not None and len(ancestors) != depth:
+                    continue
+                title = str(task.get("title") or "")
+                if (
+                    q
+                    and q.casefold()
+                    not in " ".join(
+                        [task["id"], title, *[str(by_id[a].get("title") or "") for a in ancestors]]
+                    ).casefold()
+                ):
+                    continue
+                items.append(
+                    {
+                        "id": task["id"],
+                        "title": title,
+                        "parent_id": task.get("parent_id"),
+                        "ancestor_ids": ancestors,
+                        "depth": len(ancestors),
+                        "direct_operation_count": len(set(task.get("operation_ids", []))),
+                        "session_id": row["session"],
+                        "session_title": meta.get("display_title") or row["title"],
+                        "cwd": meta.get("cwd"),
+                        "agent": row["agent"],
+                        "started_at": meta.get("started_at"),
+                        "analysis_revision": row["revision"],
+                        "source_revision": row["source_revision"],
+                        "matches_latest_parsed": row["source_revision"] == row["parsed_revision"],
+                    }
+                )
+        page = items[offset : offset + limit]
+        return {
+            "items": page,
+            "total": len(items),
+            "query_revision": revision,
+            "next_cursor": (
+                f"{revision}:{offset + len(page)}" if offset + len(page) < len(items) else None
+            ),
+            "skipped_sessions": skipped,
+            "measurement_scope": "saved_task_structure_only",
+            "metrics_included": False,
+        }
+
     def sessions(
         self,
         owner: str,

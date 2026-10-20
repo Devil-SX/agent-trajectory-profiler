@@ -97,6 +97,19 @@ OPERATIONS: list[dict[str, Any]] = [
         "effect": "Read normalized sessions and task-analysis availability",
     },
     {
+        "id": "task_query",
+        "method": "GET",
+        "path": "/api/tasks",
+        "scope": "read",
+        "effect": "Query saved task titles and hierarchy across sessions without raw IR, "
+        "execution text, metric recomputation or model calls. Filters: batch_id, session_id, "
+        "cwd (directory subtree), q (case-insensitive title/id/ancestor search), depth "
+        "(0=session root, 1=main phases); limit=1..500 default100, cursor from next_cursor. "
+        "Restart pagination if query_revision changes. Results pin analysis/source revisions; "
+        "batch results replaced by another source revision are explicitly skipped. "
+        "Counts are direct operation memberships, not cost or elapsed time.",
+    },
+    {
         "id": "analysis_read",
         "method": "GET",
         "path": "/api/sessions/{session_id}/analysis",
@@ -501,6 +514,22 @@ def create_app(
                         sort=request.query_params.get("sort", "last_activity_desc"),
                         q=request.query_params.get("q", ""),
                         limit=int(request.query_params.get("limit", "0")),
+                        cursor=request.query_params.get("cursor", ""),
+                    )
+                if identifier == "task_query":
+                    return await asyncio.to_thread(
+                        semantic.task_query,
+                        principal.account,
+                        batch_id=request.query_params.get("batch_id", ""),
+                        session_id=request.query_params.get("session_id", ""),
+                        cwd=request.query_params.get("cwd", ""),
+                        q=request.query_params.get("q", ""),
+                        depth=(
+                            int(request.query_params["depth"])
+                            if "depth" in request.query_params
+                            else None
+                        ),
+                        limit=int(request.query_params.get("limit", "100")),
                         cursor=request.query_params.get("cursor", ""),
                     )
                 if identifier == "analysis_batch_list":
