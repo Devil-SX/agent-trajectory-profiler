@@ -243,3 +243,40 @@ def test_human_coverage_is_idempotent_and_survives_parent_aggregation():
     assert parent["human_input_chars"] is None
     assert parent["human_input_coverage"]["confirmed_human_requests"] == 0
     assert parent["unknown_origin_interactions"] == 2
+
+
+@pytest.mark.parametrize("known_human", [0, 2])
+def test_unavailable_child_never_disappears_from_parent_coverage(known_human):
+    from trajectory.product.semantic import total_metrics
+
+    known = {
+        "human_interactions": known_human,
+        "human_input_chars": known_human * 3,
+        "missing_human_input_chars": 0,
+        "unknown_origin_interactions": 0,
+        "agent_interactions": 1,
+        "system_interactions": 0,
+    }
+    unavailable = dict.fromkeys(known, None)
+    Domain.apply_human_input_coverage(known)
+    Domain.apply_human_input_coverage(unavailable)
+    result = total_metrics([total_metrics([known, unavailable])])
+    assert result["human_input_coverage"]["missing_measurement_items"] == 1
+    if known_human:
+        assert result["human_interactions"] == 2
+        assert result["human_input_coverage"]["status"] == "partial"
+    else:
+        assert result["human_interactions"] is None
+        assert result["human_input_chars"] is None
+        assert result["human_input_coverage"]["status"] == "unknown"
+
+
+def test_usage_only_source_does_not_claim_human_zero_in_overview(tmp_path):
+    domain = Domain(tmp_path / "usage-only.db")
+    domain.register("owner", "machine", "fixture")
+    domain.ingest("machine", batch([record(0, kind="usage", input=3, output=1)]))
+    result = domain.overview("owner")
+    for metrics in (result["projects"][0], result["daily"][0], result["tasks"][0]):
+        assert metrics["human_interactions"] is None
+        assert metrics["human_input_chars"] is None
+        assert metrics["human_input_coverage"]["missing_measurement_items"] == 1

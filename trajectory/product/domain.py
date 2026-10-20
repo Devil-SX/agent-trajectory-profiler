@@ -551,7 +551,9 @@ class Domain:
         Domain.apply_human_input_coverage(metrics)
 
     @staticmethod
-    def apply_human_input_coverage(metrics: dict[str, Any]) -> None:
+    def apply_human_input_coverage(
+        metrics: dict[str, Any], missing_items: int | None = None
+    ) -> None:
         """Separate an observed subtotal from proof that human input was zero.
 
         User-role requests whose origin is unknown cannot establish zero human
@@ -570,6 +572,9 @@ class Domain:
         agents = metrics.get("agent_interactions")
         system = metrics.get("system_interactions")
         available = all(type(value) is int for value in (human, unknown, missing, agents, system))
+        if missing_items is None:
+            missing_items = int(prior.get("missing_measurement_items", 0))
+        missing_items = max(missing_items, int(not available))
         total = (
             sum(cast(int, value) for value in (human, unknown, agents, system))
             if available
@@ -578,9 +583,10 @@ class Domain:
         metrics["human_input_coverage"] = {
             "status": (
                 "unknown"
-                if not available or (human == 0 and unknown)
-                else "partial" if unknown or missing else "observed"
+                if not available or (human == 0 and (unknown or missing_items))
+                else "partial" if unknown or missing or missing_items else "observed"
             ),
+            "missing_measurement_items": missing_items,
             "request_records": total,
             "origin_known_requests": (
                 sum(cast(int, value) for value in (human, agents, system)) if available else None
@@ -593,7 +599,7 @@ class Domain:
             "missing_human_text_requests": missing,
             "known_human_input_chars": chars,
         }
-        if available and human == 0 and unknown:
+        if available and human == 0 and (unknown or missing_items):
             metrics["human_interactions"] = None
             metrics["human_input_chars"] = None
         elif available and human and missing >= human:
@@ -648,6 +654,9 @@ class Domain:
             prices[(row["owner"], row["model"])].append(json.loads(row["body"]))
         source_coverage = {(row["owner"], row["collector"], row["source"]): row for row in sources}
         request_records: dict[tuple[str, str, str], int] = defaultdict(int)
+        project_request_sources: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
+        day_request_sources: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
+        task_request_sources: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
         records = LedgerScan(db, owner, corrections)
         scoped_sessions = (
             records.source_sessions(contribution_source) if contribution_source else None
@@ -794,6 +803,10 @@ class Domain:
             if not included(record):
                 continue
             project = record["project"]
+            request_source = (record["owner"], record["collector"], record["source"])
+            project_request_sources[project].add(request_source)
+            day_request_sources[date_for(record)].add(request_source)
+            task_request_sources[record["task"]].add(request_source)
             metric_bucket(groups, project, record["project_name"])
             task = tasks.get(record["task"])
             if task is None:
@@ -1008,8 +1021,15 @@ class Domain:
             )
             if target["unpriced_calls"]:
                 target["estimated_usd"] = None
-        for target in chain(groups.values(), days.values(), tasks.values()):
-            self.apply_human_input_coverage(target)
+        for metric_groups, source_sets in (
+            (groups, project_request_sources),
+            (days, day_request_sources),
+            (tasks, task_request_sources),
+        ):
+            for metric_key, target in metric_groups.items():
+                self.apply_human_input_coverage(
+                    target, sum(request_records[source] == 0 for source in source_sets[metric_key])
+                )
         # Reuse the existing ledger scan; no extra scan or per-source query.
         for target in chain(source_metrics.values(), event_metrics.values()):
             measured = target["record"]

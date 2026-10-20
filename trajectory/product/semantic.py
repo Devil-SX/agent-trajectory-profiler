@@ -117,7 +117,18 @@ def total_metrics(items: list[dict[str, Any]]) -> dict[str, Any]:
     result["estimated_usd"] = (
         result["known_subtotal_usd"] if result["cost_status"] == "complete" else None
     )
-    Domain.apply_human_input_coverage(result)
+    missing_items = sum(
+        (
+            item.get("human_input_coverage", {}).get("missing_measurement_items", 0)
+            if item.get("human_input_coverage")
+            else int(
+                item.get("human_interactions") is None
+                and item.get("unknown_origin_interactions") is None
+            )
+        )
+        for item in items
+    )
+    Domain.apply_human_input_coverage(result, missing_items)
     return result
 
 
