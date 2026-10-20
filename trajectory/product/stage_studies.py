@@ -730,7 +730,8 @@ class StageStudies:
             ),
             "resource_coverage_policy": "Nonempty direct memberships, or nonempty selected "
             "subtree ancestor frontier within imported records; measured zero is retained, null is "
-            "unknown; no research-level cross-native-copy or shared-fork-context deduplication; upstream ledger counters retained",
+            "unknown; no research-level cross-native-copy or shared-fork-context deduplication; "
+            "upstream ledger counters retained",
             "classification": data["classification"],
             "confidence_threshold": data["confidence_threshold"],
             "secondary_threshold": data["secondary_threshold"],
