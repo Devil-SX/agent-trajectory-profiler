@@ -56,7 +56,7 @@ const server=http.createServer(async(req,res)=>{
  assert.equal(await page.locator('#view-coverage input,#view-coverage select').count(),0);
  await page.click('#tab-overview');assert.equal(await page.locator('#statistics-controls').evaluate(n=>n.closest('[role=tabpanel]').id),'view-overview');assert.equal(await page.inputValue('#overview-since'),'2026-10-04');assert.equal(await page.inputValue('#since'),'2026-10-02');
  await page.click('#tab-human-trends');assert.equal(await page.inputValue('#overview-since'),'');assert.equal(await page.locator('#statistics-controls').evaluate(n=>n.closest('[role=tabpanel]').id),'view-human-trends');
- await page.goBack();await page.waitForFunction(()=>document.querySelector('#tab-overview').getAttribute('aria-selected')==='true');assert.equal(await page.inputValue('#overview-since'),'2026-10-04');
+ await page.goBack();await page.waitForFunction(()=>document.querySelector('#tab-overview').getAttribute('aria-selected')==='true');assert.equal(await page.inputValue('#overview-since'),'2026-10-04');assert.equal(await page.evaluate(()=>document.activeElement.id),'tab-overview');
  const stickyChecks=[];
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:844});await page.click('#tab-details');await page.locator('#view-details .view-body').evaluate(n=>{n.style.minHeight='2600px'});await page.evaluate(()=>scrollTo(0,1400));

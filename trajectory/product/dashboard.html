@@ -243,7 +243,7 @@ document.querySelector('[role=tablist]').addEventListener('keydown',event=>{cons
 $('refresh').onclick=()=>{saveStatisticScope();refresh()};$('coverage-refresh').onclick=()=>refresh();
 $('project').onchange=()=>scheduleSessionFilters();for(const id of ['since','until'])$(id).onchange=()=>scheduleSessionFilters();
 for(const id of ['project','since','until'])$('overview-'+id).onchange=()=>applyStatisticFilter(id);$('statistics-filters').ontoggle=()=>{if($('statistics-filters').open)closeOtherDisclosures($('statistics-filters'));saveStatisticScope()};$('overview-filters-clear').onclick=()=>{for(const id of ['project','since','until'])$('overview-'+id).value='';saveStatisticScope();renderStatisticChips();ensureOverview()};
-window.addEventListener('hashchange',()=>selectView(location.hash.slice(1),{reveal:true,historyMode:'none'}));
+window.addEventListener('hashchange',()=>selectView(location.hash.slice(1),{focus:document.activeElement?.getAttribute('role')==='tab',reveal:true,historyMode:'none'}));
 let initialView=location.hash.slice(1);if(!viewKeys.includes(initialView)){try{initialView=localStorage.getItem('trajectory-active-view')}catch{}}selectView(initialView);
 
 </script></body></html>
