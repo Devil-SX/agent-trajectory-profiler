@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.2.1] - 2026-10-20
+
+### Fixed
+
+- Keep research statistics panels, controls and explanatory text consistent with the dark workbench theme, with browser checks for readable contrast.
+
+
+Code stats vs v4.2.0: total 23709 text lines (baseline 23697), +18 (-6) = +12, 0.05% text-line change.
+
 ## [4.2.0] - 2026-10-20
 
 ### Added
