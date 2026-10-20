@@ -5,6 +5,7 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const source = path.dirname(process.argv[2]), output = process.argv[3];
+const formatScript=fs.readFileSync(process.argv[2],'utf8').match(/<script id="trajectory-format">[\s\S]*?<\/script>/)?.[0];assert(formatScript,'Candidate must provide its canonical shared formatter');
 const hostStyles = [...fs.readFileSync(process.argv[2],'utf8').matchAll(/<style>([\s\S]*?)<\/style>/g)].map(match=>match[0]).join('');
 fs.mkdirSync(output, {recursive:true});
 const names = ['understand_decide','build_execute','validate_debug','coordinate_maintain','uncertain'];
@@ -25,10 +26,10 @@ const data = {study_id:'fixture-study',title:'Fixture study',revision:'fixture-r
  sessions:[{session_id:'fixture-session',title:'AI CPM 测试',started_at:'2026-10-20',analysis_revision:'analysis-v1',source_revision:'source-v1',segmentation:{model:'fixture-segmenter'}}]};
 const item = {session_id:'fixture-session',task_id:'parent',title:'审查 <script>window.injected=true</script>',parent_id:'root',depth:1,is_leaf:false,
  effective_tag:'understand_decide',secondary_tags:['build_execute'],confidence:0.9,mixed_probability:0.8,operation_count:1,subtree_operation_count:3,
- probabilities:Object.fromEntries(names.map((k,i)=>[k,i?0:1])),subtree_tag_entropy:0.6,call_id:'fixture-call-id',receipt_id:'fixture-receipt',selected_metrics:{recorded_tokens:123}};
+ probabilities:Object.fromEntries(names.map((k,i)=>[k,i?0:1])),subtree_tag_entropy:0.6,call_id:'fixture-call-id',receipt_id:'fixture-receipt',selected_metrics:{recorded_tokens:123,active_seconds_estimate:4980,tool_seconds:0.125,wall_span_seconds:3600}};
 let mode='normal',delay=0;
 const requests=[],errors=[];
-const html=`<!doctype html><html lang="zh"><head><meta charset="utf-8">${hostStyles}<meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/research.css"></head><body><main id="research"></main><script src="/research.js"></script><script>
+const html=`<!doctype html><html lang="zh"><head><meta charset="utf-8">${hostStyles}${formatScript}<meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/research.css"></head><body><main id="research"></main><script src="/research.js"></script><script>
 const request=async(url,options={})=>{const r=await fetch(url);if(!r.ok)throw Error('HTTP '+r.status);return options.responseType==='text'?r.text():r.json()};
 window.ready=TrajectoryResearch.mount(document.querySelector('main'),{request}).catch(e=>{document.body.dataset.mountError=e.message});
 </script></body></html>`;
@@ -57,7 +58,7 @@ const server=http.createServer(async(req,res)=>{
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   delay=250;await page.goto(origin);await page.locator('.research-loading').waitFor();await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');delay=0;
   assert(!requests.some(r=>r.path.endsWith('/stages')),'Stage detail must load only when expanded');
-  assert.match(await page.locator('.research-time-distribution').innerText(),/总时长 1 小时/);assert.match(await page.locator('.research-time-distribution').innerText(),/记录间 SD/);assert.match(await page.locator('.research-time-distribution').innerText(),/2 个有效会话/);assert(requests.some(r=>r.query.metric==='active_seconds_estimate'));assert.match(await page.locator('main').innerText(),/同源复制和 fork 依赖未校正/);assert.match(await page.locator('main').innerText(),/研究层未做跨同源复制或 fork 共享上下文去重/);
+  assert.match(await page.locator('.research-time-distribution').innerText(),/总时长 1h/);assert.match(await page.locator('.research-time-distribution').innerText(),/记录间 SD/);assert.match(await page.locator('.research-time-distribution').innerText(),/2 个有效会话/);assert(requests.some(r=>r.query.metric==='active_seconds_estimate'));assert.match(await page.locator('main').innerText(),/同源复制和 fork 依赖未校正/);assert.match(await page.locator('main').innerText(),/研究层未做跨同源复制或 fork 共享上下文去重/);
   assert.equal(await page.locator('.research-filter-disclosure').evaluate(node=>node.open),false);
   assert.equal(await page.locator('.research-stage-drawer').evaluate(node=>node.open),false);
   await page.locator('.research-filter-disclosure>summary').click();await page.getByLabel('层级',{exact:true}).focus();await page.keyboard.press('Escape');assert.equal(await page.locator('.research-filter-disclosure').evaluate(node=>node.open),false);
@@ -81,10 +82,11 @@ const server=http.createServer(async(req,res)=>{
   assert.match(await page.locator('main').innerText(),/当前没有随机人工gold/);
   assert.equal(await page.evaluate(()=>window.injected),undefined);
   const select=async(label,value,key)=>{if(['层级','节点','最低分类 confidence','混合判断'].includes(label)&&!await page.locator('.research-filter-disclosure').evaluate(node=>node.open))await page.locator('.research-filter-disclosure>summary').click();await page.getByLabel(label,{exact:true}).selectOption(value);await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');assert(requests.some(r=>r.query[key]===value));};
-  await select('层级','2','depth');await select('节点','leaf','node_kind');assert.match(await page.locator('.research-time-distribution').innerText(),/总时长 2 分钟/);assert(requests.some(r=>r.query.metric==='active_seconds_estimate'&&r.query.node_kind==='leaf'));await select('最低分类 confidence','0.8','confidence_min');await select('混合判断','single','mixed');
+  await select('层级','2','depth');await select('节点','leaf','node_kind');assert.match(await page.locator('.research-time-distribution').innerText(),/总时长 2min/);assert(requests.some(r=>r.query.metric==='active_seconds_estimate'&&r.query.node_kind==='leaf'));await select('最低分类 confidence','0.8','confidence_min');await select('混合判断','single','mixed');
   await page.getByLabel('节点',{exact:true}).focus();await page.keyboard.press('ArrowUp');await page.keyboard.press('Enter');
   assert(!requests.some(r=>r.path.endsWith('/stages')));await page.locator('.research-stage-drawer>summary').click();await page.getByRole('button',{name:'导出筛选结果 CSV'}).waitFor();
   const downloadEvent=page.waitForEvent('download');await page.getByRole('button',{name:'导出筛选结果 CSV'}).click();const download=await downloadEvent;await download.saveAs(path.join(output,'fixture.csv'));assert.match(fs.readFileSync(path.join(output,'fixture.csv'),'utf8'),/parent,0.9/);
+  await select('节点','leaf','node_kind');await select('资源指标','active_seconds_estimate','metric');assert.match(await page.locator('.research-card').filter({hasText:'已知资源小计'}).innerText(),/2min/);assert.match(await page.locator('.research-stage-drawer').innerText(),/1h23min/);await page.getByText('层级明细、模型置信度与关联检验',{exact:true}).click();assert.match(await page.locator('main').innerText(),/500ms \/ 900ms/);await select('资源指标','tool_seconds','metric');assert.match(await page.locator('.research-stage-drawer').innerText(),/125ms/);
   await select('资源指标','human_interactions','metric');assert.match(await page.locator('.research-cards').innerText(),/已确认小计/);assert.match(await page.locator('.research-warning').innerText(),/0不代表没有人类输入/);await select('资源指标','recorded_tokens','metric');
   mode='error';await select('层级','1','depth');await page.getByRole('button',{name:'重试',exact:true}).waitFor();assert.match(await page.locator('.research-status').innerText(),/503/);mode='normal';await page.getByRole('button',{name:'重试',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');
   await page.screenshot({path:path.join(output,'research-desktop.png'),fullPage:true});
