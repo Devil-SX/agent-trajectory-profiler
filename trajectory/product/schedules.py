@@ -49,6 +49,17 @@ def instant(value: str | None) -> datetime | None:
         return None
 
 
+def weighted_sample(
+    candidates: list[dict[str, Any]], count: int, seed: str
+) -> list[dict[str, Any]]:
+    """Versioned exponential race: proportional positive weights without replacement."""
+    rng = random.Random(seed)
+    return sorted(
+        candidates,
+        key=lambda item: (-math.log(1.0 - rng.random()) / item["weight"], item["session_id"]),
+    )[:count]
+
+
 def path_key(value: str) -> str:
     value = value.replace("\\", "/").rstrip("/")
     return value.casefold() if len(value) > 1 and value[1] == ":" else value
@@ -465,14 +476,7 @@ class AnalysisSchedules:
             return dict(json.loads(prior[0]))
         snapshot = self.candidates(db, owner, config, now)
         seed = uuid.uuid4().hex
-        rng = random.Random(seed)
-        # Independent exponential clocks select proportionally to positive weight
-        # without replacement, rather than sorting by length.
-        ranked = sorted(
-            snapshot["eligible"],
-            key=lambda r: (-math.log(1.0 - rng.random()) / r["weight"], r["session_id"]),
-        )
-        selected = ranked[:count]
+        selected = weighted_sample(snapshot["eligible"], count, seed)
         run_id = uuid.uuid4().hex
         batch = None
         if selected:
@@ -546,7 +550,12 @@ class AnalysisSchedules:
                 local = now.astimezone(ZoneInfo(config["timezone"]))
                 due = self.due(config, local.date())
                 enabled_at = instant(config.get("enabled_at"))
-                if config["enabled"] and local >= due and enabled_at and due >= enabled_at:
+                if (
+                    config["enabled"]
+                    and now >= due.astimezone(UTC)
+                    and enabled_at
+                    and due >= enabled_at
+                ):
                     db.execute("SAVEPOINT scheduled_draw")
                     slot = "daily:" + local.date().isoformat()
                     try:

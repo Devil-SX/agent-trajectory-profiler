@@ -413,3 +413,13 @@ def test_explicit_native_delegation_revocation_and_caller_identity(tmp_path):
     assert client.get(base + "?resource_owner=owner", headers=robot).status_code == 403
     checks["machine"] = False
     assert client.get(base, headers=robot).status_code == 403
+
+
+def test_weighted_draw_is_probabilistic_and_not_always_longest():
+    from trajectory.product.schedules import weighted_sample
+
+    candidates = [{"session_id": "short", "weight": 1}, {"session_id": "long", "weight": 9}]
+    winners = [weighted_sample(candidates, 1, str(seed))[0]["session_id"] for seed in range(1000)]
+    assert 850 < winners.count("long") < 950
+    assert winners.count("short") > 0
+    assert len({r["session_id"] for r in weighted_sample(candidates, 10, "seed")}) == 2
