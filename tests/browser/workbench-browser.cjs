@@ -85,7 +85,7 @@ const server=http.createServer(async(req,res)=>{
  await page.locator('#analysis-content').evaluate(n=>{const spacer=document.createElement('div');spacer.style.height='1600px';n.append(spacer);n.scrollTop=600});
  const paneBox=await page.locator('#analysis-content').boundingBox(),tabsBox=await page.locator('.analysis-context').boundingBox();assert(tabsBox.y>=paneBox.y-2&&tabsBox.y<paneBox.y+20);
  await page.getByRole('button',{name:'分段时间线',exact:true}).click();
- const navPosition=await page.locator('.section-nav').evaluate(n=>getComputedStyle(n).position);assert.equal(navPosition,'sticky');
+ const navPosition=await page.locator('#site-shell').evaluate(n=>getComputedStyle(n).position);assert.equal(navPosition,'sticky');assert(await page.locator('.section-nav').evaluate(n=>Boolean(n.closest('#site-shell'))));
  assert.equal(await page.locator('.analysis-context').evaluate(n=>getComputedStyle(n).position),'sticky');
  await page.screenshot({path:process.argv[3]+'/workbench-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:process.argv[3]+'/workbench-mobile.png',fullPage:true});
