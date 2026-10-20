@@ -2,7 +2,7 @@
 
 The task workspace keeps session identity, selected task scope and view controls together. Its six compact metrics describe the selected task and descendants, or explicitly describe the whole session when no task is selected. The full metric disclosure uses the same descriptor and formatting functions. Missing counters, unknown human provenance, partial costs and parent-inclusive attribution retain their domain meanings.
 
-Search remains visible. A single filter disclosure owns project, dates, directory, status and sorting. Active filter chips can clear individual values. The authenticated session listing applies filters and sorting before pagination; the browser renders that response without a second filter or reordering pass. Filter values and disclosure state persist in the existing workspace record. Opening disclosures does not fetch data.
+Task search remains visible inside the task panel. A single task-filter disclosure owns its project, dates, directory, status and sorting. Active filter chips can clear individual values. The authenticated session listing applies filters and sorting before pagination; the browser renders that response without a second filter or reordering pass. Filter values and disclosure state persist in the existing workspace record. Opening disclosures does not fetch data.
 
 Background analysis uses a compact status disclosure with visible completed, running and failed states. Its drawer retains per-session progress, failure explanations and the authenticated resume operation. Existing idempotent submission and resume behavior remains in the service domain. Task views preserve selection and tree expansion. Raw operation bodies remain lazy and pinned to source revision.
 
