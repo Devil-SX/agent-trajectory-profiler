@@ -26,3 +26,7 @@ The site shell contains only identity, service links and the seven main tabs. It
 Overview, human trends, daily trends and detail views reuse a single statistics-filter component, moved into the selected panel. Each view persists its own project/date/disclosure scope; task and research state are separate. A bounded response cache reuses the same date-scoped overview read across views without transferring filter state. Returning to another scope restores its own data, or loads that scope. Click and keyboard navigation update browser history; back navigation restores the selected view and its local conditions.
 
 Human metrics use the domain coverage status. Positive values with missing measurement contributions are labelled as known subtotals, and a missing contribution count is not described as a missing interaction count. Observed zero remains distinct from unavailable human provenance.
+
+## Duration display
+
+The `trajectory-format` script in the dashboard owns `window.TrajectoryFormat.duration(seconds)`. Dashboard and research use this one formatter for human-facing summaries, tables, task metrics, flame labels and request elapsed times. Numeric API/CSV seconds and chart geometry remain unchanged. Missing, nonfinite and negative inputs display unknown; observed zero displays `0s`. Positive subsecond values retain nonzero milliseconds. Seconds round before hour/minute carry, with no decimal hours or redundant zero units; long durations retain accumulated hours such as `25h1min1s`.

@@ -13,6 +13,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Preserve immutable input revisions and reuse the existing leased, bounded Jindu analysis queue
   for manual and daily submissions, with conservative quiet-period and native-lineage safeguards.
 
+## [4.3.1] - 2026-10-20
+
+### Fixed
+
+- Display elapsed and active time consistently as readable hours, minutes and seconds across dashboard and research views, preserving unknown values, observed zero and nonzero subsecond durations. API and CSV seconds are unchanged.
+
+Code stats vs v4.3.0: total 25525 text lines (baseline 25486), +62 (-23) = +39, 0.15% text-line change.
+
 ## [4.3.0] - 2026-10-20
 
 ### Added
