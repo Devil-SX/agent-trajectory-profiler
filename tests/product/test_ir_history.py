@@ -420,3 +420,114 @@ def test_duplicate_current_history_authority_is_rejected_without_body_guessing(s
         store.detail("owner", sid)
     with pytest.raises(ValueError, match="duplicate current and history"):
         store.evidence("owner", sid, "op-0", source_revision=revision)
+
+
+def test_queued_reanalysis_of_newer_revision_keeps_saved_tree_on_screen(seeded):
+    store, sid, old_revision, value = seeded
+    save_result(store, sid, old_revision)
+    new_revision = append_and_parse(store, sid, value)
+    with store.domain.connect() as db:
+        db.execute("UPDATE semantic_jobs SET status='complete' WHERE kind='parse'")
+    store.request_analysis("owner", sid, AnalysisRequest(mutation_id=uuid.uuid4().hex))
+    detail = store.detail("owner", sid)
+    assert detail["source_revision"] == detail["analysis_source_revision"] == old_revision
+    assert detail["current_parsed_source_revision"] == new_revision
+    assert detail["analysis_snapshot_available"] is True
+    assert detail["tasks"][0]["title"] == "Saved snapshot"
+    assert detail["status"] == "stale"
+    assert detail["reanalysis"] == {
+        "status": "queued",
+        "source_revision": new_revision,
+        "progress": {},
+    }
+    assert any("历史快照" in text for text in detail["coverage"]["warnings"])
+
+
+def test_saved_snapshot_keeps_measured_cost_inside_its_own_line_watermark(seeded):
+    store, sid, old_revision, value = seeded
+    save_result(store, sid, old_revision)
+    append_and_parse(store, sid, value)
+    detail = store.detail(
+        "owner",
+        sid,
+        contributions=[contribution(line=1), contribution(line=999)],
+    )
+    assert detail["historical_snapshot"] is True
+    assert detail["coverage"]["attribution"]["snapshot_scope"] == "bounded"
+    assert detail["coverage"]["attribution"]["snapshot_line_watermark"] == 31
+    assert detail["coverage"]["attribution"]["excluded_records"] == 1
+    assert detail["coverage"]["attribution"]["usage_available"] is True
+    assert detail["session"]["metrics"]["recorded_tokens"] == 20
+    assert detail["tasks"][0]["title"] == "Saved snapshot"
+    assert detail["tasks"][0]["metrics"]["input"] == 15
+    assert any("水位" in text for text in detail["coverage"]["warnings"])
+
+
+def test_pending_append_before_reparse_keeps_bounded_cost_and_excludes_new_records(seeded):
+    store, sid, old_revision, value = seeded
+    save_result(store, sid, old_revision)
+    append_source(store, value)
+    detail = store.detail(
+        "owner",
+        sid,
+        contributions=[contribution(line=1), contribution(line=999)],
+    )
+    assert detail["source_pending"] is True
+    assert detail["historical_snapshot"] is False
+    assert detail["analysis_snapshot_available"] is True
+    assert detail["reanalysis"] is None
+    assert detail["coverage"]["attribution"]["snapshot_scope"] == "bounded"
+    assert detail["coverage"]["attribution"]["excluded_records"] == 1
+    assert detail["session"]["metrics"]["recorded_tokens"] == 20
+    assert detail["tasks"][0]["metrics"]["input"] == 15
+    assert any("追加" in text for text in detail["coverage"]["warnings"])
+
+
+def test_changed_generation_never_attributes_retained_snapshot_cost(seeded):
+    store, sid, old_revision, value = seeded
+    save_result(store, sid, old_revision)
+    append_and_parse(store, sid, value)
+    data = b"different generation\n"
+    store.ingest_source(
+        "machine",
+        value.model_copy(
+            update={
+                "mutation_id": uuid.uuid4().hex,
+                "generation": "replacement",
+                "start": 0,
+                "end": len(data),
+                "source_bytes": len(data),
+                "content": base64.b64encode(data).decode(),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        ),
+    )
+    detail = store.detail("owner", sid, contributions=[contribution(line=1)])
+    assert detail["coverage"]["attribution"]["snapshot_scope"] == "unavailable"
+    assert detail["coverage"]["attribution"]["excluded_records"] == 1
+    assert detail["coverage"]["attribution"]["ledger_available"] is True
+    assert detail["coverage"]["attribution"]["usage_available"] is False
+    assert detail["session"]["metrics"]["recorded_tokens"] is None
+    assert any("更换版本" in text for text in detail["coverage"]["warnings"])
+
+
+def test_snapshot_watermark_prefers_retained_source_records(seeded):
+    store, sid, revision, value = seeded
+    parsed = json.loads(store.session_record("owner", sid)["body"])
+    # A trailing record without an operation still proves the snapshot covers its line.
+    parsed["source_records"] = [{"source_line": 1}, {"source_line": 44}]
+    source, _ = store.archive("owner", sid)
+    store.save_session("owner", sid, source, revision, parsed)
+    save_result(store, sid, revision)
+    append_source(store, value)
+    detail = store.detail(
+        "owner",
+        sid,
+        contributions=[contribution(line=40), contribution(line=45)],
+    )
+    attribution = detail["coverage"]["attribution"]
+    assert detail["source_pending"] is True
+    assert attribution["snapshot_scope"] == "bounded"
+    assert attribution["snapshot_line_watermark"] == 44
+    assert attribution["excluded_records"] == 1
+    assert detail["session"]["metrics"]["recorded_tokens"] == 20

@@ -44,6 +44,30 @@ def archive_revision(source: Any) -> str | None:
     return digest(source["generation"] + ":" + str(source["received_bytes"])) if source else None
 
 
+def snapshot_line_watermark(parsed: dict[str, Any], generation: str | None) -> int | None:
+    """Highest source line the displayed parsed snapshot can prove it contains.
+
+    Ledger records and parsed operations use the same line numbering only inside
+    one source generation. A changed generation, or a body without any recorded
+    line, has no comparable bound and must not attribute anything.
+    """
+    snapshot = parsed.get("source_snapshot") or {}
+    if not generation or snapshot.get("generation") != generation:
+        return None
+    lines: list[int] = []
+    records = parsed.get("source_records") or parsed.get("records") or []
+    for item in records:
+        line = item.get("source_line") if isinstance(item, dict) else None
+        if isinstance(line, int) and not isinstance(line, bool):
+            lines.append(line)
+    for item in parsed.get("operations") or []:
+        location = item.get("location") or {}
+        line = location.get("source_line") if isinstance(location, dict) else None
+        if isinstance(line, int) and not isinstance(line, bool):
+            lines.append(line)
+    return max(lines) if lines else None
+
+
 COUNTERS = (
     "input",
     "output",
@@ -1266,7 +1290,9 @@ class SemanticStore:
             "SELECT source_revision FROM semantic_analyses WHERE owner=? AND session=?",
             (owner, sid),
         ).fetchone()
-        target = active[0] if active else analysis[0] if analysis else None
+        # A saved analysis stays readable while a newer revision is parsed or
+        # analyzed. The job revision is only a fallback before the first result.
+        target = analysis[0] if analysis else active[0] if active else None
         try:
             return self._resolve_ir(db, owner, sid, target)
         except IRSnapshotUnavailable:
@@ -1593,39 +1619,71 @@ class SemanticStore:
             )
             progress = json.loads(progress_row[0]) if progress_row else {}
             resume = self.resume_state(db, dict(job) if job else None, progress, latest_revision)
-        # A pending append does not invalidate the saved analysis snapshot. Never
-        # estimate newer ledger records onto its old final operation, however.
+        # A pending append does not invalidate the saved analysis snapshot, but newer
+        # ledger records must never be estimated onto its last operation. Attribute
+        # only records the displayed snapshot can prove it contains, and count the
+        # rest separately so a retained result keeps its measured cost.
         historical_snapshot = record["source_revision"] != latest_revision
-        if source_pending or historical_snapshot:
-            contributions = []
-        else:
-            if contributions is None:
-                contributions = self.domain.source_contributions(
-                    owner, record["collector"], record["source"]
-                )
-            with self.domain.connect() as db:
-                head = db.execute(
-                    "SELECT s.source_revision,a.generation,a.received_bytes "
-                    "FROM semantic_sessions s "
-                    "LEFT JOIN source_archives a ON a.owner=s.owner AND a.collector=s.collector "
-                    "AND a.source=s.source WHERE s.owner=? AND s.id=?",
-                    (owner, sid),
-                ).fetchone()
-                if head is not None:
-                    resume = self.resume_state(
-                        db, dict(job) if job else None, progress, head["source_revision"]
-                    )
-            if head is None:
-                raise ValueError("Session changed during snapshot measurement")
-            latest_revision = head["source_revision"]
-            current_source_revision = (
-                archive_revision(head) if head["generation"] is not None else None
+        if contributions is None:
+            contributions = self.domain.source_contributions(
+                owner, record["collector"], record["source"]
             )
-            source_pending = current_source_revision != latest_revision
-            historical_snapshot = record["source_revision"] != latest_revision
-            if source_pending or historical_snapshot:
-                contributions = []
+        with self.domain.connect() as db:
+            head = db.execute(
+                "SELECT s.source_revision,a.generation,a.received_bytes "
+                "FROM semantic_sessions s "
+                "LEFT JOIN source_archives a ON a.owner=s.owner AND a.collector=s.collector "
+                "AND a.source=s.source WHERE s.owner=? AND s.id=?",
+                (owner, sid),
+            ).fetchone()
+            if head is not None:
+                resume = self.resume_state(
+                    db, dict(job) if job else None, progress, head["source_revision"]
+                )
+        if head is None:
+            raise ValueError("Session changed during snapshot measurement")
+        latest_revision = head["source_revision"]
+        current_source_revision = archive_revision(head) if head["generation"] is not None else None
+        source_pending = current_source_revision != latest_revision
+        historical_snapshot = record["source_revision"] != latest_revision
+        ledger_available = any(
+            item["record"]["collector"] == record["collector"]
+            and item["record"]["source"] == record["source"]
+            for item in contributions
+        )
+        snapshot_scope = "current"
+        excluded_records = 0
+        watermark = snapshot_line_watermark(parsed, head["generation"])
+        if record["source_revision"] != current_source_revision:
+            owned = [
+                item
+                for item in contributions
+                if item["record"]["collector"] == record["collector"]
+                and item["record"]["source"] == record["source"]
+            ]
+            if watermark is None:
+                snapshot_scope = "unavailable"
+                excluded_records = len(owned)
+                owned = []
+            else:
+                snapshot_scope = "bounded"
+                owned = [
+                    item
+                    for item in owned
+                    if 0 < int(item["record"].get("source_line") or 0) <= watermark
+                ]
+                excluded_records = sum(
+                    1
+                    for item in contributions
+                    if item["record"]["collector"] == record["collector"]
+                    and item["record"]["source"] == record["source"]
+                ) - len(owned)
+            contributions = owned
         attribution = self._measure_operations(owner, record, operations, contributions)
+        attribution["snapshot_scope"] = snapshot_scope
+        attribution["snapshot_line_watermark"] = watermark if snapshot_scope != "current" else None
+        attribution["excluded_records"] = excluded_records
+        attribution["ledger_available"] = attribution["ledger_available"] or ledger_available
         analysis_matches_parsed = (
             analysis is not None and analysis["source_revision"] == latest_revision
         )
@@ -1637,6 +1695,18 @@ class SemanticStore:
         )
         value = json.loads(analysis["body"]) if analysis_snapshot_available else {"tasks": []}
         status = "complete" if current_analysis else "stale" if analysis else "not_started"
+        reanalysis = None
+        if (
+            job
+            and job["status"] in {"queued", "running", "failed"}
+            and job["source_revision"] != record["source_revision"]
+        ):
+            # A job for another revision never replaces the result on screen.
+            reanalysis = {
+                "status": job["status"],
+                "source_revision": job["source_revision"],
+                "progress": progress,
+            }
         if (
             job
             and job["source_revision"] == record["source_revision"]
@@ -1723,18 +1793,23 @@ class SemanticStore:
             "source_records are retained for provenance,",
         )
         warnings = [note for note in parser_notes if not str(note).startswith(generic_notes)]
-        if source_pending:
-            warnings.append(
-                "源记录有更新，等待重新解析。当前内容为已解析快照，已有分析仅对应该快照；不会自动重新分析。"
-            )
-            warnings.append(
-                "最新账本无法证明属于当前快照，执行用量与任务开销保持未知；分析调用开销单独保留。"
-            )
         if historical_snapshot:
             warnings.append("当前展示已保存分析的历史快照，最新内容已另行解析；不会自动重新分析。")
+        elif source_pending:
             warnings.append(
-                "历史快照没有独立执行测量，执行用量与任务开销保持未知；分析调用开销单独保留。"
+                "源记录有追加，尚未重新解析。当前展示上次解析结果及其已有分析；不会自动重新分析。"
             )
+        if attribution["snapshot_scope"] == "bounded":
+            warnings.append(
+                "只在快照自身的记录水位以内归属账本记录；新增记录的用量不计入当前任务开销。"
+            )
+        elif attribution["snapshot_scope"] == "unavailable":
+            warnings.append(
+                "源内容已更换版本，历史快照无法证明与当前账本对应；"
+                "执行用量与任务开销保持未知，分析调用开销单独保留。"
+            )
+        if reanalysis is not None:
+            warnings.append("新版本的任务分析尚未完成；完成后会替换当前展示。")
         if analysis and not analysis_snapshot_available:
             warnings.append(
                 "当前展示快照与已有分析的输入不同，任务树暂不可用；不会用其他版本操作替代。"
@@ -1769,6 +1844,7 @@ class SemanticStore:
             "historical_snapshot": historical_snapshot,
             "current_parsed_source_revision": latest_revision,
             "source_pending": source_pending,
+            "reanalysis": reanalysis,
             "current_source_revision": current_source_revision,
             "analysis_source_revision": analysis["source_revision"] if analysis else None,
             "message": job["message"] if job and status == "failed" else "",

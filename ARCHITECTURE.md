@@ -75,7 +75,13 @@ gate during warm deployment. Model output is cached per source/prompt/model
 revision so a profiler failure can be retried without charging the model again.
 The current parser rebuilds a changed complete snapshot; it does not claim an
 incremental parse algorithm. Large histories therefore require bounded delivery
-and measured capacity planning.
+and measured capacity planning. A saved analysis stays on screen while a newer
+revision is parsed or analyzed: the displayed snapshot is the analysis revision,
+not the newest job revision. Its task tree and cost remain readable, and only
+ledger records at or below that snapshot's own source-line watermark are
+attributed. Records beyond the watermark, or any record after a generation
+change, stay excluded and counted instead of clearing retained measurements.
+Reanalysis remains an explicit paid action and never hides the previous result.
 
 The domain memoizes at most two compact analytical snapshots in a fixed LRU cache,
 keyed by owner (including the global view), filters and committed ledger audit revision.
