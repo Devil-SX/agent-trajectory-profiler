@@ -425,3 +425,23 @@ def test_weighted_draw_is_probabilistic_and_not_always_longest():
     assert 850 < winners.count("long") < 950
     assert winners.count("short") > 0
     assert len({r["session_id"] for r in weighted_sample(candidates, 10, "seed")}) == 2
+
+
+def test_excluded_sources_never_load_operation_bodies_and_revision_cache_is_bounded(tmp_path):
+    store, plans, ids, _ = fixture(tmp_path, 2)
+    with store.domain.connect() as db:
+        row = db.execute(
+            "SELECT body FROM semantic_session_metadata WHERE session=?", (ids[0],)
+        ).fetchone()
+        db.execute(
+            "UPDATE semantic_session_metadata SET body=? WHERE session=?",
+            (json.dumps({**json.loads(row[0]), "cwd": "/other"}), ids[0]),
+        )
+        config = plans._read(db, "owner", "nightly")
+        queries = []
+        db.set_trace_callback(queries.append)
+        first = plans.candidates(db, "owner", config, NOW)
+        second = plans.candidates(db, "owner", config, NOW)
+    assert first == second
+    body_queries = [q for q in queries if "json_array_length" in q]
+    assert len(body_queries) == 1 and ids[1] in body_queries[0] and ids[0] not in body_queries[0]
