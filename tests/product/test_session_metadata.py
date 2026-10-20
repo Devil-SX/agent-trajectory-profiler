@@ -72,10 +72,10 @@ def test_filters_use_real_analysis_and_original_dates_before_pagination(tmp_path
     assert result["sessions"][0]["display_title"] == "检查 CPM 实验"
     assert result["sessions"][0]["summary"] is None
     result = store.sessions("owner", cwd="/home/sdu/embodied", limit=1)
-    assert result["total"] == 2 and result["next_cursor"] == "1"
+    assert result["total"] == 2 and result["next_cursor"].startswith("v1.")
     assert result["sessions"][0]["id"] == c and result["sessions"][0]["parent_session_id"] == a
     assert (
-        store.sessions("owner", cwd="/home/sdu/embodied", limit=1, cursor="1")["sessions"][0]["id"]
+        store.sessions("owner", cwd="/home/sdu/embodied", limit=1, cursor=result["next_cursor"])["sessions"][0]["id"]
         == a
     )
     assert len(store.sessions("owner", until="2026-10-06")["sessions"]) == 1
@@ -90,6 +90,9 @@ def test_metadata_migration_uses_ir_and_preserves_analysis_status(tmp_path):
     sid, _ = add(1, "/home/sdu/embodied", "原始提示，不生成摘要", "2026-10-02")
     with store.domain.connect() as db:
         db.execute("DELETE FROM semantic_session_metadata")
+    # GET exposes a safe metadata gap until the existing coordinator migrates it.
+    assert store.sessions("owner")["sessions"][0]["first_user_message"] is None
+    assert store.maintain_metadata() == 1
     result = store.sessions("owner")
     assert result["sessions"][0]["id"] == sid
     assert result["sessions"][0]["has_analysis"] is False
@@ -164,8 +167,8 @@ def test_parser_refresh_reuses_archive_but_rejects_referenced_membership_change(
         store.request_parse("owner", sid, AnalysisRequest(mutation_id=uuid.uuid4().hex))
 
 
-def test_four_http_metadata_backfills_with_wal_writer(tmp_path, monkeypatch):
-    """Concurrent first reads migrate once without read-to-write WAL upgrades."""
+def test_http_reads_coexist_with_coordinator_backfill_and_wal_writer(tmp_path, monkeypatch):
+    """HTTP reads stay read-only while bounded coordinator migration shares WAL."""
     import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
@@ -215,13 +218,19 @@ def test_four_http_metadata_backfills_with_wal_writer(tmp_path, monkeypatch):
         finally:
             client.close()
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    def migrate():
+        while store.maintain_metadata():
+            pass
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
         worker = pool.submit(writer)
+        migration = pool.submit(migrate)
         try:
             for _ in range(3):
                 readers = [pool.submit(read_wave) for _ in range(4)]
                 for reader in readers:
                     reader.result(timeout=30)
+            migration.result(timeout=30)
         finally:
             stop.set()
             worker.result(timeout=20)

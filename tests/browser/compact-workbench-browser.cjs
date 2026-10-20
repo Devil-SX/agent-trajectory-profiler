@@ -77,7 +77,7 @@ function selectedSessions(params) {
   rows.sort((a, b) => String(sort === 'started_desc' ? b.started_at : b.last_activity_at)
     .localeCompare(String(sort === 'started_desc' ? a.started_at : a.last_activity_at)));
   const offset = Number(params.get('cursor') || 0);
-  return {sessions: rows.slice(offset, offset + 1), next_cursor: offset + 1 < rows.length ? String(offset + 1) : null,
+  return {metrics_included:false,sessions: rows.slice(offset, offset + 1).map(({metrics,...metadata})=>metadata), next_cursor: offset + 1 < rows.length ? String(offset + 1) : null,
     truncated: offset + 1 < rows.length,
     directories: ['/research/embodied', '/research/embodied/ai-cpm', '/work/BatCave'],
     projects: [{id: 'embodied', name: '具身智能'}, {id: 'batcave', name: 'BatCave'}]};

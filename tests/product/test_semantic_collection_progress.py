@@ -110,7 +110,8 @@ def test_fully_priced_usage_does_not_claim_complete_collection(tmp_path: Path) -
     assert detail["tasks"][0]["metrics"]["collection_status"] == "partial"
     listed = store.sessions("owner")["sessions"][0]
     assert listed["collection"]["status"] == "partial"
-    assert listed["metrics"]["recorded_tokens"] == 15
+    assert "metrics" not in listed
+    assert store.sessions("owner")["metrics_included"] is False
     # Catching up changes collection status, without changing recorded usage or price.
     domain.ingest(
         "machine",

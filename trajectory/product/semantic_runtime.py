@@ -24,6 +24,8 @@ class AnalysisRuntime:
 
         self.schedules = AnalysisSchedules(store)
         self.schedule_checked_at = 0.0
+
+        self._metadata_check_after = 0.0
         self.child: subprocess.Popen[str] | None = None
         self.lock = threading.Lock()
         self.parser_lock = threading.Lock()
@@ -127,6 +129,13 @@ class AnalysisRuntime:
                     break
                 self.futures.add(self.pool.submit(self._process_job, job))
                 dispatched = True
+            if (
+                not dispatched
+                and not self.futures
+                and time.monotonic() >= self._metadata_check_after
+            ):
+                self._metadata_check_after = time.monotonic() + 5
+                return bool(self.store.maintain_metadata())
             return dispatched
 
     def process_next(self) -> bool:

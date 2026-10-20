@@ -663,16 +663,25 @@ def sync_once(config: dict, max_chunks: int = 100, sources=(), sessions=()) -> d
 
     repair = config.get("request_repair")
     if pending_requests and repair:
-        from trajectory_request_repair import run
+        try:
+            from trajectory_request_repair import run
 
-        result["request_measurements"] = run(
-            config,
-            repair["projector"],
-            repair.get("node", "node"),
-            sources=[row[0] for row in pending_requests[:5]],
-            max_sources=5,
-            apply=True,
-        )
+            result["request_measurements"] = run(
+                config,
+                repair["projector"],
+                repair.get("node", "node"),
+                sources=[row[0] for row in pending_requests[:5]],
+                max_sources=5,
+                apply=True,
+            )
+        except Exception as error:
+            # Raw delivery has already committed. Its receipt remains valid;
+            # the durable repair queue is retried by the next invocation.
+            result["request_measurements"] = {
+                "status": "deferred",
+                "error": type(error).__name__,
+                "retryable": True,
+            }
     return result
 
 

@@ -146,7 +146,6 @@ def test_legacy_codex_missing_requests_is_unknown_in_all_session_views(tmp_path:
     assert any("请求交互测量" in warning for warning in detail["coverage"]["warnings"])
     for metrics in [
         detail["session"]["metrics"],
-        listing["metrics"],
         *[op["metrics"] for op in detail["operations"]],
         *[task["metrics"] for task in detail["tasks"]],
     ]:
@@ -215,7 +214,7 @@ def test_pi_unknown_origins_preserve_known_subtotal_without_claiming_human_zero(
     coverage = detail["coverage"]["interaction_availability"]
     assert coverage == listing["interaction_availability"]
     assert coverage["available"] is True and coverage["request_records"] == requests
-    for metrics in [detail["session"]["metrics"], listing["metrics"]]:
+    for metrics in [detail["session"]["metrics"]]:
         assert metrics["human_interactions"] is None
         assert metrics["human_input_chars"] is None
         assert metrics["unknown_origin_interactions"] == requests

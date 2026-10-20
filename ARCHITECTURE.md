@@ -174,7 +174,8 @@ both worker metadata and prompt operations: known injected instruction/context r
 never supply display names. Without an effective prompt, names use directory and date;
 the first-message field remains null. Existing abstracts are reused without a model call.
 The v2 metadata index replaces older versions in place, at most 32 IR records or a
-16 Mi-character read budget per listing. Each record acquires `BEGIN IMMEDIATE` before
+16 Mi-character read budget per coordinator pass. GET never starts this migration;
+the existing leased coordinator checks for bounded work when idle. Each record acquires `BEGIN IMMEDIATE` before
 reading and rechecks its index version, so a concurrent parser's newer metadata wins.
 Old indexes awaiting migration receive the same conservative display projection on
 session and batch reads; this path reads no IR and creates no second stored index.
@@ -246,3 +247,7 @@ and resolves only an allowed analysis operation. Grants cannot authorize ledger,
 prices, collectors, backup or arbitrary account administration. Revoking a grant
 rejects the next delegated request. Saving a daily plan persists the authorized
 business intent; normal disabling/archival controls its future executions.
+
+Session-directory and checkpoint reads are independent of the full usage snapshot.
+See [read-performance.md](docs/read-performance.md) for their roles, account-scoped
+snapshot cursors, retained authoritative metric readers and timing boundaries.

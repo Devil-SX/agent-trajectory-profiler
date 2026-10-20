@@ -445,3 +445,35 @@ def test_excluded_sources_never_load_operation_bodies_and_revision_cache_is_boun
     assert first == second
     body_queries = [q for q in queries if "json_array_length" in q]
     assert len(body_queries) == 1 and ids[1] in body_queries[0] and ids[0] not in body_queries[0]
+
+
+def test_daily_dispatch_and_idle_metadata_maintenance_share_one_runtime_lease(
+    tmp_path, monkeypatch
+):
+    from trajectory.product.semantic_runtime import AnalysisRuntime
+
+    store, plans, ids, _ = fixture(tmp_path, 4)
+    monkeypatch.setattr("trajectory.product.schedules.datetime", Clock)
+    worker = AnalysisRuntime(store)
+    competitor = AnalysisRuntime(store)
+    maintenance = []
+    monkeypatch.setattr(store, "maintain_metadata", lambda: maintenance.append("idle") or 1)
+
+    def complete(job):
+        store.finish_job(job)
+        return True
+
+    monkeypatch.setattr(worker, "_process_job", complete)
+    try:
+        assert worker.tick()
+        assert not competitor.tick()
+        assert maintenance == []
+        for future in worker.futures:
+            assert future.result(timeout=3)
+        assert worker.tick()
+        assert maintenance == ["idle"]
+        assert plans.catalog("owner")["schedules"][0]["runs"][0]["counts"] == {"complete": 3}
+        assert len(store.batches("owner")["batches"]) == 1
+    finally:
+        worker.close()
+        competitor.close()

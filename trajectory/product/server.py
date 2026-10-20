@@ -38,7 +38,7 @@ from trajectory.product.schedules import (
     ScheduleRun,
     ScheduleWrite,
 )
-from trajectory.product.semantic import AnalysisResumeError, SemanticStore
+from trajectory.product.semantic import AnalysisResumeError, SemanticStore, SessionCursorExpired
 from trajectory.product.semantic_runtime import AnalysisRuntime
 from trajectory.product.stage_studies import StageStudies, StageStudyImport
 
@@ -141,6 +141,15 @@ OPERATIONS: list[dict[str, Any]] = [
         "No automatic failed-job retries; uncertain calls require existing Jindu receipt review.",
     },
     {
+        "id": "source_coverage",
+        "method": "GET",
+        "path": "/api/coverage",
+        "scope": "read",
+        "effect": "Read current account-owned source checkpoints and missing timestamps. "
+        "Independent of usage aggregation, pricing and date/project statistics. "
+        "Usage deduplication remains part of the overview ledger statistics.",
+    },
+    {
         "id": "request_measurements_repair",
         "method": "POST",
         "path": "/api/request-measurements/repair",
@@ -237,7 +246,9 @@ OPERATIONS: list[dict[str, Any]] = [
         "method": "GET",
         "path": "/api/sessions",
         "scope": "read",
-        "effect": "Read normalized sessions and task-analysis availability",
+        "effect": "Read a paginated account-owned session directory and analysis availability. "
+        "Filters and facets use compact source/metadata indexes. Resource metrics are not "
+        "included; read the selected session analysis for authoritative measurements.",
     },
     {
         "id": "task_query",
@@ -722,6 +733,8 @@ def create_app(
                         request.query_params.get("collector", ""),
                         request.query_params.get("source", ""),
                     )
+                if identifier == "source_coverage":
+                    return await asyncio.to_thread(domain.coverage, principal.account)
                 if identifier == "sessions":
                     return await asyncio.to_thread(
                         semantic.sessions,
@@ -962,6 +975,10 @@ def create_app(
                 raise HTTPException(422, "Invalid protocol payload") from error
             except PermissionError as error:
                 raise HTTPException(403, str(error)) from error
+            except SessionCursorExpired as error:
+                raise HTTPException(
+                    409, {"code": "session_cursor_expired", "message": str(error)}
+                ) from error
             except AnalysisResumeError as error:
                 raise HTTPException(409, {"code": error.code, "message": str(error)}) from error
             except ValueError as error:
