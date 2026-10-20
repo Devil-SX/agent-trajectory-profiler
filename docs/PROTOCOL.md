@@ -115,9 +115,10 @@ ledger, without copying them into a new format or manufacturing missing text.
 Content-only sessions show unknown usage; event-only sessions show missing content.
 
 The automatic timer can operate while Sparkstead's foreground stays open. It and
-manual calls invoke the same CLI/config. Future Sparkstead-triggered content sync
-must invoke this CLI rather than keep a second checkpoint or uploader. The running
-Sparkstead measured-event worker remains the sole producer of measured batches.
+manual calls invoke the same CLI/config. Sparkstead-triggered content sync
+invokes this CLI rather than keeping a second checkpoint or uploader. The running
+Sparkstead worker remains the sole checkpoint/usage producer. Explicit request
+measurement migration uses the same projector and domain writer as described below.
 
 ## Segmentation and evidence
 
@@ -162,3 +163,49 @@ Parser refresh reuses the durable archive and never calls a model. It rejects
 incomplete archives or sessions with active analysis. A changed normalized
 operation set makes prior task membership stale instead of attaching old IDs to
 new evidence. Source bytes and upload offsets remain unchanged.
+
+
+## Request measurement migration
+
+`request_measurements_repair` in authenticated Help migrates request origin and
+non-whitespace Unicode character counts against the SHA-256 of an exact complete
+archived prefix. The caller must be the registered native machine account bound
+to that collector. The expected archive and measured-ledger revisions fence races.
+The domain replaces only covered request rows, retaining quarantined lines,
+existing task/project/timing attribution and all usage/tool rows. It leaves both
+collector and raw-upload checkpoints unchanged. Receipts record machine/key,
+projector hash, byte evidence, coverage and accepted counts. A retry uses the same
+mutation ID; the write and durable receipt commit atomically.
+
+`tools/trajectory_request_repair.py` invokes
+`tools/trajectory_request_projection.mjs`, which imports the current bundled
+Sparkstead `trajectory/projection.ts`. It does not define another transcript
+normalizer. Deploy the projector artifact with its source revision and SHA-256;
+use the same collector identity and source membership read-only from the current
+collector registry. A dry run is the default; `--apply` enables authenticated
+request repair. `--source` and `--session` select a scope. No model calls or
+Sparkstead foreground restart are required.
+
+The source-sync private config can include `request_repair` with `projector` and
+`node` paths. After an upload commits and releases the shared raw-uploader lock,
+the same repair client reacquires that lock and repairs only queued sources.
+The raw durable receipt and repair enqueue commit together. Deferred repairs
+remain in the same private sync database across process restarts; subsequent idle
+sync calls retry them, with a bounded dispatch and deferred sources rotated behind
+new work. A durable repair receipt clears only the matching source generation and
+covered offset, without advancing raw or collector checkpoints. Manual calls and
+Sparkstead-triggered sync use this identical path. A source
+prefix ending inside a record is deferred until more bytes arrive. Oversized or
+invalid records remain quarantined; their missing origin/text is never invented.
+When multiple registered source files share a native session UUID, legacy human
+requests without explicit provider interaction identity are also quarantined.
+Only explicit retained message identities support cross-copy human-input counting;
+text or timing similarity is never used to invent an identity.
+
+Request measurement version 3 is monotonic within a stable event identity. A
+legacy batch append preserves existing repaired origin, character count and
+interaction identity. Conflicting identities and legacy destructive replacement
+are rejected instead of silently downgrading evidence. A current version 3 source
+replacement remains supported and uses the same event IDs, so it does not add a
+second copy of interactions. Old immutable analysis/study snapshots remain
+unchanged; revised studies require a new revision and measured source evidence.

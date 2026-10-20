@@ -140,6 +140,9 @@ class SyncState:
               prefix TEXT, offset INTEGER);
             CREATE TABLE IF NOT EXISTS outbox(
               id INTEGER PRIMARY KEY, body TEXT NOT NULL, bytes INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS request_repairs(
+              source TEXT PRIMARY KEY, generation TEXT NOT NULL,
+              end INTEGER NOT NULL, attempted INTEGER NOT NULL DEFAULT 0);
         """)
 
     def bind(self, collector: str, url: str):
@@ -260,7 +263,7 @@ class SyncState:
     def next(self):
         return self.db.execute("SELECT id,body FROM outbox ORDER BY id LIMIT 1").fetchone()
 
-    def acknowledge(self, row, receipt: dict):
+    def acknowledge(self, row, receipt: dict, queue_requests: bool = False):
         body = json.loads(row[1])
         if (
             receipt.get("durable") is not True
@@ -271,6 +274,29 @@ class SyncState:
             raise ValueError("Invalid durable source receipt")
         with self.db:
             self.db.execute("DELETE FROM outbox WHERE id=?", (row[0],))
+            if queue_requests and body["ecosystem"] in ("codex", "claude_code"):
+                self.db.execute(
+                    "INSERT OR REPLACE INTO request_repairs(source,generation,end) VALUES(?,?,?)",
+                    (body["source"], body["generation"], body["end"]),
+                )
+
+    def pending_request_repairs(self):
+        return self.db.execute(
+            "SELECT source,generation,end FROM request_repairs ORDER BY attempted,rowid"
+        ).fetchall()
+
+    def defer_request_repair(self, source):
+        with self.db:
+            self.db.execute(
+                "UPDATE request_repairs SET attempted=? WHERE source=?", (time.time_ns(), source)
+            )
+
+    def finish_request_repair(self, source, generation, end):
+        with self.db:
+            self.db.execute(
+                "DELETE FROM request_repairs WHERE source=? AND generation=? AND end<=?",
+                (source, generation, end),
+            )
 
 
 def legacy_identity(path: Path) -> tuple[str, set[str]]:
@@ -611,10 +637,12 @@ def sync_once(config: dict, max_chunks: int = 100, sources=(), sessions=()) -> d
                     if len(raw) > 16384:
                         raise ValueError("Oversized receipt")
                     receipt = json.loads(raw)
-                state.acknowledge(row, receipt)
+                state.acknowledge(row, receipt, queue_requests=bool(config.get("request_repair")))
                 sent += 1
                 uploaded_bytes += receipt["accepted_bytes"]
-            return {
+            pending_requests = state.pending_request_repairs()
+            result = {
+                "request_measurements_queued_at_dispatch": len(pending_requests),
                 "chunks": sent,
                 "uploaded_bytes": uploaded_bytes,
                 "pending": state.next() is not None,
@@ -632,6 +660,20 @@ def sync_once(config: dict, max_chunks: int = 100, sources=(), sessions=()) -> d
             }
         finally:
             state.close()
+
+    repair = config.get("request_repair")
+    if pending_requests and repair:
+        from trajectory_request_repair import run
+
+        result["request_measurements"] = run(
+            config,
+            repair["projector"],
+            repair.get("node", "node"),
+            sources=[row[0] for row in pending_requests[:5]],
+            max_sources=5,
+            apply=True,
+        )
+    return result
 
 
 def describe(config: dict, sources=(), sessions=()) -> dict:

@@ -4,6 +4,7 @@ import base64
 import importlib.util
 import io
 import json
+import sys
 import tempfile
 import threading
 import unittest
@@ -298,6 +299,77 @@ class SourceSyncTests(unittest.TestCase):
                 return sync.sync_once(config, limit), posts
             with patch.object(sync.SyncState, "prepare", new=prepare):
                 return sync.sync_once(config, limit), posts
+
+    def test_request_repair_runs_after_raw_writer_releases_shared_lock(self):
+        import fcntl
+
+        calls = []
+        config = {
+            "url": "https://test.invalid/source-chunks",
+            "state": str(self.root / "state.sqlite"),
+            "credential": "unused",
+            "request_repair": {"projector": "sealed-projector", "node": "node"},
+        }
+
+        def send(request, timeout):
+            body = json.loads(request.data)
+            return io.BytesIO(
+                json.dumps(
+                    {
+                        "durable": True,
+                        "mutation_id": body["mutation_id"],
+                        "accepted_bytes": body["end"] - body["start"],
+                        "next_offset": body["end"],
+                    }
+                ).encode()
+            )
+
+        def repair(*args, **kwargs):
+            with (self.root / "state.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            calls.append(kwargs)
+            return {"sources": []}
+
+        with (
+            patch.object(sync, "validate_manifest", return_value=("collector", [self.spec])),
+            patch.object(sync, "credentials", return_value="fixture"),
+            patch.object(sync, "guard_new_sources"),
+            patch.object(sync, "http_opener", return_value=SimpleNamespace(open=send)),
+            patch.dict(sys.modules, {"trajectory_request_repair": SimpleNamespace(run=repair)}),
+        ):
+            result = sync.sync_once(config, 1)
+            retry = sync.sync_once(config, 1)
+        self.assertEqual(result["chunks"], 1)
+        self.assertEqual(retry["chunks"], 0)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(self.state.pending_request_repairs()), 1)
+        self.assertEqual(
+            calls[0]["sources"], [sync.source_id("collector", self.spec["legacy_path"])]
+        )
+        self.assertTrue(calls[0]["apply"])
+
+    def test_request_repair_queue_survives_restart_and_acknowledges_exact_generation(self):
+        self.state.prepare("collector", self.spec)
+        row = self.state.next()
+        body = json.loads(row[1])
+        receipt = {
+            "durable": True,
+            "mutation_id": body["mutation_id"],
+            "accepted_bytes": body["end"] - body["start"],
+            "next_offset": body["end"],
+        }
+        self.state.acknowledge(row, receipt, queue_requests=True)
+        before = self.state.db.execute("SELECT * FROM sources").fetchall()
+        self.state.close()
+        self.state = sync.SyncState(self.root / "state.sqlite")
+        self.assertEqual(len(self.state.pending_request_repairs()), 1)
+        self.state.finish_request_repair(body["source"], "wrong-generation", body["end"])
+        self.assertEqual(len(self.state.pending_request_repairs()), 1)
+        self.state.defer_request_repair(body["source"])
+        self.state.finish_request_repair(body["source"], body["generation"], body["end"])
+        self.assertEqual(self.state.pending_request_repairs(), [])
+        self.assertEqual(before, self.state.db.execute("SELECT * FROM sources").fetchall())
 
     def test_racing_source_defers_once_while_pending_and_stable_sources_progress(self):
         self.state.prepare("collector", self.spec)
