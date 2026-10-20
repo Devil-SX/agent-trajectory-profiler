@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from trajectory.product.server import Principal, create_app
 
 
-@pytest.mark.parametrize("name", ["research.js", "research.css"])
+@pytest.mark.parametrize("name", ["research.js", "research.css", "schedules.js", "schedules.css"])
 def test_asset_etag_is_content_bound_and_revocation_precedes_304(tmp_path: Path, name: str):
     active = {"reader": True}
 

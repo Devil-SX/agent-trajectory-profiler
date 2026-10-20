@@ -979,10 +979,16 @@ def create_app(
         )
 
     web_root = Path(__file__).parent
-    research_assets = {
-        name: (web_root / name).read_bytes() for name in ("research.js", "research.css")
+    web_assets = {
+        name: (web_root / name).read_bytes()
+        for name in ("research.js", "research.css", "schedules.js", "schedules.css")
     }
-    research_revision = hashlib.sha256(b"\0".join(research_assets.values())).hexdigest()[:16]
+    research_revision = hashlib.sha256(
+        web_assets["research.js"] + b"\0" + web_assets["research.css"]
+    ).hexdigest()[:16]
+    schedule_revision = hashlib.sha256(
+        web_assets["schedules.js"] + b"\0" + web_assets["schedules.css"]
+    ).hexdigest()[:16]
 
     @app.get("/trajectory/", response_class=HTMLResponse)
     def dashboard(request: Request) -> str:
@@ -991,16 +997,17 @@ def create_app(
             (web_root / "dashboard.html")
             .read_text()
             .replace("__TRAJECTORY_RESEARCH_REVISION__", research_revision)
+            .replace("__TRAJECTORY_SCHEDULE_REVISION__", schedule_revision)
         )
 
     @app.get("/trajectory/schedules.js")
     @app.get("/trajectory/schedules.css")
     @app.get("/trajectory/research.js")
     @app.get("/trajectory/research.css")
-    def research_asset(request: Request) -> Response:
+    def web_asset(request: Request) -> Response:
         authorizer(request, "read")
         filename = request.url.path.rsplit("/", 1)[-1]
-        body = research_assets[filename]
+        body = web_assets[filename]
         etag = '"' + hashlib.sha256(body).hexdigest() + '"'
         headers = {"Cache-Control": "private, no-cache", "ETag": etag, "Vary": "Authorization"}
         matches = request.headers.get("If-None-Match", "").split(",")
