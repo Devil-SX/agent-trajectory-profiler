@@ -15,6 +15,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Populate task-view project choices from session facets without eagerly loading overview statistics.
 
+## [4.0.1] - 2026-10-20
+
+### Fixed
+
+- Keep the saved task tree and its measured cost visible while a newer source revision is parsed or analyzed, label it as an old snapshot, and offer an explicit reanalysis action instead of a read-only refresh.
+- Attribute ledger records only up to the displayed snapshot's own source-line watermark inside one generation, so a retained snapshot keeps its measured cost while newer records stay excluded and counted.
+
+Code stats vs v4.0.0: total 21605 text lines (baseline 21396), +263 (-54) = +209, 0.98% text-line change.
+
 ## [4.0.0] - 2026-10-20
 
 ### Changed

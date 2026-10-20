@@ -139,8 +139,14 @@ ledger, paid counters and prices remain explicit gaps.
 
 Opaque source and analysis revisions protect asynchronous results and human edits.
 Evidence lookup verifies the active source revision before reading bounded raw
-bytes. Task edits mark an older profile artifact stale; the current browser derives
-task metrics from current membership rather than treating that artifact as current.
+bytes. A saved analysis stays readable after newer source bytes arrive: the
+displayed snapshot is the analysis revision, and only ledger records at or below
+that snapshot's own source-line watermark are attributed inside one generation.
+Newer records stay excluded and counted, a changed generation keeps execution
+metrics unknown, and reanalysis is an explicit paid request that never hides the
+previous result. Task edits mark an older profile artifact stale; the current
+browser derives task metrics from current membership rather than treating that
+artifact as current.
 
 ## Batch analysis and normalized snapshot refresh
 

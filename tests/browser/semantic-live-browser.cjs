@@ -149,9 +149,12 @@ const trace=(event,detail={})=>{stage=event;fs.appendFileSync(output+'/semantic-
       assert.equal(detail.analysis_source_revision,detail.source_revision);assert.notEqual(detail.current_source_revision,detail.source_revision);
       assert.equal(await page.locator('#analyze-session').count(),0);
       assert((await page.locator('#analysis-content').textContent()).includes('等待重新解析'));
-      assert.equal(detail.session.metrics.input,null);assert(detail.tasks.every(task=>task.metrics.input===null));
+      const snapshotScope=detail.coverage.attribution.snapshot_scope;
+      assert(['bounded','unavailable'].includes(snapshotScope));
+      if(snapshotScope==='unavailable'){assert.equal(detail.session.metrics.input,null);assert(detail.tasks.every(task=>task.metrics.input===null));}
+      else{assert.equal(detail.coverage.attribution.excluded_records>0,true);}
       if(process.env.EXPECTED_ANALYSIS_COST_USD)assert(Math.abs((detail.analysis_cost?.estimated_usd??detail.analysis_cost?.known_subtotal_usd)-Number(process.env.EXPECTED_ANALYSIS_COST_USD))<1e-10);
-      snapshotCheck={checked:true,source_pending:detail.source_pending,analysis_current:detail.analysis_current,analysis_matches_parsed:detail.analysis_matches_parsed,source_revision:detail.source_revision,current_source_revision:detail.current_source_revision,analysis_source_revision:detail.analysis_source_revision,execution_metrics_unknown:true,paid_analysis_button_absent:true};
+      snapshotCheck={checked:true,source_pending:detail.source_pending,analysis_current:detail.analysis_current,analysis_matches_parsed:detail.analysis_matches_parsed,source_revision:detail.source_revision,current_source_revision:detail.current_source_revision,analysis_source_revision:detail.analysis_source_revision,snapshot_scope:detail.coverage.attribution.snapshot_scope,excluded_records:detail.coverage.attribution.excluded_records,paid_analysis_button_absent:true};
     }
     const refresh=page.getByRole('button',{name:'刷新分析',exact:true});
     if(expectPending)assert.equal(await refresh.count(),0);else{assert.equal(await refresh.count(),1);await refresh.click();}
