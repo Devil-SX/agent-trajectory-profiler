@@ -227,7 +227,15 @@ class SemanticStore:
                 "WHERE owner=? AND collector=? AND source=?",
                 (owner, collector, source),
             ).fetchone()
-        return dict(row) if row else {"generation": None, "next_offset": 0, "source_bytes": 0}
+            ledger = db.execute(
+                "SELECT revision,parser FROM sources WHERE owner=? AND collector=? AND source=?",
+                (owner, collector, source),
+            ).fetchone()
+        return {
+            **(dict(row) if row else {"generation": None, "next_offset": 0, "source_bytes": 0}),
+            "ledger_revision": ledger["revision"] if ledger else None,
+            "ledger_parser": ledger["parser"] if ledger else None,
+        }
 
     def ingest_source(self, actor: str, value: SourceChunk) -> dict[str, Any]:
         try:

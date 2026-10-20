@@ -25,6 +25,7 @@ from trajectory.product.contracts import (
     Correction,
     LostWindowRecomputeRequest,
     Price,
+    RequestMeasurementRepair,
     SourceChunk,
     TaskEdit,
 )
@@ -51,6 +52,18 @@ class CollectorBinding(BaseModel):
 
 
 OPERATIONS: list[dict[str, Any]] = [
+    {
+        "id": "request_measurements_repair",
+        "method": "POST",
+        "path": "/api/request-measurements/repair",
+        "scope": "upload",
+        "input": RequestMeasurementRepair,
+        "effect": "Idempotently migrate request origin/character measurements against exact "
+        "durable source bytes using the current collector projector. Requires the bound native "
+        "machine account and expected ledger/source revisions. Replaces only covered request "
+        "events; preserves usage, collector checkpoints, paid analyses and study snapshots. "
+        "Read source_progress first; source SHA-256 covers complete_bytes ending in newline.",
+    },
     {
         "id": "stage_study_import",
         "method": "POST",
@@ -656,6 +669,16 @@ def create_app(
                 if identifier == "backup":
                     return await asyncio.to_thread(
                         domain.online_backup, principal.account, value.mutation_id
+                    )
+                if identifier == "request_measurements_repair":
+                    if not principal.machine_client:
+                        raise HTTPException(403, "Request repair requires a native machine account")
+                    return await asyncio.to_thread(
+                        domain.repair_requests,
+                        principal.account,
+                        value,
+                        principal.key_id,
+                        principal.machine_client,
                     )
                 if identifier == "source_append":
                     if not principal.machine_client:

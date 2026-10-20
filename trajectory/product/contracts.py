@@ -183,3 +183,35 @@ class Price(BaseModel):
         if value.tzinfo is None:
             raise ValueError("Timezone is required")
         return value
+
+
+class RequestMeasurementRepair(BaseModel):
+    """Replay request measurements against a byte-pinned archived source.
+
+    This mutation never advances the collector checkpoint or replaces usage.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    mutation_id: str = Field(min_length=16, max_length=128)
+    collector: str = Field(min_length=1, max_length=100)
+    source: str = Field(pattern=r"^[a-f0-9]{64}$")
+    expected_ledger_revision: int = Field(ge=1)
+    source_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    complete_bytes: int = Field(ge=1)
+    parser_version: Literal["sparkstead-trajectory/3"]
+    projector_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    records: list[Record] = Field(max_length=5000)
+    quarantined_source_lines: list[int] = Field(default_factory=list, max_length=10000)
+
+    @model_validator(mode="after")
+    def requests_only(self) -> "RequestMeasurementRepair":
+        if any(type(line) is not int or line < 1 for line in self.quarantined_source_lines):
+            raise ValueError("Invalid quarantined source line")
+        if any(record.source_line in self.quarantined_source_lines for record in self.records):
+            raise ValueError("Measured request cannot also be quarantined")
+        if any(record.kind != "request" for record in self.records):
+            raise ValueError("Request repair cannot modify model usage or tool records")
+        if len({record.id for record in self.records}) != len(self.records):
+            raise ValueError("Repeated request record identity")
+        return self

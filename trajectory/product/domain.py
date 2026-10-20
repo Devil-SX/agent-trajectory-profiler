@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
-from trajectory.product.contracts import Batch, Correction, Price
+from trajectory.product.contracts import Batch, Correction, Price, RequestMeasurementRepair
 from trajectory.product.costing import quote_record, select_price, usage_record
 from trajectory.product.ledger_scan import LedgerScan, UniqueUsages
 from trajectory.product.read_cache import RevisionCache
@@ -179,12 +179,58 @@ class Domain:
                 raise ValueError("Read position cannot regress without source replacement")
             if batch.read_bytes > batch.source_bytes:
                 raise ValueError("Read position exceeds source size")
+            if batch.replace and batch.parser_version != "sparkstead-trajectory/3":
+                repaired = db.execute(
+                    "SELECT 1 FROM events WHERE owner=? AND collector=? AND source=? "
+                    "AND json_extract(body,'$.request_measurement.version')=3 LIMIT 1",
+                    (owner, batch.collector, batch.source),
+                ).fetchone()
+                if repaired:
+                    raise ValueError(
+                        "Legacy replacement would downgrade repaired requests; upgrade collector"
+                    )
             if batch.replace:
                 db.execute(
                     "DELETE FROM events WHERE owner=? AND collector=? AND source=?",
                     (owner, batch.collector, batch.source),
                 )
             for record in batch.records:
+                encoded = record.model_dump(mode="json")
+                if record.kind == "request":
+                    if batch.parser_version == "sparkstead-trajectory/3":
+                        encoded["request_measurement"] = {
+                            "version": 3,
+                            "parser": batch.parser_version,
+                        }
+                    else:
+                        previous = db.execute(
+                            "SELECT body FROM events WHERE owner=? AND collector=? AND source=? "
+                            "AND id=?",
+                            (owner, batch.collector, batch.source, record.id),
+                        ).fetchone()
+                        prior_request = json.loads(previous[0]) if previous else {}
+                        if prior_request.get("request_measurement", {}).get("version") == 3:
+                            identity_fields = (
+                                "kind",
+                                "session",
+                                "ecosystem",
+                                "source_line",
+                                "timestamp",
+                            )
+                            if any(
+                                encoded.get(key) != prior_request.get(key)
+                                for key in identity_fields
+                            ):
+                                raise ValueError(
+                                    "Legacy request conflicts with repaired source evidence"
+                                )
+                            for field in (
+                                "input_origin",
+                                "input_chars",
+                                "interaction_id",
+                                "request_measurement",
+                            ):
+                                encoded[field] = prior_request.get(field)
                 db.execute(
                     "INSERT OR REPLACE INTO events VALUES(?,?,?,?,?)",
                     (
@@ -192,7 +238,7 @@ class Domain:
                         batch.collector,
                         batch.source,
                         record.id,
-                        record.model_dump_json(),
+                        json.dumps(encoded),
                     ),
                 )
             db.execute(
@@ -240,6 +286,183 @@ class Domain:
                 ),
             )
         return result
+
+    def repair_requests(
+        self,
+        actor: str,
+        value: RequestMeasurementRepair,
+        key_id: str | None = None,
+        machine_client: str | None = None,
+    ) -> dict[str, Any]:
+        """Replace only byte-witnessed requests, without advancing source checkpoints.
+
+        The native collector remains the checkpoint and usage producer. This is
+        an explicit measurement migration through the same events writer.
+        """
+        body = value.model_dump_json()
+        with self.connect() as db:
+            binding = db.execute(
+                "SELECT owner FROM collectors WHERE machine=? AND collector=?",
+                (actor, value.collector),
+            ).fetchone()
+            if not binding:
+                raise PermissionError("Collector is not bound to this machine account")
+            prior = self._prior(db, actor, value.mutation_id, body)
+            if prior:
+                return prior
+            owner = binding[0]
+            key = (owner, value.collector, value.source)
+            ledger = db.execute(
+                "SELECT revision,parser FROM sources WHERE owner=? AND collector=? AND source=?",
+                key,
+            ).fetchone()
+            if not ledger or ledger["revision"] != value.expected_ledger_revision:
+                raise ValueError("Source ledger changed; refresh progress before request repair")
+            if str(ledger["parser"]).startswith("pi-native-measurements/"):
+                raise ValueError("Native Pi measurements have a different authoritative producer")
+            archive = db.execute(
+                "SELECT * FROM source_archives WHERE owner=? AND collector=? AND source=?", key
+            ).fetchone()
+            if not archive:
+                raise ValueError("Request repair requires durably archived source evidence")
+            revision = hashlib.sha256(
+                f"{archive['generation']}:{archive['received_bytes']}".encode()
+            ).hexdigest()
+            if (
+                revision != value.source_revision
+                or value.complete_bytes > archive["received_bytes"]
+            ):
+                raise ValueError("Archived source changed; refresh evidence before request repair")
+            hasher = hashlib.sha256()
+            remaining = value.complete_bytes
+            lines = 0
+            last = b""
+            for chunk in db.execute(
+                "SELECT content FROM source_chunks WHERE owner=? AND collector=? AND source=? "
+                "AND generation=? ORDER BY start",
+                (*key, archive["generation"]),
+            ):
+                block = bytes(chunk[0])[:remaining]
+                hasher.update(block)
+                lines += block.count(b"\n")
+                if block:
+                    last = block[-1:]
+                remaining -= len(block)
+                if not remaining:
+                    break
+            if remaining or last != b"\n" or hasher.hexdigest() != value.source_sha256:
+                raise ValueError("Request measurements do not match complete archived source bytes")
+            if any(line > lines for line in value.quarantined_source_lines):
+                raise ValueError("Quarantined source line exceeds archived evidence")
+            for record in value.records:
+                expected_id = hashlib.sha256(
+                    f"{value.source}:{record.source_line}".encode()
+                ).hexdigest()
+                if record.id != expected_id or record.source_line > lines:
+                    raise ValueError("Request measurement identity or source line mismatch")
+                if record.ecosystem != archive["ecosystem"]:
+                    raise ValueError("Request measurement ecosystem mismatch")
+            # Hashing a large immutable archive must not hold the SQLite writer
+            # lock. Fence both heads again only when the short commit begins.
+            db.execute("BEGIN IMMEDIATE")
+            prior = self._prior(db, actor, value.mutation_id, body)
+            if prior:
+                return prior
+            current_archive = db.execute(
+                "SELECT generation,received_bytes FROM source_archives "
+                "WHERE owner=? AND collector=? AND source=?",
+                key,
+            ).fetchone()
+            current_ledger = db.execute(
+                "SELECT revision FROM sources WHERE owner=? AND collector=? AND source=?",
+                key,
+            ).fetchone()
+            if (
+                not current_archive
+                or not current_ledger
+                or current_ledger["revision"] != value.expected_ledger_revision
+                or current_archive["generation"] != archive["generation"]
+                or current_archive["received_bytes"] != archive["received_bytes"]
+            ):
+                raise ValueError("Source evidence changed before request repair commit")
+            previous = {
+                row["id"]: json.loads(row["body"])
+                for row in db.execute(
+                    "SELECT id,body FROM events WHERE owner=? AND collector=? AND source=? "
+                    "AND json_extract(body,'$.kind')='request' "
+                    "AND json_extract(body,'$.source_line')<=? "
+                    "AND json_extract(body,'$.source_line') "
+                    "NOT IN (SELECT value FROM json_each(?))",
+                    (*key, lines, json.dumps(value.quarantined_source_lines)),
+                )
+            }
+            db.execute(
+                "DELETE FROM events WHERE owner=? AND collector=? AND source=? "
+                "AND json_extract(body,'$.kind')='request' "
+                "AND json_extract(body,'$.source_line')<=? "
+                "AND json_extract(body,'$.source_line') "
+                "NOT IN (SELECT value FROM json_each(?))",
+                (*key, lines, json.dumps(value.quarantined_source_lines)),
+            )
+            for record in value.records:
+                old = previous.get(record.id)
+                if old:
+                    # Preserve existing project, task and timing evidence. Only the
+                    # newly measured request fields replace missing old fields.
+                    projected = {
+                        **old,
+                        **{
+                            field: getattr(record, field)
+                            for field in ("input_origin", "input_chars", "interaction_id")
+                        },
+                    }
+                else:
+                    projected = record.model_dump(mode="json")
+                projected["request_measurement"] = {
+                    "version": 3,
+                    "parser": value.parser_version,
+                    "projector_sha256": value.projector_sha256,
+                    "source_generation": archive["generation"],
+                    "source_revision": revision,
+                    "source_sha256": value.source_sha256,
+                    "complete_bytes": value.complete_bytes,
+                }
+                collision = db.execute(
+                    "SELECT 1 FROM events WHERE owner=? AND collector=? AND source=? AND id=?",
+                    (*key, record.id),
+                ).fetchone()
+                if collision:
+                    raise ValueError("Request repair would overwrite non-request evidence")
+                db.execute(
+                    "INSERT INTO events VALUES(?,?,?,?,?)", (*key, record.id, json.dumps(projected))
+                )
+            summary = {
+                "source": value.source,
+                "machine_account": actor,
+                "key_id": key_id,
+                "machine_client": machine_client,
+                "source_revision": revision,
+                "source_sha256": value.source_sha256,
+                "collector_revision": ledger["revision"],
+                "checkpoint_unchanged": True,
+                "usage_unchanged": True,
+                "parser": value.parser_version,
+                "projector_sha256": value.projector_sha256,
+                "previous_request_records": len(previous),
+                "accepted": len(value.records),
+                "complete_source_lines": lines,
+                "quarantined_source_lines": len(value.quarantined_source_lines),
+                "confirmed_human_requests": sum(r.input_origin == "human" for r in value.records),
+                "unknown_origin_requests": sum(
+                    r.input_origin in (None, "unknown") for r in value.records
+                ),
+                "known_human_input_chars": sum(
+                    r.input_chars or 0 for r in value.records if r.input_origin == "human"
+                ),
+            }
+            return self._receipt(
+                db, actor, value.mutation_id, body, "request_measurements.repair", summary
+            )
 
     def import_native_measurements(
         self,

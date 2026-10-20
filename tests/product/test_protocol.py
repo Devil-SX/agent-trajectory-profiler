@@ -107,6 +107,7 @@ def test_native_machine_sync_idempotency_scope_revocation_and_server_attribution
         "ingest",
         "source_append",
         "source_progress",
+        "request_measurements_repair",
     }
     assert (
         "project" not in client.get("/trajectory/protocol").json()["$defs"]["Record"]["properties"]
