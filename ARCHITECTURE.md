@@ -16,7 +16,7 @@ Each record has a physical source ID and event ID. Mutation IDs deduplicate deli
 
 The domain commits events, revision progress, audit metadata and receipts atomically with SQLite synchronous FULL. The producer does not advance a checkpoint independently of its outbox. Upload retries preserve the same mutation ID and body. A changed body under that ID is rejected. Online database backup uses the domain's SQLite Backup API.
 
-Release candidates are built and tested on batcave-wsl in isolated databases and ports. Existing production services remain online. Installation and native-account changes use the remote deployment lock and recheck active releases and maintenance barriers. Public routing uses authenticated BatCave ingress; current maintenance instructions are published independently of repository worktrees.
+Release candidates are built and tested on batcave-wsl in isolated databases and ports. Existing production services remain online. Installation and native-account changes use the remote deployment lock and recheck active releases and maintenance barriers. Public routing uses authenticated BatCave ingress; current maintenance instructions are published independently of repository worktrees. Acceptance accounts, their scopes and the temporary owner-key rule are recorded in `docs/ACCEPTANCE-ACCOUNTS.md`.
 
 ## Legacy retirement
 
