@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-20
+
 ### Added
 
 - Keep the brand and tab navigation visible while scrolling, and place each search/filter/action inside the view it controls. Statistics views preserve independent scopes and reuse date-scoped responses without changing task filters.
@@ -16,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Prevent legacy collector replays from downgrading repaired human-input measurements.
 - Distinguish unknown human input from observed zero across overview, sessions and task aggregation. Expose request-origin and text coverage separately from the known subtotal.
+
+Code stats vs v4.2.1: total 25481 text lines (baseline 23718), +1883 (-120) = +1763, 7.43% text-line change.
 
 ## [4.2.1] - 2026-10-20
 
