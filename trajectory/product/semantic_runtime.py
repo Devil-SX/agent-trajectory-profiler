@@ -8,6 +8,7 @@ import os
 import selectors
 import subprocess
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,10 @@ from trajectory.product.semantic_model import AnalysisPaused
 class AnalysisRuntime:
     def __init__(self, store: SemanticStore):
         self.store = store
+        from trajectory.product.schedules import AnalysisSchedules
+
+        self.schedules = AnalysisSchedules(store)
+        self.schedule_checked_at = 0.0
         self.child: subprocess.Popen[str] | None = None
         self.lock = threading.Lock()
         self.parser_lock = threading.Lock()
@@ -113,6 +118,9 @@ class AnalysisRuntime:
             if not self._coordinate():
                 return False
             dispatched = False
+            if time.monotonic() - self.schedule_checked_at >= 30:
+                self.schedules.tick()
+                self.schedule_checked_at = time.monotonic()
             while len(self.futures) < self.capacity:
                 job = self.store.claim_job()
                 if job is None:

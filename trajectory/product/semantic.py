@@ -172,6 +172,12 @@ class SemanticStore:
                     owner TEXT,collector TEXT,source TEXT,generation TEXT,ecosystem TEXT,
                     source_name TEXT,received_bytes INTEGER,source_bytes INTEGER,updated TEXT,
                     PRIMARY KEY(owner,collector,source));
+                CREATE TABLE IF NOT EXISTS source_content_activity(
+                    owner TEXT,collector TEXT,source TEXT,revision TEXT,changed TEXT,
+                    PRIMARY KEY(owner,collector,source));
+                INSERT OR IGNORE INTO source_content_activity
+                    SELECT owner,collector,source,generation||':'||received_bytes,updated
+                    FROM source_archives;
                 CREATE TABLE IF NOT EXISTS source_chunks(
                     owner TEXT,collector TEXT,source TEXT,generation TEXT,start INTEGER,
                     end INTEGER,sha256 TEXT,content BLOB,
@@ -309,6 +315,18 @@ class SemanticStore:
                 ),
             )
 
+            # Replay deliveries must not reset the source inactivity clock.
+            content_cursor = value.generation + ":" + str(cursor)
+            activity = db.execute(
+                "SELECT revision FROM source_content_activity "
+                "WHERE owner=? AND collector=? AND source=?",
+                key,
+            ).fetchone()
+            if not activity or activity[0] != content_cursor:
+                db.execute(
+                    "INSERT OR REPLACE INTO source_content_activity VALUES(?,?,?,?,?)",
+                    (*key, content_cursor, stamp()),
+                )
             if cursor == value.source_bytes:
                 revision = digest(value.generation + ":" + str(cursor))
                 self._queue(db, owner, sid, "parse", revision)
@@ -947,48 +965,65 @@ class SemanticStore:
             db.execute("UPDATE semantic_jobs SET updated=? WHERE id=?", (stamp(), job["id"]))
 
     def request_batch(self, owner: str, value: AnalysisBatchRequest) -> dict[str, Any]:
-        body = "analysis.batch:" + value.model_dump_json()
+        with self.domain.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return self.queue_batch(db, owner, value)
+
+    def queue_batch(self, db: Any, owner: str, value: AnalysisBatchRequest) -> dict[str, Any]:
+        """Queue inside the caller transaction, including revision checks and durable receipt."""
+        body = "analysis.batch:" + value.model_dump_json(exclude_none=True)
         maximum = max(1, min(8, int(os.environ.get("TRAJECTORY_ANALYSIS_CONCURRENCY", "4"))))
         if value.concurrency > maximum:
             raise ValueError(f"Concurrency exceeds configured maximum {maximum}")
-        with self.domain.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            prior = self.domain._prior(db, owner, value.mutation_id, body)
-            if prior:
-                return prior
-            sessions = list(dict.fromkeys(value.session_ids))
-            revisions = []
-            for sid in sessions:
-                row = db.execute(
-                    "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
+        prior = self.domain._prior(db, owner, value.mutation_id, body)
+        if prior:
+            return prior
+        sessions = list(dict.fromkeys(value.session_ids))
+        revisions = []
+        for sid in sessions:
+            row = db.execute(
+                "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
+                (owner, sid),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Session unavailable or content has not finished parsing")
+            if value.expected_source_revisions is not None:
+                if value.expected_source_revisions.get(sid) != row[0]:
+                    raise ValueError("Source revision changed since selection")
+                archive = db.execute(
+                    "SELECT a.generation,a.received_bytes,a.source_bytes FROM source_archives a "
+                    "JOIN semantic_sessions s ON s.owner=a.owner AND s.collector=a.collector "
+                    "AND s.source=a.source WHERE s.owner=? AND s.id=?",
                     (owner, sid),
                 ).fetchone()
-                if row is None:
-                    raise ValueError("Session unavailable or content has not finished parsing")
-                revisions.append(row[0])
-            batch_id = uuid.uuid4().hex
-            db.execute(
-                "INSERT INTO semantic_batches VALUES(?,?,?,?)",
-                (batch_id, owner, value.concurrency, stamp()),
-            )
-            items = []
-            for sid, revision in zip(sessions, revisions, strict=True):
-                job_id = self._queue(db, owner, sid, "analyze", revision)
-                db.execute(
-                    "INSERT INTO semantic_batch_items VALUES(?,?,?)", (batch_id, sid, job_id)
-                )
-                status = db.execute(
-                    "SELECT status FROM semantic_jobs WHERE id=?", (job_id,)
-                ).fetchone()[0]
-                items.append({"session_id": sid, "job_id": job_id, "status": status})
-            return self.domain._receipt(
-                db,
-                owner,
-                value.mutation_id,
-                body,
-                "analysis.batch",
-                {"batch_id": batch_id, "items": items, "concurrency": value.concurrency},
-            )
+                if (
+                    not archive
+                    or archive_revision(archive) != row[0]
+                    or archive["received_bytes"] != archive["source_bytes"]
+                ):
+                    raise ValueError("Source upload changed since selection")
+            revisions.append(row[0])
+        batch_id = uuid.uuid4().hex
+        db.execute(
+            "INSERT INTO semantic_batches VALUES(?,?,?,?)",
+            (batch_id, owner, value.concurrency, stamp()),
+        )
+        items = []
+        for sid, revision in zip(sessions, revisions, strict=True):
+            job_id = self._queue(db, owner, sid, "analyze", revision)
+            db.execute("INSERT INTO semantic_batch_items VALUES(?,?,?)", (batch_id, sid, job_id))
+            status = db.execute(
+                "SELECT status FROM semantic_jobs WHERE id=?", (job_id,)
+            ).fetchone()[0]
+            items.append({"session_id": sid, "job_id": job_id, "status": status})
+        return self.domain._receipt(
+            db,
+            owner,
+            value.mutation_id,
+            body,
+            "analysis.batch",
+            {"batch_id": batch_id, "items": items, "concurrency": value.concurrency},
+        )
 
     def batches(self, owner: str) -> dict[str, Any]:
         with self.domain.connect() as db:

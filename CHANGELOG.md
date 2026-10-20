@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Configure revision-checked daily analysis plans, weighted session sampling without replacement,
+  candidate/exclusion previews and reproducible draws through shared authenticated HTTP interfaces.
+- Preserve immutable input revisions and reuse the existing leased, bounded Jindu analysis queue
+  for manual and daily submissions, with conservative quiet-period and native-lineage safeguards.
+
 ## [4.3.0] - 2026-10-20
 
 ### Added

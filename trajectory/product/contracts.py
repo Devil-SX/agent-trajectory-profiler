@@ -129,6 +129,7 @@ class LostWindowRecomputeRequest(AnalysisRequest):
 
 class AnalysisBatchRequest(AnalysisRequest):
     session_ids: list[str] = Field(min_length=1, max_length=200)
+    expected_source_revisions: dict[str, str] | None = None
     concurrency: int = Field(default=4, ge=1, le=8)
 
 

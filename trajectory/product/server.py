@@ -31,6 +31,12 @@ from trajectory.product.contracts import (
 )
 from trajectory.product.domain import Domain
 from trajectory.product.error_logging import log_request_exception
+from trajectory.product.schedules import (
+    AnalysisAutomationGrant,
+    ScheduleDelete,
+    ScheduleRun,
+    ScheduleWrite,
+)
 from trajectory.product.semantic import AnalysisResumeError, SemanticStore
 from trajectory.product.semantic_runtime import AnalysisRuntime
 from trajectory.product.stage_studies import StageStudies, StageStudyImport
@@ -52,6 +58,87 @@ class CollectorBinding(BaseModel):
 
 
 OPERATIONS: list[dict[str, Any]] = [
+    {
+        "id": "analysis_automation_grant_list",
+        "method": "GET",
+        "path": "/api/analysis-automation-grants",
+        "scope": "configure",
+        "effect": "Read this owner's explicit analysis automation delegations. "
+        "Native callers keep their real UUID and client; resource_owner selects "
+        "the delegated domain.",
+    },
+    {
+        "id": "analysis_automation_grant_write",
+        "method": "POST",
+        "path": "/api/analysis-automation-grants",
+        "scope": "configure",
+        "required_scopes": ["configure", "read_all"],
+        "input": AnalysisAutomationGrant,
+        "effect": "An authenticated human operator grants/revokes one verified "
+        "native machine/client "
+        "analysis access to their own resource domain. Revision checked and idempotent. "
+        "Only session/analysis/task/schedule operations accept resource_owner; ledger, price, "
+        "collector and backup privileges are never delegated by this grant.",
+    },
+    {
+        "id": "analysis_schedule_delete",
+        "method": "DELETE",
+        "path": "/api/analysis-schedules/{schedule_id}",
+        "scope": "configure",
+        "input": ScheduleDelete,
+        "effect": "Revision-checked archival disables a plan while "
+        "preserving sampling evidence and paid job receipts. Does not cancel running model calls.",
+    },
+    {
+        "id": "analysis_schedule_list",
+        "method": "GET",
+        "path": "/api/analysis-schedules",
+        "scope": "read",
+        "effect": "List account-owned daily sampling plans, next local slot, "
+        "auditable selection runs and existing batch receipts; no model calls.",
+    },
+    {
+        "id": "analysis_schedule_write",
+        "method": "POST",
+        "path": "/api/analysis-schedules",
+        "scope": "configure",
+        "input": ScheduleWrite,
+        "effect": "Create or update a revision-checked daily plan, including enable/disable, "
+        "directory subtrees, IANA timezone/local time, daily count, quiet/recent windows, "
+        "operation-count weighted sampling and operation budget guard. Enabling authorizes "
+        "paid Jindu analysis of future eligible snapshots. Today's overdue slot catches up once; "
+        "older days are skipped. Enabling after the daily time starts tomorrow. "
+        "Changing a plan never replays today's completed daily slot.",
+    },
+    {
+        "id": "analysis_schedule_preview",
+        "method": "GET",
+        "path": "/api/analysis-schedules/{schedule_id}/candidates",
+        "scope": "read",
+        "effect": "Read eligible revision-pinned session snapshots, length weights and all "
+        "exclusion reasons. Read-only; inactivity is a content/activity quiet-window proxy, "
+        "not proof that a frontend process is closed. Image byte size does not affect weight.",
+    },
+    {
+        "id": "analysis_schedule_run_read",
+        "method": "GET",
+        "path": "/api/analysis-schedules/{schedule_id}/runs/{run_id}",
+        "scope": "read",
+        "effect": "Read one auditable draw: full candidate/exclusion snapshot, seed, pinned "
+        "selected revisions and current paid-analysis batch receipts. No model calls.",
+    },
+    {
+        "id": "analysis_schedule_run",
+        "method": "POST",
+        "path": "/api/analysis-schedules/{schedule_id}/runs",
+        "scope": "configure",
+        "input": ScheduleRun,
+        "effect": "Idempotently sample a manual batch without replacement "
+        "using the same plan/domain rules. Incurs model usage. Pins immutable source revisions, "
+        "records algorithm/seed/candidate exclusions, reuses existing queue and "
+        "bounded concurrency. "
+        "No automatic failed-job retries; uncertain calls require existing Jindu receipt review.",
+    },
     {
         "id": "request_measurements_repair",
         "method": "POST",
@@ -362,6 +449,7 @@ def create_app(
     path: Path,
     authorizer: Callable[[Request, str | None], Principal] = native_authorizer,
     machine_verifier: Callable[[str, str], bool] | None = None,
+    resource_owner_verifier: Callable[[str], bool] | None = None,
 ) -> FastAPI:
     domain = Domain(path)
     semantic = SemanticStore(domain)
@@ -545,15 +633,73 @@ def create_app(
                 if additional_scope != operation["scope"]:
                     authorizer(request, additional_scope)
             identifier = operation["id"]
+            resource_owner = principal.account
+            requested_owner = request.query_params.get("resource_owner")
+            if requested_owner and requested_owner != principal.account:
+                delegatable = {
+                    "sessions",
+                    "task_query",
+                    "analysis_read",
+                    "operation_read",
+                    "source_evidence",
+                    "analysis_run",
+                    "analysis_batch_run",
+                    "analysis_batch_list",
+                    "analysis_batch_read",
+                    "analysis_resume",
+                    "analysis_recompute_lost_window",
+                    "analysis_schedule_list",
+                    "analysis_schedule_write",
+                    "analysis_schedule_preview",
+                    "analysis_schedule_run",
+                    "analysis_schedule_run_read",
+                    "analysis_schedule_delete",
+                }
+                if identifier not in delegatable:
+                    raise HTTPException(403, "Operation does not support analysis delegation")
+                try:
+                    resource_owner = runtime.schedules.resolve_owner(
+                        principal.account, principal.machine_client, requested_owner
+                    )
+                except PermissionError as error:
+                    raise HTTPException(403, str(error)) from error
+                if resource_owner_verifier is None:
+                    from batcave_http.authority import account_allowed
+
+                    owner_active = account_allowed(resource_owner, "trajectory")
+                else:
+                    owner_active = resource_owner_verifier(resource_owner)
+                if not owner_active:
+                    raise HTTPException(403, "Resource owner unavailable")
+                request.state.resource_owner = resource_owner
             try:
+                if identifier == "analysis_automation_grant_list":
+                    if principal.machine_client:
+                        raise HTTPException(403, "Delegation administration requires an operator")
+                    return await asyncio.to_thread(runtime.schedules.grants, principal.account)
+                if identifier == "analysis_schedule_list":
+                    return await asyncio.to_thread(runtime.schedules.catalog, resource_owner)
+                if identifier == "analysis_schedule_run_read":
+                    return await asyncio.to_thread(
+                        runtime.schedules.run_detail,
+                        resource_owner,
+                        request.path_params["schedule_id"],
+                        request.path_params["run_id"],
+                    )
+                if identifier == "analysis_schedule_preview":
+                    return await asyncio.to_thread(
+                        runtime.schedules.preview,
+                        resource_owner,
+                        request.path_params["schedule_id"],
+                    )
                 if identifier == "stage_study_list":
-                    return await asyncio.to_thread(studies.catalog, principal.account)
+                    return await asyncio.to_thread(studies.catalog, resource_owner)
                 if identifier in {"stage_study_read", "stage_study_stages"}:
                     filters = dict(request.query_params)
                     study = request.path_params["study_id"]
                     if identifier == "stage_study_stages" and filters.get("format") == "csv":
                         csv_body = await asyncio.to_thread(
-                            studies.csv, principal.account, study, filters
+                            studies.csv, resource_owner, study, filters
                         )
                         return Response(
                             csv_body,
@@ -561,7 +707,7 @@ def create_app(
                             headers={"Content-Disposition": "attachment; filename=stage-study.csv"},
                         )
                     reader = studies.summary if identifier == "stage_study_read" else studies.stages
-                    return await asyncio.to_thread(reader, principal.account, study, filters)
+                    return await asyncio.to_thread(reader, resource_owner, study, filters)
                 if identifier == "request_traces":
                     return await asyncio.to_thread(domain.traces)
                 if identifier == "source_progress":
@@ -571,14 +717,14 @@ def create_app(
                         )
                     return await asyncio.to_thread(
                         semantic.source_progress,
-                        principal.account,
+                        resource_owner,
                         request.query_params.get("collector", ""),
                         request.query_params.get("source", ""),
                     )
                 if identifier == "sessions":
                     return await asyncio.to_thread(
                         semantic.sessions,
-                        principal.account,
+                        resource_owner,
                         request.query_params.get("project", ""),
                         request.query_params.get("since", ""),
                         request.query_params.get("until", ""),
@@ -592,7 +738,7 @@ def create_app(
                 if identifier == "task_query":
                     return await asyncio.to_thread(
                         semantic.task_query,
-                        principal.account,
+                        resource_owner,
                         batch_id=request.query_params.get("batch_id", ""),
                         session_id=request.query_params.get("session_id", ""),
                         cwd=request.query_params.get("cwd", ""),
@@ -606,15 +752,15 @@ def create_app(
                         cursor=request.query_params.get("cursor", ""),
                     )
                 if identifier == "analysis_batch_list":
-                    return await asyncio.to_thread(semantic.batches, principal.account)
+                    return await asyncio.to_thread(semantic.batches, resource_owner)
                 if identifier == "analysis_batch_read":
                     return await asyncio.to_thread(
-                        semantic.batch_detail, principal.account, request.path_params["batch_id"]
+                        semantic.batch_detail, resource_owner, request.path_params["batch_id"]
                     )
                 if identifier == "analysis_read":
                     detail = await asyncio.to_thread(
                         semantic.detail,
-                        principal.account,
+                        resource_owner,
                         request.path_params["session_id"],
                         source_revision=request.query_params.get("source_revision") or None,
                     )
@@ -631,7 +777,7 @@ def create_app(
                 if identifier == "operation_read":
                     return await asyncio.to_thread(
                         semantic.operation,
-                        principal.account,
+                        resource_owner,
                         request.path_params["session_id"],
                         request.path_params["operation_id"],
                         source_revision=request.query_params.get("source_revision") or None,
@@ -639,7 +785,7 @@ def create_app(
                 if identifier == "source_evidence":
                     return await asyncio.to_thread(
                         semantic.evidence,
-                        principal.account,
+                        resource_owner,
                         request.path_params["session_id"],
                         request.path_params["operation_id"],
                         source_revision=request.query_params.get("source_revision") or None,
@@ -647,7 +793,7 @@ def create_app(
                 if identifier in ("overview", "platform"):
                     return await asyncio.to_thread(
                         domain.overview,
-                        principal.account if identifier == "overview" else None,
+                        resource_owner if identifier == "overview" else None,
                         request.query_params.get("since", ""),
                         request.query_params.get("until", ""),
                     )
@@ -666,17 +812,17 @@ def create_app(
                 body = bytes(chunks)
                 value = operation["input"].model_validate_json(body)
                 if identifier == "stage_study_import":
-                    return await asyncio.to_thread(studies.import_study, principal.account, value)
+                    return await asyncio.to_thread(studies.import_study, resource_owner, value)
                 if identifier == "backup":
                     return await asyncio.to_thread(
-                        domain.online_backup, principal.account, value.mutation_id
+                        domain.online_backup, resource_owner, value.mutation_id
                     )
                 if identifier == "request_measurements_repair":
                     if not principal.machine_client:
                         raise HTTPException(403, "Request repair requires a native machine account")
                     return await asyncio.to_thread(
                         domain.repair_requests,
-                        principal.account,
+                        resource_owner,
                         value,
                         principal.key_id,
                         principal.machine_client,
@@ -684,11 +830,11 @@ def create_app(
                 if identifier == "source_append":
                     if not principal.machine_client:
                         raise HTTPException(403, "Uploads require a native machine account")
-                    return await asyncio.to_thread(semantic.ingest_source, principal.account, value)
+                    return await asyncio.to_thread(semantic.ingest_source, resource_owner, value)
                 if identifier == "analysis_recompute_lost_window":
                     return await asyncio.to_thread(
                         semantic.recompute_lost_window,
-                        principal.account,
+                        resource_owner,
                         request.path_params["job_id"],
                         value,
                         {
@@ -700,30 +846,76 @@ def create_app(
                 if identifier == "analysis_resume":
                     return await asyncio.to_thread(
                         semantic.resume_analysis,
-                        principal.account,
+                        resource_owner,
                         request.path_params["job_id"],
                         value,
                     )
+                if identifier == "analysis_automation_grant_write":
+                    if principal.machine_client:
+                        raise HTTPException(403, "Delegation administration requires an operator")
+                    if machine_verifier is None:
+                        from batcave_http.authority import account_allowed
+
+                        allowed = account_allowed(
+                            str(value.machine), "trajectory", value.machine_client
+                        )
+                    else:
+                        allowed = machine_verifier(str(value.machine), value.machine_client)
+                    if value.enabled and not allowed:
+                        raise HTTPException(403, "Native machine/client is unavailable")
+                    return await asyncio.to_thread(
+                        runtime.schedules.grant, principal.account, value
+                    )
+                if identifier == "analysis_schedule_delete":
+                    return await asyncio.to_thread(
+                        runtime.schedules.remove,
+                        resource_owner,
+                        request.path_params["schedule_id"],
+                        value,
+                        {
+                            "account_id": principal.account,
+                            "key_id": principal.key_id,
+                            "machine_client": principal.machine_client,
+                        },
+                    )
+                if identifier == "analysis_schedule_write":
+                    return await asyncio.to_thread(
+                        runtime.schedules.write,
+                        resource_owner,
+                        value,
+                        {
+                            "account_id": principal.account,
+                            "key_id": principal.key_id,
+                            "machine_client": principal.machine_client,
+                        },
+                    )
+                if identifier == "analysis_schedule_run":
+                    return await asyncio.to_thread(
+                        runtime.schedules.run,
+                        resource_owner,
+                        request.path_params["schedule_id"],
+                        value,
+                    )
                 if identifier == "analysis_batch_run":
-                    return await asyncio.to_thread(semantic.request_batch, principal.account, value)
+                    return await asyncio.to_thread(semantic.request_batch, resource_owner, value)
                 if identifier == "session_parse":
                     return await asyncio.to_thread(
                         semantic.request_parse,
-                        principal.account,
+                        resource_owner,
                         request.path_params["session_id"],
                         value,
                     )
                 if identifier == "analysis_run":
                     return await asyncio.to_thread(
                         semantic.request_analysis,
-                        principal.account,
+                        resource_owner,
                         request.path_params["session_id"],
                         value,
                     )
                 if identifier == "task_edit":
                     return await asyncio.to_thread(
                         semantic.edit_task,
-                        principal.account,
+                        resource_owner,
                         request.path_params["session_id"],
                         value,
                     )
@@ -732,7 +924,7 @@ def create_app(
                         raise HTTPException(403, "Uploads require a native machine account")
                     return await asyncio.to_thread(
                         domain.ingest,
-                        principal.account,
+                        resource_owner,
                         value,
                         principal.key_id,
                         principal.machine_client,
@@ -754,12 +946,12 @@ def create_app(
                     if not allowed:
                         raise HTTPException(403, "Native collector account denied")
                     return await asyncio.to_thread(
-                        domain.register, principal.account, str(value.machine), value.collector
+                        domain.register, resource_owner, str(value.machine), value.collector
                     )
                 if identifier == "correct":
-                    return await asyncio.to_thread(domain.correct, principal.account, value)
+                    return await asyncio.to_thread(domain.correct, resource_owner, value)
                 if identifier == "price":
-                    return await asyncio.to_thread(domain.price, principal.account, value)
+                    return await asyncio.to_thread(domain.price, resource_owner, value)
             except ValidationError as error:
                 raise HTTPException(422, "Invalid protocol payload") from error
             except PermissionError as error:
@@ -785,6 +977,8 @@ def create_app(
         authorizer(request, "read")
         return (Path(__file__).parent / "dashboard.html").read_text()
 
+    @app.get("/trajectory/schedules.js")
+    @app.get("/trajectory/schedules.css")
     @app.get("/trajectory/research.js")
     @app.get("/trajectory/research.css")
     def research_asset(request: Request) -> Response:

@@ -83,3 +83,25 @@ explicit skipped session. Direct operation counts are structure counts, not
 fees or elapsed time; use `analysis_read` for measured task costs.
 
 Research statistics are available in the **研究统计** dashboard tab. See [stage study methodology and API semantics](docs/STAGE-STUDIES.md) for hierarchy, mixed labels, uncertainty and explicit measurement gaps. Reading the tab does not start model calls.
+
+### Daily weighted session analysis
+
+The workbench's background analysis controls support account-owned daily plans.
+Set explicit directory subtrees, IANA timezone and local time, number of sessions,
+quiet/recent windows and a maximum operation count. Defaults are 01:00 in
+Asia/Shanghai, three sessions, a 24-hour quiet period and a 30-day recent window.
+Plans use weighted random sampling without replacement, proportional to normalized
+operation count. They exclude known forks, active/updated records, incomplete sources
+and previously attempted native copies. This conservative policy can exclude a
+new revision of an already attempted native session; explicit ordinary analysis
+remains available after review. A quiet window estimates inactivity and cannot
+prove that a frontend process has closed. No model is called by previews.
+
+Discover plan CRUD, candidate previews and manual draws through authenticated
+Help. Save enables or disables the plan using its expected revision; archival
+preserves all draw and paid-job receipts. Manual submission and daily execution
+share the same authenticated business rules, queue and Jindu route. Each draw
+records the seed, algorithm, candidate/exclusion snapshot, immutable input revisions
+and batch status. Candidates below the requested number are not duplicated to fill
+it. Failed or uncertain paid requests require existing receipt review, never blind
+retry. An operation-count guard limits input size, not the actual dollar bill.

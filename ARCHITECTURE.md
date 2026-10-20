@@ -206,3 +206,43 @@ Provider response identities deduplicate usage across inherited copies. Missing
 provider identity stays session-scoped with an explicit gap, and copied text is
 never proof of duplicate consumption. User-role messages without explicit origin
 remain unknown; available original text still supplies exact character counts.
+
+Daily analysis plans live in `analysis_schedules` and immutable draws in
+`analysis_schedule_runs`, owned by the same account and SQLite domain as semantic
+jobs. `AnalysisSchedules` reuses `SemanticStore.queue_batch` inside one immediate
+transaction: the sampled revisions, draw evidence and stable batch receipt either
+all commit or none do. Only `AnalysisRuntime`'s existing gated exclusive lease
+invokes periodic ticks; there is no second cron worker or model client. Per-local-day
+slots prevent repeated selection after restart and concurrent triggers. The queue's
+existing bounded pool and Jindu receipt/checkpoint rules remain authoritative.
+
+Inactivity compares metadata activity with `source_content_activity`, whose clock
+advances only when the durable generation/cursor changes. Replay upload timestamps
+do not reset it. A legacy writer or unobserved cursor falls back conservatively to
+the archive update time. All copies of a native ID inherit its newest observed
+activity. Known non-self fork parents and previously attempted native copies are
+excluded conservatively; this is not complete shared-prefix reconstruction.
+Weights use canonical operation counts after other eligibility filters, cached only
+by immutable revision. Image bytes and cached token accounting do not affect weights.
+Seeded exponential clocks select without replacement; selected and excluded inputs
+are retained per draw. Counts above the configured operation guard are excluded;
+the guard is not an estimated bill. Budget/routing decisions reuse the actual
+analysis worker and its configured authenticated Jindu route.
+
+A daily run catches up once only for the current local date after the plan was
+enabled. Enabling after the configured time begins on the next date; missed disabled
+or older dates are not replayed. A daylight-saving fold still has one local-date
+slot; a skipped clock time becomes due after the gap. Disabling or archiving a plan
+does not cancel already queued or running paid jobs. Failed jobs are never silently
+resampled or resumed. Historical study snapshots are unaffected by new draws.
+
+Analysis automation delegation is an explicit owner-controlled ACL keyed by the
+real native machine UUID and service client. Provisioning a machine key alone does
+not grant a user's resources. The operator must grant the binding through the
+registered business interface. Delegated analysis requests provide `resource_owner`;
+the authorizer retains the real machine principal for key checks, revocation and
+access traces, separately verifies the resource owner's current service authority,
+and resolves only an allowed analysis operation. Grants cannot authorize ledger,
+prices, collectors, backup or arbitrary account administration. Revoking a grant
+rejects the next delegated request. Saving a daily plan persists the authorized
+business intent; normal disabling/archival controls its future executions.
