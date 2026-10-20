@@ -13,7 +13,9 @@ and audited frozen measurements do not change analyses or usage ledgers and do
 not call a model. Private study payloads are not package assets.
 
 Queries filter session, depth, leaf/parent, activity label, title and metric.
-Direct metrics have exclusive operation ownership. Subtree metrics can overlap
+Direct metrics have exclusive operation ownership. Empty direct memberships
+are excluded from resource coverage, whereas measured zero is retained. CSV
+exports include `resource_metric_eligible` for the same coverage rule. Subtree metrics can overlap
 between rows; aggregate resources use only selected nodes without a selected
 ancestor. Nonadditive wall spans and prompt groups remain unknown in subtree
 mode. Missing measurements remain null. Empty direct memberships do not imply
@@ -37,7 +39,13 @@ measurement hashes, model metadata and Jindu call/receipt IDs are retained.
 
 `research.js` mounts only when the dashboard tab is selected. Advanced filters,
 variance and hierarchy tables use the workbench disclosure pattern. Overview
-charts retain confidence intervals and sample counts; paginated stage details
+charts retain confidence intervals and sample counts; active-time estimates
+are visible by default alongside stage counts and the selected resource. The
+independent active-time summary uses identical filters and study revision, with
+its own total, valid sessions, missing coverage, session standard deviations and
+cluster intervals. Active time is estimated from recorded event gaps, not LLM
+request latency or human work time. Tool durations can overlap; wall spans include
+waiting and interleaved tasks. paginated stage details
 are fetched only when expanded. Summary and detail use the server's domain aggregation; immutable summary reads
 are cached by account, study revision and filters. CSV exports preserve
 unknowns and neutralize spreadsheet formula prefixes without editing stored

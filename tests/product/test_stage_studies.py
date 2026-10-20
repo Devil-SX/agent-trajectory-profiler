@@ -126,6 +126,9 @@ def test_direct_and_subtree_frontier_do_not_double_count_or_turn_unknown_into_ze
     direct = studies.summary("owner", "fixture-study", {})
     assert direct["summary"]["stages"] == 8 and direct["unique_resource_metric"]["sum"] == 60
     assert direct["summary"]["metric"]["missing"] == 5
+    assert direct["unique_resource_metric"]["available"] == 3
+    assert direct["unique_resource_metric"]["missing"] == 3
+    assert direct["resource_frontier_stages"] == 6
     assert direct["summary"]["direct_nonempty_stages"] == 6
     assert direct["summary"]["multiple_label_rate"] == 0.25
     assert sum(direct["confidence_histogram"]) == 8
@@ -170,6 +173,7 @@ def test_direct_and_subtree_frontier_do_not_double_count_or_turn_unknown_into_ze
         studies.stages("owner", "fixture-study", {"depth": "2", "limit": "1"})["next_offset"] == 1
     )
     assert "confidence,mixed_probability" in studies.csv("owner", "fixture-study", {})
+    assert "resource_metric_eligible" in studies.csv("owner", "fixture-study", {})
     for filters in [
         {"metric": "fake"},
         {"depth": "-1"},
@@ -219,6 +223,20 @@ def test_authenticated_http_discovery_static_assets_and_export(tmp_path):
     )
     read = client.get(path + "/fixture-study", headers={"Authorization": "reader"})
     assert read.status_code == 200 and read.json()["summary"]["stages"] == 4
+    active = client.get(
+        path + "/fixture-study?metric=active_seconds_estimate&node_kind=leaf",
+        headers={"Authorization": "reader"},
+    )
+    assert active.status_code == 200
+    assert active.json()["metric"] == "active_seconds_estimate"
+    assert active.json()["unique_resource_metric"]["sum"] == 0
+    assert active.json()["categories"][0]["resource_share"] is None
+    assert (
+        client.get(
+            path + "/fixture-study?metric=invalid", headers={"Authorization": "reader"}
+        ).status_code
+        == 409
+    )
     assert (
         client.get(path + "/fixture-study/stages?format=csv", headers={"Authorization": "reader"})
         .headers["content-type"]
@@ -254,3 +272,32 @@ def test_variance_requires_multiple_observations_and_preserves_missing_values():
     assert values["sample_variance"] == 2
     assert values["sample_sd"] == 2**0.5
     assert values["available"] == 2 and values["missing"] == 1
+
+
+def test_active_time_is_filter_specific_and_retains_measured_zero(tmp_path):
+    semantic, studies, value = study_fixture(tmp_path)
+    payload = value.model_dump()
+    for row in payload["stages"]:
+        if row["task_id"] == "empty":
+            continue
+        row["metrics"]["active_seconds_estimate"] = (
+            {"p": 10, "c": 20, "d": 30}[row["task_id"]] if row["session_id"] == "session-0" else 0
+        )
+    studies.import_study("owner", StageStudyImport.model_validate(payload))
+    total = studies.summary("owner", "fixture-study", {"metric": "active_seconds_estimate"})
+    assert total["unique_resource_metric"]["sum"] == 60
+    assert total["unique_resource_metric"]["available"] == 6
+    assert total["categories"][0]["resource_share"] == 1 / 6
+    leaf = studies.summary(
+        "owner", "fixture-study", {"metric": "active_seconds_estimate", "node_kind": "leaf"}
+    )
+    assert leaf["unique_resource_metric"]["sum"] == 50
+    assert leaf["categories"][0]["resource_share"] == 0
+    zero = studies.summary(
+        "owner", "fixture-study", {"metric": "active_seconds_estimate", "session_id": "session-1"}
+    )
+    assert zero["unique_resource_metric"]["sum"] == 0
+    assert zero["unique_resource_metric"]["available"] == 3
+    assert all(
+        c["resource_share"] is None and c["resource_share_ci95"] is None for c in zero["categories"]
+    )

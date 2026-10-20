@@ -46,7 +46,7 @@ const server=http.createServer(async(req,res)=>{
   if(u.searchParams.get('format')==='csv'){res.setHeader('content-type','text/csv');return res.end('task_id,confidence\nparent,0.9\n');}
   return res.end(JSON.stringify({items:[item],total:1,next_offset:null}));
  }
- return res.end(JSON.stringify({...data,filters:Object.fromEntries(u.searchParams)}));
+ const activeTime=u.searchParams.get('metric')==='active_seconds_estimate';const leaf=u.searchParams.get('node_kind')==='leaf';return res.end(JSON.stringify({...data,metric:u.searchParams.get('metric')||'recorded_tokens',unique_resource_metric:activeTime?{...distribution,sum:leaf?120:3600}:distribution,categories:data.categories.map(c=>({...c,resource_share:activeTime?(leaf?0.25:0.5):c.resource_share,resource_share_ci95:activeTime?[0.2,0.8]:c.resource_share_ci95})),filters:Object.fromEntries(u.searchParams)}));
 });
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -57,6 +57,7 @@ const server=http.createServer(async(req,res)=>{
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   delay=250;await page.goto(origin);await page.locator('.research-loading').waitFor();await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');delay=0;
   assert(!requests.some(r=>r.path.endsWith('/stages')),'Stage detail must load only when expanded');
+  assert.match(await page.locator('.research-time-distribution').innerText(),/总时长 1 小时/);assert.match(await page.locator('.research-time-distribution').innerText(),/会话间 SD/);assert.match(await page.locator('.research-time-distribution').innerText(),/2 个有效会话/);assert(requests.some(r=>r.query.metric==='active_seconds_estimate'));
   assert.equal(await page.locator('.research-filter-disclosure').evaluate(node=>node.open),false);
   assert.equal(await page.locator('.research-stage-drawer').evaluate(node=>node.open),false);
   await page.locator('.research-filter-disclosure>summary').click();await page.getByLabel('层级',{exact:true}).focus();await page.keyboard.press('Escape');assert.equal(await page.locator('.research-filter-disclosure').evaluate(node=>node.open),false);
@@ -80,7 +81,7 @@ const server=http.createServer(async(req,res)=>{
   assert.match(await page.locator('main').innerText(),/当前没有随机人工gold/);
   assert.equal(await page.evaluate(()=>window.injected),undefined);
   const select=async(label,value,key)=>{if(['层级','节点','最低分类 confidence','混合判断'].includes(label)&&!await page.locator('.research-filter-disclosure').evaluate(node=>node.open))await page.locator('.research-filter-disclosure>summary').click();await page.getByLabel(label,{exact:true}).selectOption(value);await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');assert(requests.some(r=>r.query[key]===value));};
-  await select('层级','2','depth');await select('节点','leaf','node_kind');await select('最低分类 confidence','0.8','confidence_min');await select('混合判断','single','mixed');
+  await select('层级','2','depth');await select('节点','leaf','node_kind');assert.match(await page.locator('.research-time-distribution').innerText(),/总时长 2 分钟/);assert(requests.some(r=>r.query.metric==='active_seconds_estimate'&&r.query.node_kind==='leaf'));await select('最低分类 confidence','0.8','confidence_min');await select('混合判断','single','mixed');
   await page.getByLabel('节点',{exact:true}).focus();await page.keyboard.press('ArrowUp');await page.keyboard.press('Enter');
   assert(!requests.some(r=>r.path.endsWith('/stages')));await page.locator('.research-stage-drawer>summary').click();await page.getByRole('button',{name:'导出筛选结果 CSV'}).waitFor();
   const downloadEvent=page.waitForEvent('download');await page.getByRole('button',{name:'导出筛选结果 CSV'}).click();const download=await downloadEvent;await download.saveAs(path.join(output,'fixture.csv'));assert.match(fs.readFileSync(path.join(output,'fixture.csv'),'utf8'),/parent,0.9/);
@@ -91,7 +92,7 @@ const server=http.createServer(async(req,res)=>{
   mode='empty';await page.reload();await page.getByText('还没有导入的分段研究。',{exact:false}).waitFor();
   mode='denied';await page.reload();await page.waitForFunction(()=>document.body.dataset.mountError==='HTTP 403');assert.equal(await page.locator('.research-table').count(),0);
   assert.deepEqual(errors,[]);assert(requests.every(r=>r.method==='GET'));assert(!fs.readFileSync(path.join(source,'research.js'),'utf8').includes('\u00b7'));
-  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({passed:true,checks:['loading','variance','intervals','mixed','depth','leaf','confidence','keyboard','csv','error-retry','mobile','empty','account-denied','no-writes','host-theme-contrast','collapsed-filters','lazy-stage-details','overview-density'],contrast,requests},null,2));
-  console.log('PASS stage research browser, 18 checks');
+  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({passed:true,checks:['loading','variance','intervals','mixed','depth','leaf','confidence','keyboard','csv','error-retry','mobile','empty','account-denied','no-writes','host-theme-contrast','collapsed-filters','lazy-stage-details','overview-density','default-active-time','filtered-active-time'],contrast,requests},null,2));
+  console.log('PASS stage research browser, 20 checks');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

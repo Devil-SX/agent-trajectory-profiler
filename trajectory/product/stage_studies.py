@@ -440,6 +440,9 @@ class StageStudies:
             row["selected_metrics"] = (
                 row["metrics"] if membership == "direct" else row["subtree_metrics"]
             )
+            row["resource_metric_eligible"] = bool(
+                row["operation_count"] if membership == "direct" else row["subtree_operation_count"]
+            )
         return data, selected
 
     def stages(self, owner: str, study: str, filters: dict[str, str]) -> dict[str, Any]:
@@ -473,6 +476,7 @@ class StageStudies:
             "operation_count",
             "subtree_operation_count",
             "subtree_tag_entropy",
+            "resource_metric_eligible",
             "call_id",
             "receipt_id",
             *METRICS,
@@ -560,6 +564,9 @@ class StageStudies:
                 parent = all_rows.get((parent["session_id"], parent["parent_id"]))
             if not overlaps or filters.get("membership", "direct") == "direct":
                 frontier.append(row)
+        # Empty direct memberships are hierarchy containers, not missing usage samples.
+        # Actual measured zero on a nonempty membership remains an eligible observation.
+        frontier = [r for r in frontier if r["resource_metric_eligible"]]
         categories = []
         sessions = sorted({r["session_id"] for r in rows})
         for tag, name in TAGS.items():
@@ -721,6 +728,8 @@ class StageStudies:
             "unique_resource_metric": distribution(
                 [r["selected_metrics"][metric] for r in frontier]
             ),
+            "resource_coverage_policy": "Nonempty direct memberships, or nonempty selected "
+            "subtree ancestor frontier; measured zero is retained, null is unknown",
             "classification": data["classification"],
             "confidence_threshold": data["confidence_threshold"],
             "secondary_threshold": data["secondary_threshold"],

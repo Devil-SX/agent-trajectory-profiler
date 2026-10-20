@@ -77,7 +77,8 @@ OPERATIONS: list[dict[str, Any]] = [
         "activity, metric availability and session-cluster intervals. Filters: session_id, depth "
         "(1..100), node_kind=all|leaf|parent, tag, membership=direct|subtree, q, metric, "
         "confidence_min=0..1, mixed=all|mixed|single (threshold0.5). "
-        "Subtree resource totals use a non-overlapping selected ancestor frontier. Classifier "
+        "Metric coverage omits empty containers and retains measured zero. Subtree resource "
+        "totals use a non-overlapping selected ancestor frontier. Classifier "
         "confidence, statistical intervals and unavailable human gold accuracy stay separate.",
     },
     {
