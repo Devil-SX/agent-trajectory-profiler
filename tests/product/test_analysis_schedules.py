@@ -103,7 +103,9 @@ def test_revision_pin_conflict_and_manual_durable_receipt(tmp_path, monkeypatch)
     value = ScheduleRun(
         mutation_id="manual-ten-request", expected_revision=result["revision"], count=10
     )
-    first = plans.run("owner", "nightly", value)
+    caller = {"account_id": "native-machine", "machine_client": "analysis-client", "key_id": "k1"}
+    first = plans.run("owner", "nightly", value, caller)
+    assert first["requested_by"] == caller
     assert plans.run("owner", "nightly", value) == first
     assert len(first["selected"]) == 2 and first["requested_count"] == 10
     bad = AnalysisBatchRequest(

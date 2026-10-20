@@ -467,6 +467,7 @@ class AnalysisSchedules:
         slot: str,
         count: int,
         now: datetime,
+        requested_by: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         prior = db.execute(
             "SELECT body FROM analysis_schedule_runs WHERE owner=? AND schedule=? " "AND slot=?",
@@ -512,6 +513,7 @@ class AnalysisSchedules:
             "status": "submitted" if selected else "no_candidates",
             "created_at": now.isoformat(),
             "authorized_by": config.get("authorized_by"),
+            "requested_by": requested_by or {"kind": "leased-service-coordinator"},
         }
         db.execute(
             "INSERT INTO analysis_schedule_runs VALUES(?,?,?,?,?,?)",
@@ -519,7 +521,9 @@ class AnalysisSchedules:
         )
         return result
 
-    def run(self, owner: str, sid: str, value: ScheduleRun) -> dict[str, Any]:
+    def run(
+        self, owner: str, sid: str, value: ScheduleRun, caller: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         body = "schedule.run:" + sid + ":" + value.model_dump_json()
         with self.domain.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -538,6 +542,7 @@ class AnalysisSchedules:
                 "manual:" + value.mutation_id,
                 value.count or config["daily_count"],
                 datetime.now(UTC),
+                caller,
             )
             return self.domain._receipt(db, owner, value.mutation_id, body, "schedule.run", result)
 

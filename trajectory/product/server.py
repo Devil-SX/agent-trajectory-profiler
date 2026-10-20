@@ -895,6 +895,11 @@ def create_app(
                         resource_owner,
                         request.path_params["schedule_id"],
                         value,
+                        {
+                            "account_id": principal.account,
+                            "key_id": principal.key_id,
+                            "machine_client": principal.machine_client,
+                        },
                     )
                 if identifier == "analysis_batch_run":
                     return await asyncio.to_thread(semantic.request_batch, resource_owner, value)
