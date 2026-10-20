@@ -181,3 +181,65 @@ def test_runtime_protocol_discovers_request_input_fields(tmp_path: Path) -> None
     properties = response.json()["$defs"]["Record"]["properties"]
     assert {"input_origin", "input_chars", "interaction_id"} <= properties.keys()
     assert properties["input_chars"]["anyOf"][0]["minimum"] == 0
+
+
+@pytest.mark.parametrize(
+    "origins,expected,status",
+    [
+        (["unknown"], None, "unknown"),
+        (["agent", "system"], 0, "observed"),
+        (["human", "unknown"], 2, "partial"),
+    ],
+)
+def test_unknown_origin_is_not_human_zero(tmp_path, origins, expected, status):
+    domain = Domain(tmp_path / "coverage.db")
+    domain.register("owner", "machine", "fixture")
+    domain.ingest(
+        "machine",
+        batch(
+            [
+                record(index, input_origin=origin, input_chars=2)
+                for index, origin in enumerate(origins)
+            ]
+        ),
+    )
+    overview = domain.overview("owner")
+    for metrics in (overview["projects"][0], overview["daily"][0], overview["tasks"][0]):
+        assert metrics["human_input_chars"] == expected
+        assert metrics["human_input_coverage"]["status"] == status
+        assert metrics["human_input_coverage"]["origin_unknown_requests"] == origins.count(
+            "unknown"
+        )
+
+
+def test_all_human_text_missing_is_unknown_with_observed_interactions(tmp_path):
+    domain = Domain(tmp_path / "missing-text.db")
+    domain.register("owner", "machine", "fixture")
+    domain.ingest("machine", batch([record(0, input_origin="human")]))
+    metrics = domain.overview("owner")["projects"][0]
+    assert metrics["human_interactions"] == 1
+    assert metrics["human_input_chars"] is None
+    assert metrics["human_input_coverage"]["known_human_input_chars"] == 0
+    assert metrics["human_input_coverage"]["known_human_text_requests"] == 0
+
+
+def test_human_coverage_is_idempotent_and_survives_parent_aggregation():
+    from trajectory.product.semantic import total_metrics
+
+    values = dict(
+        human_interactions=0,
+        human_input_chars=0,
+        missing_human_input_chars=0,
+        unknown_origin_interactions=2,
+        agent_interactions=0,
+        system_interactions=0,
+    )
+    Domain.apply_human_input_coverage(values)
+    first = dict(values)
+    Domain.apply_human_input_coverage(values)
+    assert values == first
+    parent = total_metrics([total_metrics([values])])
+    assert parent["human_interactions"] is None
+    assert parent["human_input_chars"] is None
+    assert parent["human_input_coverage"]["confirmed_human_requests"] == 0
+    assert parent["unknown_origin_interactions"] == 2

@@ -13,7 +13,7 @@ import json
 import os
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from trajectory.product.contracts import (
     AnalysisBatchRequest,
@@ -22,13 +22,11 @@ from trajectory.product.contracts import (
     SourceChunk,
     TaskEdit,
 )
+from trajectory.product.domain import Domain
 from trajectory.product.read_cache import RevisionCache
 from trajectory.product.session_metadata import VERSION as METADATA_VERSION
 from trajectory.product.session_metadata import extract as extract_metadata
 from trajectory.product.session_metadata import read as read_metadata
-
-if TYPE_CHECKING:
-    from trajectory.product.domain import Domain
 
 
 def stamp() -> str:
@@ -95,7 +93,17 @@ COUNTERS = (
 def total_metrics(items: list[dict[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key in COUNTERS:
-        values = [item[key] for item in items if isinstance(item.get(key), (int, float))]
+        values = []
+        for item in items:
+            coverage = item.get("human_input_coverage", {})
+            if key == "human_interactions" and "confirmed_human_requests" in coverage:
+                value = coverage["confirmed_human_requests"]
+            elif key == "human_input_chars" and "known_human_input_chars" in coverage:
+                value = coverage["known_human_input_chars"]
+            else:
+                value = item.get(key)
+            if isinstance(value, (int, float)):
+                values.append(value)
         result[key] = sum(values) if values else None
     result["missing_counters"] = {
         key: sum(item.get("missing_counters", {}).get(key, 0) for item in items)
@@ -109,6 +117,7 @@ def total_metrics(items: list[dict[str, Any]]) -> dict[str, Any]:
     result["estimated_usd"] = (
         result["known_subtotal_usd"] if result["cost_status"] == "complete" else None
     )
+    Domain.apply_human_input_coverage(result)
     return result
 
 

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Distinguish unknown human input from observed zero across overview, sessions and task aggregation. Expose request-origin and text coverage separately from the known subtotal.
+
 ## [4.2.1] - 2026-10-20
 
 ### Fixed

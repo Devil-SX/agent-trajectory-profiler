@@ -116,7 +116,7 @@ def test_native_usage_exact_request_text_unknown_origin_and_replay(tmp_path):
     overview = domain.overview("owner")
     assert overview["projects"][0]["input"] == 10
     assert overview["projects"][0]["unknown_origin_interactions"] == 1
-    assert overview["projects"][0]["human_interactions"] == 0
+    assert overview["projects"][0]["human_interactions"] is None
     assert len(records) == 2
 
 

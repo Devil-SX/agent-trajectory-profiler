@@ -164,7 +164,9 @@ def test_legacy_codex_missing_requests_is_unknown_in_all_session_views(tmp_path:
 
 
 @pytest.mark.parametrize("requests", [11, 45])
-def test_pi_measured_unknown_origins_preserve_observed_zero_and_counts(tmp_path: Path, requests):
+def test_pi_unknown_origins_preserve_known_subtotal_without_claiming_human_zero(
+    tmp_path: Path, requests
+):
     domain = Domain(tmp_path / "pi.db")
     domain.register("owner", "machine", "fixture")
     store = SemanticStore(domain)
@@ -214,8 +216,8 @@ def test_pi_measured_unknown_origins_preserve_observed_zero_and_counts(tmp_path:
     assert coverage == listing["interaction_availability"]
     assert coverage["available"] is True and coverage["request_records"] == requests
     for metrics in [detail["session"]["metrics"], listing["metrics"]]:
-        assert metrics["human_interactions"] == 0
-        assert metrics["human_input_chars"] == 0
+        assert metrics["human_interactions"] is None
+        assert metrics["human_input_chars"] is None
         assert metrics["unknown_origin_interactions"] == requests
     assert (
         sum(op["metrics"]["unknown_origin_interactions"] for op in detail["operations"]) == requests

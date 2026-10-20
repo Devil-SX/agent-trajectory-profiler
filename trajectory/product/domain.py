@@ -10,7 +10,7 @@ from collections import OrderedDict, defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from itertools import chain
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from trajectory.product.contracts import Batch, Correction, Price
@@ -545,8 +545,59 @@ class Domain:
         metrics: dict[str, Any], availability: dict[str, Any]
     ) -> None:
         if not availability["available"]:
+            metrics.pop("human_input_coverage", None)
             for key in INTERACTION_COUNTERS:
                 metrics[key] = None
+        Domain.apply_human_input_coverage(metrics)
+
+    @staticmethod
+    def apply_human_input_coverage(metrics: dict[str, Any]) -> None:
+        """Separate an observed subtotal from proof that human input was zero.
+
+        User-role requests whose origin is unknown cannot establish zero human
+        work. Explicit agent/system requests can establish an observed zero.
+        This is a projection only; recorded evidence remains unchanged.
+        """
+        prior = metrics.get("human_input_coverage", {})
+        human = metrics.get("human_interactions")
+        if human is None:
+            human = prior.get("confirmed_human_requests")
+        chars = metrics.get("human_input_chars")
+        if chars is None:
+            chars = prior.get("known_human_input_chars")
+        unknown = metrics.get("unknown_origin_interactions")
+        missing = metrics.get("missing_human_input_chars")
+        agents = metrics.get("agent_interactions")
+        system = metrics.get("system_interactions")
+        available = all(type(value) is int for value in (human, unknown, missing, agents, system))
+        total = (
+            sum(cast(int, value) for value in (human, unknown, agents, system))
+            if available
+            else None
+        )
+        metrics["human_input_coverage"] = {
+            "status": (
+                "unknown"
+                if not available or (human == 0 and unknown)
+                else "partial" if unknown or missing else "observed"
+            ),
+            "request_records": total,
+            "origin_known_requests": (
+                sum(cast(int, value) for value in (human, agents, system)) if available else None
+            ),
+            "origin_unknown_requests": unknown,
+            "confirmed_human_requests": human,
+            "known_human_text_requests": (
+                cast(int, human) - cast(int, missing) if available else None
+            ),
+            "missing_human_text_requests": missing,
+            "known_human_input_chars": chars,
+        }
+        if available and human == 0 and unknown:
+            metrics["human_interactions"] = None
+            metrics["human_input_chars"] = None
+        elif available and human and missing >= human:
+            metrics["human_input_chars"] = None
 
     def source_contributions(self, owner: str, collector: str, source: str) -> list[dict[str, Any]]:
         key = (owner, collector, source, self.ledger_revision())
@@ -957,6 +1008,8 @@ class Domain:
             )
             if target["unpriced_calls"]:
                 target["estimated_usd"] = None
+        for target in chain(groups.values(), days.values(), tasks.values()):
+            self.apply_human_input_coverage(target)
         # Reuse the existing ledger scan; no extra scan or per-source query.
         for target in chain(source_metrics.values(), event_metrics.values()):
             measured = target["record"]
