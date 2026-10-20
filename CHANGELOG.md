@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-20
+
 ### Added
 
 - Switch among six independent dashboard tabs with on-demand data reads, retained views, accessible keyboard navigation and responsive loading skeletons with inline retry.
@@ -14,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Populate task-view project choices from session facets without eagerly loading overview statistics.
+
+Code stats vs 4.0.1 (5ac0ef5): total 21986 text lines (baseline 21607), +410 (-31) = +379, 1.75% text-line change.
 
 ## [4.0.1] - 2026-10-20
 
