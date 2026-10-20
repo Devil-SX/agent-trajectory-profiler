@@ -57,7 +57,7 @@ const server=http.createServer(async(req,res)=>{
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   delay=250;await page.goto(origin);await page.locator('.research-loading').waitFor();await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');delay=0;
   assert(!requests.some(r=>r.path.endsWith('/stages')),'Stage detail must load only when expanded');
-  assert.match(await page.locator('.research-time-distribution').innerText(),/总时长 1 小时/);assert.match(await page.locator('.research-time-distribution').innerText(),/会话间 SD/);assert.match(await page.locator('.research-time-distribution').innerText(),/2 个有效会话/);assert(requests.some(r=>r.query.metric==='active_seconds_estimate'));
+  assert.match(await page.locator('.research-time-distribution').innerText(),/总时长 1 小时/);assert.match(await page.locator('.research-time-distribution').innerText(),/记录间 SD/);assert.match(await page.locator('.research-time-distribution').innerText(),/2 个有效会话/);assert(requests.some(r=>r.query.metric==='active_seconds_estimate'));assert.match(await page.locator('main').innerText(),/同源复制和 fork 依赖未校正/);
   assert.equal(await page.locator('.research-filter-disclosure').evaluate(node=>node.open),false);
   assert.equal(await page.locator('.research-stage-drawer').evaluate(node=>node.open),false);
   await page.locator('.research-filter-disclosure>summary').click();await page.getByLabel('层级',{exact:true}).focus();await page.keyboard.press('Escape');assert.equal(await page.locator('.research-filter-disclosure').evaluate(node=>node.open),false);

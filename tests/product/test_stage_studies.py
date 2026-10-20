@@ -160,6 +160,9 @@ def test_direct_and_subtree_frontier_do_not_double_count_or_turn_unknown_into_ze
     assert filtered["summary"]["stages"] == 2  # Secondary label matches; primary remains unchanged.
     assert filtered["categories"][0]["stage_share"] == 1
     assert direct["human_gold_accuracy"] is None and direct["segmentation_confidence"] is None
+    assert direct["cluster_unit"] == "imported_session_record_id"
+    assert direct["native_session_independence_corrected"] is False
+    assert "fork dependencies uncorrected" in direct["uncertainty_method"]
     category = next(c for c in direct["categories"] if c["tag"] == "understand_decide")
     assert category["resource_share_sessions"] == 1 and category["resource_share_ci95"] is None
     assert category["stage_share_sessions"] == 2 and category["stage_share_ci95"] is not None

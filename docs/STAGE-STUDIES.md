@@ -28,10 +28,13 @@ The model's mixed-activity probability concerns the labeled stage, whereas
 operation-weighted subtree label entropy describes the composition of the
 hierarchy. Neither is measured classification accuracy.
 
-The summary reports session-level share means, sample variance and standard
-deviation, plus 95% session-cluster percentile intervals (10,000 replicates,
+The summary reports imported-session-record share means, sample variance and
+standard deviation, plus 95% imported-record cluster percentile intervals (10,000 replicates,
 fixed seed). Depth associations use Spearman ranks and 300 cluster replicates.
-Less than two eligible sessions produces no interval. These exploratory
+Less than two eligible records produces no interval. Shared-native copies and
+fork dependencies are not corrected; record counts do not imply independent
+subjects. A native/fork identity audit and a new cohort are required before
+claiming independence-corrected intervals. These exploratory
 intervals do not account for label errors, segmentation errors or selection
 bias. Model confidence, unavailable segmentation confidence, and unavailable
 human gold accuracy are separate fields. Source and analysis revisions,

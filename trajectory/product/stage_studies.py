@@ -736,11 +736,15 @@ class StageStudies:
             "measurement_policy": data["measurement_policy"],
             "segmentation_confidence": None,
             "human_gold_accuracy": None,
-            "uncertainty_method": "10000 session-cluster percentile bootstrap, seed20261020; "
-            "at least2 sessions; missing denominators omitted",
+            "cluster_unit": "imported_session_record_id",
+            "native_session_independence_corrected": False,
+            "uncertainty_method": "10000 imported-session-record cluster percentile bootstrap, "
+            "seed20261020; at least2 records; missing denominators omitted; shared-native "
+            "copies and fork dependencies uncorrected; exploratory intervals only",
             "limitations": [
                 "分类模型confidence不是分段置信度或人工准确率。当前没有随机人工gold。",
                 "统计区间未覆盖分段错误、模型错标和定向筛选偏差，不代表总体或因果结论。",
+                "当前按导入会话记录ID重采样，同源复制和fork依赖未校正；有效记录数不是独立个体数，区间仅用于探索。",
                 "没有直接操作的父节点仍保留原始模型标签，不能把它的混合判断当作直接操作证据。",
                 "次标签覆盖率可超过100%，主标签份额才使用互斥分母。",
                 "子树总量使用无重叠选中祖先前沿，逐行子树指标不可再相加。",

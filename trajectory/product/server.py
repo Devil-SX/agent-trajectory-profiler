@@ -87,7 +87,8 @@ OPERATIONS: list[dict[str, Any]] = [
         "path": "/api/stage-studies/{study_id}",
         "scope": "read",
         "effect": "Read stage taxonomy, hierarchy, model confidence, mixed "
-        "activity, metric availability and session-cluster intervals. Filters: session_id, depth "
+        "activity, metric availability and imported-session-record intervals (shared-native/fork "
+        "dependence uncorrected). Filters: session_id, depth "
         "(1..100), node_kind=all|leaf|parent, tag, membership=direct|subtree, q, metric, "
         "confidence_min=0..1, mixed=all|mixed|single (threshold0.5). "
         "Metric coverage omits empty containers and retains measured zero. Subtree resource "
