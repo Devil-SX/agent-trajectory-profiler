@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Display elapsed and active time consistently as readable hours, minutes and seconds across dashboard and research views, preserving unknown values, observed zero and nonzero subsecond durations. API and CSV seconds are unchanged.
 
-Code stats vs v4.3.0: total 25525 text lines (baseline 25486), +59 (-20) = +39, 0.15% text-line change.
+Code stats vs v4.3.0: total 25525 text lines (baseline 25486), +61 (-22) = +39, 0.15% text-line change.
 
 ## [4.3.0] - 2026-10-20
 
