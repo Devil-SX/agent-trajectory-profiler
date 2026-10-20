@@ -85,6 +85,7 @@ const server=http.createServer(async(req,res)=>{
   await page.getByLabel('节点',{exact:true}).focus();await page.keyboard.press('ArrowUp');await page.keyboard.press('Enter');
   assert(!requests.some(r=>r.path.endsWith('/stages')));await page.locator('.research-stage-drawer>summary').click();await page.getByRole('button',{name:'导出筛选结果 CSV'}).waitFor();
   const downloadEvent=page.waitForEvent('download');await page.getByRole('button',{name:'导出筛选结果 CSV'}).click();const download=await downloadEvent;await download.saveAs(path.join(output,'fixture.csv'));assert.match(fs.readFileSync(path.join(output,'fixture.csv'),'utf8'),/parent,0.9/);
+  await select('资源指标','human_interactions','metric');assert.match(await page.locator('.research-cards').innerText(),/已确认小计/);assert.match(await page.locator('.research-warning').innerText(),/0不代表没有人类输入/);await select('资源指标','recorded_tokens','metric');
   mode='error';await select('层级','1','depth');await page.getByRole('button',{name:'重试',exact:true}).waitFor();assert.match(await page.locator('.research-status').innerText(),/503/);mode='normal';await page.getByRole('button',{name:'重试',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');
   await page.screenshot({path:path.join(output,'research-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'research-mobile.png'),fullPage:true});
