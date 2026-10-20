@@ -18,3 +18,11 @@ Verified 2026-10-20, official React Bits repository revision `e12c22192ac7b4b452
 These are interaction references. This workbench independently implements native HTML disclosures, CSS transitions and keyboard handlers; no React Bits component, source code or stylesheet is copied or redistributed. It adds no React, animation library, continuous animation loop or dynamic background. Reduced-motion settings disable transitions and content animations. Loading skeletons preserve the existing reduced-motion treatment.
 
 The research view is a separate authenticated component. Its script, stylesheet and saved study data load only when the research tab is first selected. It owns research-specific filters and does not change the task workspace's session filters or submit model requests.
+
+## Control scope and persistent navigation
+
+The site shell contains only identity, service links and the seven main tabs. Its sticky height is measured from the rendered shell and feeds scroll padding, panel anchors and mobile task context placement. Local controls are actual descendants of their owning tabpanel. Task search, dates, project, directory, status, ordering, selection and batch actions belong to task analysis. Research controls remain inside the research component. Coverage exposes refresh and has no ineffective date or project filters.
+
+Overview, human trends, daily trends and detail views reuse a single statistics-filter component, moved into the selected panel. Each view persists its own project/date/disclosure scope; task and research state are separate. A bounded response cache reuses the same date-scoped overview read across views without transferring filter state. Returning to another scope restores its own data, or loads that scope. Click and keyboard navigation update browser history; back navigation restores the selected view and its local conditions.
+
+Human metrics use the domain coverage status. Positive values with missing measurement contributions are labelled as known subtotals, and a missing contribution count is not described as a missing interaction count. Observed zero remains distinct from unavailable human provenance.

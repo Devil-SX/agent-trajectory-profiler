@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Keep the brand and tab navigation visible while scrolling, and place each search/filter/action inside the view it controls. Statistics views preserve independent scopes and reuse date-scoped responses without changing task filters.
+- Compare stage, token and active-time distributions with confidence intervals, compact drill-downs and on-demand stage evidence.
+
 ### Fixed
 
 - Distinguish unknown human input from observed zero across overview, sessions and task aggregation. Expose request-origin and text coverage separately from the known subtotal.

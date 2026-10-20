@@ -31,6 +31,7 @@ const sessions = [
     metrics: {...metric(null), human_interactions: null, human_input_chars: null,
       unknown_origin_interactions: 1, missing_human_input_chars: 1}},
 ];
+sessions[0].metrics.human_input_coverage = {status:'partial',missing_measurement_items:1};
 const tasks = [
   {id: 'root', parent_id: null, title: '验证 AI CPM', metrics: metric(1000),
     segments: [{start_operation_id: '1', end_operation_id: '3'}]},
@@ -255,6 +256,7 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
     await nextList(page, () => page.fill('#session-search', 'native-cpm'));
     await page.click('[data-session-id="cpm"]'); await page.waitForSelector('.analysis-context');
     await contextual(page, 'session', null, '1[,.]?000');
+    for(const field of ['human_interactions','human_input_chars']){assert.match(await metricValue(page,field),/已知小计/);assert.match(await metricValue(page,field),/1 项测量缺失/);}
     const sessionMetricValues = await page.locator('.analysis-summary .card').evaluateAll(ns => Object.fromEntries(ns.map(n => [n.dataset.metric,n.querySelector('.value').textContent])));
     assert.equal(await page.locator('.analysis-context').evaluate(n => getComputedStyle(n).position), 'sticky');
     assert.equal(await page.locator('.analysis-title').innerText(), 'AI CPM 优化验证');
