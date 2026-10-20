@@ -44,6 +44,14 @@ const overview = {generated_at: '2026-10-20T08:00:00Z', projects: [], daily: [],
   anomalies: [], coverage: {}, pricing: {prices: []}};
 let batchState = 'running', listDelay = 0, failList = false, detailFailure = false;
 const requests = [], listQueries = [], posts = [], pageErrors = [], checks = [];
+const layouts = {};
+async function screenshotTop(page, filename) {
+  await page.evaluate(() => {window.scrollTo(0, 0);const pane=document.querySelector('#analysis-content');if(pane)pane.scrollTop=0;});
+  await page.screenshot({path: output + '/' + filename, fullPage: true});
+}
+async function layout(page) {
+  return page.evaluate(() => ({analysis_context_height:document.querySelector('.analysis-context')?.getBoundingClientRect().height, workspace_toolbar_height:document.querySelector('.workspace-toolbar')?.getBoundingClientRect().height, filter_disclosure_height:document.querySelector('#workspace-filters')?.getBoundingClientRect().height, filters_open:document.querySelector('#workspace-filters')?.open, viewport_width:innerWidth, document_width:document.documentElement.scrollWidth, document_horizontal_overflow:document.documentElement.scrollWidth>innerWidth+1}));
+}
 const batch = () => ({batch_id: 'fixture-batch', status: batchState, total: 2, concurrency: 4,
   counts: batchState === 'running' ? {running: 1, queued: 1} :
     batchState === 'failed' ? {complete: 1, failed: 1} : {complete: 2},
@@ -70,7 +78,7 @@ function selectedSessions(params) {
   const offset = Number(params.get('cursor') || 0);
   return {sessions: rows.slice(offset, offset + 1), next_cursor: offset + 1 < rows.length ? String(offset + 1) : null,
     truncated: offset + 1 < rows.length,
-    directories: ['/research/embodied/ai-cpm', '/work/BatCave'],
+    directories: ['/research/embodied', '/research/embodied/ai-cpm', '/work/BatCave'],
     projects: [{id: 'embodied', name: '具身智能'}, {id: 'batcave', name: 'BatCave'}]};
 }
 const server = http.createServer(async (req, res) => {
@@ -124,6 +132,7 @@ const bodyReads = () => requests.filter(r => /\/operations\//.test(r.path)).leng
 const listed = page => page.locator('.session-button').evaluateAll(nodes => nodes.map(n => n.dataset.sessionId));
 const settleList = page => page.waitForFunction(() => document.querySelector('#session-list')?.getAttribute('aria-busy') === 'false');
 async function nextList(page, action) {
+  await page.locator('#workspace-filters').evaluate(n => {n.open = false;});
   const response = page.waitForResponse(r => new URL(r.url()).pathname === '/trajectory/api/sessions');
   await action(); await response; await settleList(page);
 }
@@ -132,6 +141,10 @@ async function toggle(page, id, open) {
   assert.equal(await element.evaluate(n => n.tagName), 'DETAILS');
   if (await element.evaluate(n => n.open) !== open) await element.locator(':scope > summary').click();
   assert.equal(await element.evaluate(n => n.open), open);
+  if (['workspace-filters', 'batch-activity'].includes(id)) {
+    const field = id === 'workspace-filters' ? 'filters_open' : 'batch_open';
+    await page.waitForFunction(({field, open}) => JSON.parse(localStorage.getItem('trajectory-workbench-v1') || '{}')[field] === open, {field, open});
+  }
 }
 async function metricValue(page, key) {
   return (await page.locator('.analysis-summary .card[data-metric="' + key + '"] .value').innerText()).trim();
@@ -159,6 +172,15 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
         JSON.stringify({batch_id: 'fixture-batch'}));
     });
     const page = await context.newPage(); page.on('pageerror', e => pageErrors.push(e.message));
+    for (const method of ['fill', 'selectOption']) {
+      const original = page[method].bind(page);
+      page[method] = async (selector, ...args) => {
+        if (/^#(?:project|since|until|session-status|session-directory|session-sort)$/.test(selector)) {
+          await page.locator(selector).evaluate(n => {const drawer = n.closest('details'); if (drawer) drawer.open = true;});
+        }
+        return original(selector, ...args);
+      };
+    }
     await page.goto(origin + '/trajectory/');
     await page.waitForSelector('[data-session-id="cpm"]'); await settleList(page);
     await page.waitForSelector('#batch-activity');
@@ -187,6 +209,9 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
     assert.deepEqual(await listed(page), ['other'], 'Server must filter before page slicing');
     assert.equal(listQueries.at(-1).cursor, undefined);
     await nextList(page, () => page.fill('#session-search', ''));
+    await nextList(page, () => page.selectOption('#session-directory', '/research/embodied'));
+    assert.deepEqual(await listed(page), ['cpm'], 'Server-authorized directory descendants must not be removed by browser equality filtering');
+    await nextList(page, () => page.selectOption('#session-directory', ''));
     const beforeCoalesce = listQueries.length;
     await nextList(page, async () => {
       await page.selectOption('#project', 'embodied');
@@ -198,6 +223,7 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
     assert.equal(listQueries.at(-1).project, 'embodied');
     assert.equal(listQueries.at(-1).since, '2026-10-01'); assert.equal(listQueries.at(-1).until, '2026-10-05');
     for (const id of ['project', 'since', 'until']) assert.equal(await page.locator('#filter-chips [data-filter="' + id + '"]').count(), 1);
+    await toggle(page, 'workspace-filters', false);
     await nextList(page, () => page.locator('#filter-chips [data-filter="since"]').click());
     assert.equal(await page.inputValue('#since'), ''); assert.equal(await page.inputValue('#until'), '2026-10-05');
     await nextList(page, () => page.click('#filters-clear'));
@@ -229,14 +255,18 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
     await nextList(page, () => page.fill('#session-search', 'native-cpm'));
     await page.click('[data-session-id="cpm"]'); await page.waitForSelector('.analysis-context');
     await contextual(page, 'session', null, '1[,.]?000');
+    const sessionMetricValues = await page.locator('.analysis-summary .card').evaluateAll(ns => Object.fromEntries(ns.map(n => [n.dataset.metric,n.querySelector('.value').textContent])));
     assert.equal(await page.locator('.analysis-context').evaluate(n => getComputedStyle(n).position), 'sticky');
     assert.equal(await page.locator('.analysis-title').innerText(), 'AI CPM 优化验证');
     assert.equal(bodyReads(), 0);
     const analysisBefore = countPath('/trajectory/api/sessions/cpm/analysis');
     await page.locator('.task-select[data-task-id="child"]').first().click();
     await contextual(page, 'task', 'child', '250', true);
+    const childMetricValues = await page.locator('.analysis-summary .card').evaluateAll(ns => Object.fromEntries(ns.map(n => [n.dataset.metric,n.querySelector('.value').textContent])));
+    for (const key of ['input','output','known_subtotal_usd','active_seconds_estimate','human_interactions','human_input_chars']) assert.notEqual(childMetricValues[key],sessionMetricValues[key], 'Selected child must update metric '+key);
+    assert.match(childMetricValues.output,/25/);
     assert.match(await page.locator('.task-context-title').innerText(), /缓存实验/);
-    assert.match(await metricValue(page, 'known_subtotal_usd'), /已知小计/);
+    assert.match(await metricValue(page, 'known_subtotal_usd'), /已知小计|部分计价/);
     for (const label of ['分段时间线', '开销火焰图', '任务层级']) {
       await page.getByRole('button', {name: label, exact: true}).click();
       assert.equal(await page.getByRole('button', {name: label, exact: true}).getAttribute('aria-pressed'), 'true');
@@ -285,13 +315,18 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
       assert.equal(await panel.evaluate(n => n.open), false);
       await toggle(page, 'batch-activity', true); await page.locator('h1').click();
       assert.equal(await panel.evaluate(n => n.open), false);
+      await page.waitForFunction(() => JSON.parse(localStorage.getItem('trajectory-workbench-v1') || '{}').batch_open === false);
     }
     await toggle(page, 'batch-activity', true); await page.reload(); await page.waitForSelector('#batch-activity');
     assert.equal(await page.locator('#batch-activity').evaluate(n => n.open), true);
     await toggle(page, 'batch-activity', false);
     checks.push('compact running, failed and complete activity; failure resume visible but never executed; Escape/outside close; reload persistence');
     await page.click('[data-session-id="cpm"]'); await page.waitForSelector('.analysis-context');
-    await page.screenshot({path: output + '/compact-workbench-desktop.png', fullPage: true});
+    await page.getByRole('button', {name: '任务层级', exact: true}).click();
+    await page.locator('.task-select[data-task-id="child"]').first().click();
+    await contextual(page, 'task', 'child', '250', true);
+    layouts.desktop = await layout(page);
+    await screenshotTop(page, 'compact-workbench-desktop.png');
     await page.setViewportSize({width: 390, height: 844});
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await toggle(page, 'workspace-filters', true);
@@ -299,7 +334,7 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
     await page.keyboard.press('Enter'); assert.equal(await page.locator('#workspace-filters').evaluate(n => n.open), false);
     await page.keyboard.press('Enter'); assert.equal(await page.locator('#workspace-filters').evaluate(n => n.open), true);
     assert.equal(await page.locator('#workspace-filters > summary').evaluate(n => document.activeElement === n), true);
-    await page.screenshot({path: output + '/compact-workbench-mobile-filters.png', fullPage: true});
+    await screenshotTop(page, 'compact-workbench-mobile-filters.png');
     await toggle(page, 'workspace-filters', false);
     await page.emulateMedia({reducedMotion: 'reduce'});
     listDelay = 600;
@@ -307,7 +342,8 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
     await page.click('#sessions-refresh');
     await refreshed; await settleList(page); listDelay = 0;
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-    await page.screenshot({path: output + '/compact-workbench-mobile.png', fullPage: true});
+    layouts.mobile = await layout(page);
+    await screenshotTop(page, 'compact-workbench-mobile.png');
     const motionContext = await browser.newContext({viewport: {width: 390, height: 844}, reducedMotion: 'reduce'});
     const motionPage = await motionContext.newPage();
     motionPage.on('pageerror', e => pageErrors.push(e.message));
@@ -332,7 +368,7 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
     checks.push('unknown human and price values remain unknown; failed list keeps data; failed detail retries without a paid action');
     assert.equal(posts.length, 0); assert.deepEqual(pageErrors, []);
     const result = {result: 'passed', fixture_only: true, candidate_html: process.argv[2], checks,
-      requests: requests.length, listing_requests: listQueries.length, operation_body_requests: bodyReads(),
+      candidate_html_sha256: require('node:crypto').createHash('sha256').update(html).digest('hex'), layouts, requests: requests.length, listing_requests: listQueries.length, operation_body_requests: bodyReads(),
       mutation_requests: posts.length, page_errors: pageErrors, listing_queries: listQueries};
     fs.writeFileSync(output + '/result.json', JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
     await context.close();

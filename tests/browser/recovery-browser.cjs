@@ -1,3 +1,4 @@
+const analysisText = async page => {await page.locator('.analysis-context-details').evaluateAll(ns=>ns.forEach(n=>{n.open=true;}));return page.locator('#analysis-content').innerText();};
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE);
 const fs=require('fs'),http=require('http'),assert=require('node:assert/strict');
 const html=fs.readFileSync(process.argv[2],'utf8');
@@ -43,17 +44,17 @@ const server=http.createServer(async(req,res)=>{
   assert.equal(await page.locator('#analyze-session').count(),0);
   assert.equal(await page.locator('#analysis-content [data-resume-job]').count(),0);
   assert.equal(posts.length,0);
-  assert.equal(await page.locator('.batch-progress-complete').evaluate(n=>n.style.width),'0%');
+  assert.equal(await page.locator('.batch-panel .progress > span').first().evaluate(n=>n.style.width),'0%');
   assert.equal(await page.locator('.batch-progress-failed').evaluate(n=>n.style.width),'100%');
   assert.match(await page.locator('.batch-panel [role=progressbar]').getAttribute('aria-valuetext'),/已完成 0，失败 2/);
   await page.locator('[data-session-id="recover"]').click();
   await page.waitForSelector('#analysis-content [data-resume-job="job-recover"]');
   assert.equal(await page.locator('#analyze-session').count(),0);
-  assert((await page.locator('#analysis-content').innerText()).includes('已保存 8 个窗口'));
+  assert((await analysisText(page)).includes('已保存 8 个窗口'));
   await page.locator('#analysis-content [data-resume-job]').click();
   await page.waitForFunction(()=>document.querySelector('#analysis-content .resume-feedback')?.textContent.includes('503'));
   assert.equal(await page.locator('#analysis-content [data-resume-job]').isEnabled(),true);
-  await page.getByText('查看各会话进度',{exact:true}).click();
+  if(!await page.locator('#batch-activity').evaluate(n=>n.open))await page.locator('#batch-activity > summary').click();
   assert.equal(await page.locator('.batch-panel [data-resume-job]').count(),1);
   assert((await page.locator('.batch-panel').innerText()).includes('系统不会自动重发'));
   await page.setViewportSize({width:390,height:844});
@@ -68,7 +69,7 @@ const server=http.createServer(async(req,res)=>{
   assert.equal(await page.locator('#analysis-content [data-resume-job]').count(),0);
   await page.reload();await page.waitForSelector('.batch-panel');
   assert.equal(posts.length,2);
-  await page.getByText('查看各会话进度',{exact:true}).click();
+  if(!await page.locator('#batch-activity').evaluate(n=>n.open))await page.locator('#batch-activity > summary').click();
   assert((await page.locator('.batch-panel').innerText()).includes('等待分析'));
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({status:'passed',checks:['server-authoritative resume eligibility','no new analysis after failure','uncertain blocks paid retry','saved prefix displayed','same mutation across detail and batch retry','batch identity retained','no model call from reload','mobile layout'],pageErrors:errors}));
