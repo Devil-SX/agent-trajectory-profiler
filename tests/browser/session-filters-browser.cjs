@@ -7,16 +7,16 @@ const rows=[
  {id:'gamma',display_title:'Gamma analysis',native_session_id:'native-gamma',cwd:'/workspace/a',project:'project-a',started_at:'2026-10-12T00:00:00Z',last_activity_at:'2026-10-16T00:00:00Z',has_analysis:true,analysis_status:'complete'},
  {id:'pending',display_title:'Pending source',native_session_id:'native-pending',cwd:'/workspace/b',project:'project-b',started_at:'2026-10-13T00:00:00Z',last_activity_at:'2026-10-15T00:00:00Z',has_analysis:false,analysis_status:'not_started'}
 ];
-const requests=[],held=[],holdQueue=[],pageErrors=[];let active=0,maxActive=0,failNext=false,holdOverview=false,overviewHeld=null,holdBatch=false,batchHeld=null,batchStatus='running';
+const requests=[],held=[],holdQueue=[],pageErrors=[];let overviewReads=0,active=0,maxActive=0,failNext=false,holdOverview=false,overviewHeld=null,holdBatch=false,batchHeld=null,batchStatus='running';
 const poison={sessions:[],directories:['/stale-response-only'],next_cursor:'stale-cursor'};
 const responseFor=q=>{
  const matches=rows.filter(s=>(!q.project||s.project===q.project)&&(!q.cwd||s.cwd===q.cwd)&&(!q.since||s.last_activity_at.slice(0,10)>=q.since)&&(!q.until||s.last_activity_at.slice(0,10)<=q.until)&&(!q.q||[s.id,s.native_session_id,s.display_title].some(v=>v.toLowerCase().includes(q.q.toLowerCase())))&&(q.analysis_status!=='analyzed'||s.has_analysis)&&(q.analysis_status!=='failed'||s.analysis_status==='failed'));
  matches.sort((a,b)=>q.sort==='started_desc'?b.started_at.localeCompare(a.started_at):q.sort==='directory'?a.cwd.localeCompare(b.cwd)||b.last_activity_at.localeCompare(a.last_activity_at):b.last_activity_at.localeCompare(a.last_activity_at));
- const offset=q.cursor==='page-2'?2:0;return {sessions:matches.slice(offset,offset+2),directories:['/workspace/a','/workspace/b'],next_cursor:offset+2<matches.length?'page-2':null};
+ const offset=q.cursor==='page-2'?2:0;return {sessions:matches.slice(offset,offset+2),directories:['/workspace/a','/workspace/b'],projects:[{id:'project-a',name:'Project A'},{id:'project-b',name:'Project B'}],next_cursor:offset+2<matches.length?'page-2':null};
 };
 const server=http.createServer(async(req,res)=>{
  const url=new URL(req.url,'http://localhost');res.setHeader('content-type','application/json');
- if(url.pathname==='/trajectory/api/overview'){const reply=()=>res.end(JSON.stringify({generated_at:'2026-10-19T00:00:00Z',projects:[{id:'project-a',name:'Project A'},{id:'project-b',name:'Project B'}],daily:[],anomalies:[],coverage:{},pricing:{prices:[]}}));if(holdOverview){overviewHeld=reply;return}return reply()}
+ if(url.pathname==='/trajectory/api/overview'){overviewReads++;const reply=()=>res.end(JSON.stringify({generated_at:'2026-10-19T00:00:00Z',projects:[{id:'project-a',name:'Project A'},{id:'project-b',name:'Project B'}],daily:[],anomalies:[],coverage:{},pricing:{prices:[]}}));if(holdOverview){overviewHeld=reply;return}return reply()}
  if(url.pathname==='/trajectory/api/sessions'){
   const q=Object.fromEntries(url.searchParams),entry={q};requests.push(entry);maxActive=Math.max(maxActive,++active);res.once('finish',()=>active--);
   const control=holdQueue.shift(),fail=failNext;failNext=false;
@@ -48,7 +48,7 @@ const until=async(check,message,timeout=5000)=>{const deadline=Date.now()+timeou
  // All controls participate in the same timer, and every scope field survives reload.
  n=requests.length;await page.selectOption('#session-directory','/workspace/a');await page.selectOption('#session-sort','directory');await page.selectOption('#project','project-a');await page.fill('#since','2026-10-01');await page.fill('#until','2026-10-31');await requested(n+1);assert.equal(requests.length,n+1);
  const scope={analysis_status:'analyzed',cwd:'/workspace/a',sort:'directory',project:'project-a',since:'2026-10-01',until:'2026-10-31',q:'native-alpha'};for(const [k,v]of Object.entries(scope))assert.equal(requests.at(-1).q[k],v);
- n=requests.length;holdOverview=true;await page.reload();await requested(n+1);assert(overviewHeld,'Overview should still be held');assert.equal(await page.inputValue('#project'),'project-a');assert.equal(requests.length,n+1);holdOverview=false;overviewHeld();await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);assert.equal(requests.length,n+1);assert.deepEqual(await ids(),['alpha']);for(const [k,v]of Object.entries(scope))assert.equal(requests.at(-1).q[k],v);assert.equal(await page.inputValue('#project'),'project-a');assert.equal(await page.inputValue('#since'),'2026-10-01');assert.equal(await page.inputValue('#until'),'2026-10-31');
+ n=requests.length;await page.reload();await requested(n+1);assert.equal(overviewReads,0,'Task view must populate projects without loading overview');assert.equal(await page.inputValue('#project'),'project-a');assert.equal(requests.length,n+1);await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);assert.equal(requests.length,n+1);assert.deepEqual(await ids(),['alpha']);for(const [k,v]of Object.entries(scope))assert.equal(requests.at(-1).q[k],v);assert.equal(await page.inputValue('#project'),'project-a');assert.equal(await page.inputValue('#since'),'2026-10-01');assert.equal(await page.inputValue('#until'),'2026-10-31');
  await reset();await chooseAlpha();await page.locator('[data-select-session="alpha"]').check();
  const cases=[['status','#session-status','analyzed'],['directory','#session-directory','/workspace/a'],['sort','#session-sort','started_desc'],['project','#project','project-a'],['since','#since','2026-10-02'],['until','#until','2026-10-30']];
  for(const [name,selector,value]of cases){

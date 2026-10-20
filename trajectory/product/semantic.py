@@ -2009,6 +2009,7 @@ class SemanticStore:
         }
         recent_jobs = {row["session"]: row for row in jobs}
         items = []
+        projects: dict[str, str] = {}
         for sid in groups.keys() | records.keys():
             own = groups.get(sid)
             event = own["record"] if own else {}
@@ -2093,6 +2094,7 @@ class SemanticStore:
                     ),
                 },
             }
+            projects[str(item["project"])] = str(item["project_name"])
             if project and item["project"] != project:
                 continue
             day = (last or "")[:10]
@@ -2158,6 +2160,10 @@ class SemanticStore:
             "total": total,
             "status_counts": counts,
             "directories": directories,
+            "projects": [
+                {"id": key, "name": name}
+                for key, name in sorted(projects.items(), key=lambda pair: (pair[1], pair[0]))
+            ],
             "coverage": {
                 "content_sessions": len(records),
                 "total_sessions": total,

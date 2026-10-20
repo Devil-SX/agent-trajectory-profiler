@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Switch among six independent dashboard tabs with on-demand data reads, retained views, accessible keyboard navigation and responsive loading skeletons with inline retry.
+- Query saved task stages across sessions through the authenticated `task_query` interface, with source revisions and stable pagination.
+
+### Fixed
+
+- Populate task-view project choices from session facets without eagerly loading overview statistics.
+
 ## [4.0.0] - 2026-10-20
 
 ### Changed

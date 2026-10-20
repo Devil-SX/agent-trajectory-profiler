@@ -96,3 +96,18 @@ def test_task_query_http_help_and_account_isolation(tmp_path):
         next(tool for tool in help_value["tools"] if tool["name"] == "task_query")["method"]
         == "GET"
     )
+
+
+def test_sessions_project_facets_survive_filters_and_pagination(tmp_path):
+    store, ids = seeded(tmp_path, 2)
+    with store.domain.connect() as db:
+        for index, sid in enumerate(ids):
+            # Source-only sessions have no measured project, retaining the explicit gap.
+            db.execute(
+                "INSERT INTO semantic_session_metadata VALUES(?,?,?,?)",
+                ("owner", sid, json.dumps({"metadata_version": 2, "cwd": f"/work/{index}"}), "now"),
+            )
+    before = store.sessions("owner", limit=1)
+    assert before["projects"] == [{"id": "unassigned", "name": "未归属"}]
+    assert store.sessions("owner", project="absent", q="no-match")["projects"] == before["projects"]
+    assert store.sessions("stranger")["projects"] == []
