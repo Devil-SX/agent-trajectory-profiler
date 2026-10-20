@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Keep task metrics and selection together across hierarchy, timeline and flamegraph views, with compact filters, removable scope chips and a background analysis drawer.
 - Load the authenticated research-statistics workspace only when its tab is opened.
 
+- Inspect revision-pinned stage research with hierarchy and leaf/parent filters, primary and secondary activity labels, mixed-activity diagnostics, model confidence, session-cluster intervals and variance. Shared authenticated APIs support idempotent imports and CSV exports without new model calls or duplicate resource attribution.
+
 ### Fixed
 
 - Preserve the server listing order and directory descendants instead of filtering or sorting a paginated response again in the browser.

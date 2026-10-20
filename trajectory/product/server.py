@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from trajectory.product import VERSION
@@ -32,6 +32,7 @@ from trajectory.product.domain import Domain
 from trajectory.product.error_logging import log_request_exception
 from trajectory.product.semantic import AnalysisResumeError, SemanticStore
 from trajectory.product.semantic_runtime import AnalysisRuntime
+from trajectory.product.stage_studies import StageStudies, StageStudyImport
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,45 @@ class CollectorBinding(BaseModel):
 
 
 OPERATIONS: list[dict[str, Any]] = [
+    {
+        "id": "stage_study_import",
+        "method": "POST",
+        "path": "/api/stage-studies",
+        "scope": "configure",
+        "input": StageStudyImport,
+        "effect": "Idempotently import an immutable account-owned audited stage-label/measurement "
+        "study; verifies saved task memberships and source/analysis revisions. No model calls "
+        "or usage ledger writes. Changed content requires a new study ID.",
+    },
+    {
+        "id": "stage_study_list",
+        "method": "GET",
+        "path": "/api/stage-studies",
+        "scope": "read",
+        "effect": "List account-owned stage segmentation/classification research studies.",
+    },
+    {
+        "id": "stage_study_read",
+        "method": "GET",
+        "path": "/api/stage-studies/{study_id}",
+        "scope": "read",
+        "effect": "Read stage taxonomy, hierarchy, model confidence, mixed "
+        "activity, metric availability and session-cluster intervals. Filters: session_id, depth "
+        "(1..100), node_kind=all|leaf|parent, tag, membership=direct|subtree, q, metric, "
+        "confidence_min=0..1, mixed=all|mixed|single (threshold0.5). "
+        "Subtree resource totals use a non-overlapping selected ancestor frontier. Classifier "
+        "confidence, statistical intervals and unavailable human gold accuracy stay separate.",
+    },
+    {
+        "id": "stage_study_stages",
+        "method": "GET",
+        "path": "/api/stage-studies/{study_id}/stages",
+        "scope": "read",
+        "effect": "Read revision-pinned stage label/metric detail and provenance. Same filters "
+        "as stage_study_read; limit=1..500 default50, offset>=0. format=csv exports all filtered "
+        "stages with confidence, secondary tags, parent/depth, Jindu call/receipt IDs; "
+        "no model calls.",
+    },
     {
         "id": "backup",
         "method": "POST",
@@ -310,6 +350,7 @@ def create_app(
 ) -> FastAPI:
     domain = Domain(path)
     semantic = SemanticStore(domain)
+    studies = StageStudies(domain)
     runtime = AnalysisRuntime(semantic)
 
     @asynccontextmanager
@@ -338,6 +379,7 @@ def create_app(
     )
     app.state.domain = domain
     app.state.semantic = semantic
+    app.state.stage_studies = studies
     app.state.analysis_runtime = runtime
     original_authorizer = authorizer
 
@@ -489,6 +531,22 @@ def create_app(
                     authorizer(request, additional_scope)
             identifier = operation["id"]
             try:
+                if identifier == "stage_study_list":
+                    return await asyncio.to_thread(studies.catalog, principal.account)
+                if identifier in {"stage_study_read", "stage_study_stages"}:
+                    filters = dict(request.query_params)
+                    study = request.path_params["study_id"]
+                    if identifier == "stage_study_stages" and filters.get("format") == "csv":
+                        csv_body = await asyncio.to_thread(
+                            studies.csv, principal.account, study, filters
+                        )
+                        return Response(
+                            csv_body,
+                            media_type="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": "attachment; filename=stage-study.csv"},
+                        )
+                    reader = studies.summary if identifier == "stage_study_read" else studies.stages
+                    return await asyncio.to_thread(reader, principal.account, study, filters)
                 if identifier == "request_traces":
                     return await asyncio.to_thread(domain.traces)
                 if identifier == "source_progress":
@@ -592,6 +650,8 @@ def create_app(
                     chunks.extend(chunk)
                 body = bytes(chunks)
                 value = operation["input"].model_validate_json(body)
+                if identifier == "stage_study_import":
+                    return await asyncio.to_thread(studies.import_study, principal.account, value)
                 if identifier == "backup":
                     return await asyncio.to_thread(
                         domain.online_backup, principal.account, value.mutation_id
@@ -699,6 +759,17 @@ def create_app(
     def dashboard(request: Request) -> str:
         authorizer(request, "read")
         return (Path(__file__).parent / "dashboard.html").read_text()
+
+    @app.get("/trajectory/research.js")
+    @app.get("/trajectory/research.css")
+    def research_asset(request: Request) -> Response:
+        authorizer(request, "read")
+        filename = request.url.path.rsplit("/", 1)[-1]
+        return Response(
+            (Path(__file__).parent / filename).read_text(),
+            media_type="text/javascript" if filename.endswith(".js") else "text/css",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     return app
 
