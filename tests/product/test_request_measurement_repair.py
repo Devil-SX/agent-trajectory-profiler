@@ -347,7 +347,8 @@ def test_repair_invalidates_warm_overview_source_and_detail_once(tmp_path):
         ]
         == 3
     )
-    assert store.sessions("owner")["sessions"][0]["metrics"]["human_input_chars"] == 3
+    assert store.sessions("owner")["metrics_included"] is False
+    assert "metrics" not in store.sessions("owner")["sessions"][0]
     assert domain.repair_requests("machine", repair) == receipt
     assert domain.ledger_revision() == after
     assert store.detail("owner", sid) == detail

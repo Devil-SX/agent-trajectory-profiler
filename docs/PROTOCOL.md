@@ -209,3 +209,17 @@ are rejected instead of silently downgrading evidence. A current version 3 sourc
 replacement remains supported and uses the same event IDs, so it does not add a
 second copy of interactions. Old immutable analysis/study snapshots remain
 unchanged; revised studies require a new revision and measured source evidence.
+
+## Directory and checkpoint reads
+
+The session directory publishes `metrics_included=false`; resource counters are
+read from the selected session analysis or account overview. A directory cursor
+is opaque and bound to its account, complete filter scope and page size. Do not
+construct offset cursors. Pages keep one metadata snapshot during concurrent
+uploads. If the API returns `session_cursor_expired`, restart from the first
+page. Version 5 removes list metrics and numeric-offset cursors; there is one
+current directory contract.
+
+The independent source-coverage operation reports account-owned checkpoints and
+missing timestamps without usage pricing or deduplication. Discover its live
+operation name, path and read permission through authenticated Help.

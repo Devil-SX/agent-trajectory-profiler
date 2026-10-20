@@ -174,7 +174,8 @@ both worker metadata and prompt operations: known injected instruction/context r
 never supply display names. Without an effective prompt, names use directory and date;
 the first-message field remains null. Existing abstracts are reused without a model call.
 The v2 metadata index replaces older versions in place, at most 32 IR records or a
-16 Mi-character read budget per listing. Each record acquires `BEGIN IMMEDIATE` before
+16 Mi-character read budget per coordinator pass. GET never starts this migration;
+the existing leased coordinator checks for bounded work when idle. Each record acquires `BEGIN IMMEDIATE` before
 reading and rechecks its index version, so a concurrent parser's newer metadata wins.
 Old indexes awaiting migration receive the same conservative display projection on
 session and batch reads; this path reads no IR and creates no second stored index.
@@ -206,3 +207,7 @@ Provider response identities deduplicate usage across inherited copies. Missing
 provider identity stays session-scoped with an explicit gap, and copied text is
 never proof of duplicate consumption. User-role messages without explicit origin
 remain unknown; available original text still supplies exact character counts.
+
+Session-directory and checkpoint reads are independent of the full usage snapshot.
+See [read-performance.md](docs/read-performance.md) for their roles, account-scoped
+snapshot cursors, retained authoritative metric readers and timing boundaries.

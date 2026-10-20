@@ -158,6 +158,10 @@ class AnalysisResumeError(ValueError):
         self.code = code
 
 
+class SessionCursorExpired(ValueError):
+    """A bounded read snapshot is unavailable or belongs to another filter scope."""
+
+
 class IRSnapshotUnavailable(ValueError):
     """The requested immutable parsed revision was never retained."""
 
@@ -166,6 +170,7 @@ class SemanticStore:
     def __init__(self, domain: Domain):
         self.domain = domain
         self._detail_cache = RevisionCache(max_bytes=32 * 1024**2, max_entries=8)
+        self._directory_cache = RevisionCache(max_bytes=16 * 1024**2, max_entries=8)
         with domain.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS source_archives(
@@ -205,6 +210,8 @@ class SemanticStore:
                 CREATE TABLE IF NOT EXISTS semantic_session_metadata(
                     owner TEXT,session TEXT,body TEXT,updated TEXT,
                     PRIMARY KEY(owner,session));
+                CREATE INDEX IF NOT EXISTS semantic_sessions_directory ON semantic_sessions(
+                    owner,id,title,agent,collector,source,source_revision,updated);
             """)
 
     @staticmethod
@@ -1205,6 +1212,18 @@ class SemanticStore:
                 (owner, sid, json.dumps(extract_metadata(parsed, source["source_name"])), stamp()),
             )
 
+    def maintain_metadata(self, limit: int = 32) -> int:
+        """Bounded migration called only by the existing coordinator, never by GET."""
+        with self.domain.connect() as db:
+            pending = db.execute(
+                "SELECT s.owner FROM semantic_sessions s "
+                "LEFT JOIN semantic_session_metadata m ON m.owner=s.owner AND m.session=s.id "
+                "WHERE m.session IS NULL OR "
+                "COALESCE(json_extract(m.body,'$.metadata_version'),0)<? LIMIT 1",
+                (METADATA_VERSION,),
+            ).fetchone()
+        return self.backfill_metadata(pending["owner"], limit) if pending else 0
+
     def backfill_metadata(self, owner: str, limit: int = 32) -> int:
         """Migrate old IR one snapshot at a time, bounded by count and text budget."""
         migrated = 0
@@ -1594,6 +1613,30 @@ class SemanticStore:
             session = next((item for item in listing["sessions"] if item["id"] == sid), None)
             if session is None:
                 raise
+            with self.domain.connect() as db:
+                source = next(
+                    (
+                        dict(row)
+                        for row in db.execute(
+                            "SELECT collector,source FROM sources WHERE owner=?", (owner,)
+                        )
+                        if self.session_id(row["collector"], row["source"]) == sid
+                    ),
+                    None,
+                )
+            values = (
+                contributions
+                if contributions is not None
+                else (
+                    self.domain.source_contributions(owner, source["collector"], source["source"])
+                    if source
+                    else []
+                )
+            )
+            metrics = total_metrics(values)
+            metrics["collection_status"] = session["collection"]["status"]
+            self.domain.apply_interaction_availability(metrics, session["interaction_availability"])
+            session = {**session, "metrics": metrics}
             return {
                 "session": session,
                 "status": "partial",
@@ -2026,6 +2069,25 @@ class SemanticStore:
             "metrics_included": False,
         }
 
+    @staticmethod
+    def _directory_page(
+        value: dict[str, Any], scope: str, limit: int, offset: int = 0
+    ) -> dict[str, Any]:
+        rows = value["sessions"]
+        page = rows[offset : offset + limit] if limit else rows[offset:]
+        more = offset + len(page) < len(rows)
+        cursor = None
+        if more:
+            payload = json.dumps(
+                {
+                    "offset": offset + len(page),
+                    "snapshot": value["listing_snapshot_id"],
+                    "scope": scope,
+                }
+            )
+            cursor = "v1." + base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+        return {**value, "sessions": page, "next_cursor": cursor}
+
     def sessions(
         self,
         owner: str,
@@ -2046,23 +2108,44 @@ class SemanticStore:
             "directory",
         }:
             raise ValueError("Unsupported session filter or sort")
-        if not 0 <= limit <= 1000 or (cursor and not cursor.isdecimal()):
+        if not 0 <= limit <= 1000:
             raise ValueError("Invalid session page")
-        offset = int(cursor or "0")
-        self.backfill_metadata(owner)
-        groups = {
-            self.session_id(item["record"]["collector"], item["record"]["source"]): item
-            for item in self.domain.session_summaries(owner)
-        }
-        with self.domain.connect() as db:
-            ledger_sources = {
-                (row["collector"], row["source"]): collection_progress(row)
-                for row in db.execute(
-                    "SELECT collector,source,read_bytes,source_bytes,errors,unknown "
-                    "FROM sources WHERE owner=?",
-                    (owner,),
+        scope = digest(
+            json.dumps([project, since, until, analysis_status, cwd, sort, q.casefold(), limit])
+        )
+        if cursor:
+            try:
+                if not cursor.startswith("v1.") or len(cursor) > 512:
+                    raise ValueError("Invalid session cursor")
+                token = json.loads(
+                    base64.urlsafe_b64decode(cursor[3:] + "=" * (-len(cursor[3:]) % 4))
                 )
+                offset, snapshot = token["offset"], token["snapshot"]
+                if type(offset) is not int or offset < 1 or token["scope"] != scope:
+                    raise ValueError("Session cursor scope changed")
+                if not isinstance(snapshot, str) or len(snapshot) != 32:
+                    raise ValueError("Invalid session snapshot")
+            except (ValueError, KeyError, TypeError) as error:
+                raise SessionCursorExpired("会话列表快照已失效，请刷新列表。") from error
+
+            def expired() -> Any:
+                raise SessionCursorExpired("会话列表快照已失效，请刷新列表。")
+
+            cached = self._directory_cache.get((owner, scope, snapshot), expired)
+            return self._directory_page(cached, scope, limit, offset)
+        from trajectory.product.session_directory import source_directory
+
+        with self.domain.connect() as db:
+            db.execute("BEGIN")
+            groups = {
+                self.session_id(item["record"]["collector"], item["record"]["source"]): item
+                for item in source_directory(db, owner)
             }
+            source_rows = {
+                (row["collector"], row["source"]): dict(row)
+                for row in db.execute("SELECT * FROM sources WHERE owner=?", (owner,))
+            }
+            ledger_sources = {key: collection_progress(row) for key, row in source_rows.items()}
             records = {
                 row["id"]: dict(row)
                 for row in db.execute(
@@ -2153,12 +2236,11 @@ class SemanticStore:
                 record.get("source") or event.get("source"),
             )
             collection = ledger_sources.get(key) or archives.get(key) or collection_progress(None)
-            metrics = total_metrics([own]) if own else total_metrics([])
-            metrics["collection_status"] = collection["status"]
             interaction_availability = (
-                own["interaction_availability"] if own else self.domain.interaction_availability(0)
+                self.domain.interaction_availability(own["request_records"], source_rows.get(key))
+                if own
+                else self.domain.interaction_availability(0)
             )
-            self.domain.apply_interaction_availability(metrics, interaction_availability)
             parent_native = meta.get("parent_native_session_id")
             item = {
                 "id": sid,
@@ -2185,7 +2267,6 @@ class SemanticStore:
                 "source_revision": record.get("source_revision"),
                 "current_source_revision": current_source_revision,
                 "analysis_source_revision": analysis.get("source_revision"),
-                "metrics": metrics,
                 "content_available": bool(record),
                 "collection": collection,
                 "interaction_availability": interaction_availability,
@@ -2256,11 +2337,10 @@ class SemanticStore:
         elif sort == "directory":
             items.sort(key=lambda i: str(i.get("cwd") or "\uffff").casefold())
         total = len(items)
-        page = items[offset : offset + limit] if limit else items[offset:]
-        next_cursor = str(offset + len(page)) if limit and offset + len(page) < total else None
-        return {
-            "sessions": page,
-            "next_cursor": next_cursor,
+        value = {
+            "sessions": items,
+            "metrics_included": False,
+            "listing_snapshot_id": uuid.uuid4().hex,
             "total": total,
             "status_counts": counts,
             "directories": directories,
@@ -2274,6 +2354,14 @@ class SemanticStore:
                 "message": "历史仅用量记录需补传执行内容后才能分段。",
             },
         }
+        if limit and total > limit:
+            if (
+                len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
+                > self._directory_cache.max_bytes
+            ):
+                raise ValueError("目录范围过大，请缩小筛选范围后分页。")
+            self._directory_cache.get((owner, scope, value["listing_snapshot_id"]), lambda: value)
+        return self._directory_page(value, scope, limit)
 
     def evidence(
         self, owner: str, sid: str, operation_id: str, *, source_revision: str | None = None

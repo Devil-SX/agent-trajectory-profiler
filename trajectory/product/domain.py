@@ -60,6 +60,10 @@ class Domain:
                     body TEXT, PRIMARY KEY(owner,model,effective));
                 CREATE TABLE IF NOT EXISTS audit(actor TEXT, id TEXT, operation TEXT,
                     body TEXT, created TEXT);
+                CREATE INDEX IF NOT EXISTS events_kind_directory ON events(
+                    owner,json_extract(body,'$.kind'),collector,source,id);
+                CREATE INDEX IF NOT EXISTS events_source_latest ON events(
+                    owner,collector,source,json_extract(body,'$.timestamp'));
             """)
 
     def connect(self) -> sqlite3.Connection:
@@ -727,6 +731,31 @@ class Domain:
 
     def session_summaries(self, owner: str) -> list[dict[str, Any]]:
         return list(self._snapshot(owner)["source_summaries"])
+
+    def coverage(self, owner: str) -> dict[str, Any]:
+        """Current source checkpoints, independent of usage attribution and pricing."""
+        with self.connect() as db:
+            db.execute("BEGIN")
+            row = db.execute(
+                "SELECT count(*) AS sources,COALESCE(sum(read_bytes),0) AS read_bytes,"
+                "COALESCE(sum(source_bytes),0) AS source_bytes,"
+                "COALESCE(sum(errors),0) AS parse_errors,"
+                "COALESCE(sum(unknown),0) AS unknown_events,max(received) AS latest_received "
+                "FROM sources WHERE owner=?",
+                (owner,),
+            ).fetchone()
+            timestamps = db.execute(
+                "SELECT count(*) FROM events INDEXED BY events_source_latest "
+                "WHERE owner=? AND json_extract(body,'$.timestamp') IS NULL",
+                (owner,),
+            ).fetchone()[0]
+            return {
+                "schema": "trajectory-source-coverage/1",
+                "generated_at": now(),
+                **dict(row),
+                "unknown_timestamps": timestamps,
+                "scope": "source_checkpoints",
+            }
 
     @staticmethod
     def interaction_availability(

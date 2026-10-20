@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-10-21
+
+### Changed
+
+- Return session navigation metadata without calculating resource metrics for the entire account. The list declares `metrics_included=false`; read the selected analysis or overview for authoritative measurements. List metrics and numeric-offset cursors are removed.
+- Keep pagination on an account- and filter-bound metadata snapshot during concurrent uploads. Expired cursors refresh the first page in the workbench.
+- Migrate old display metadata through the existing idle coordinator instead of GET requests.
+
+### Fixed
+
+- Read collection coverage independently of usage and pricing. Opening or refreshing coverage no longer loads the full overview.
+- Cover source lookup and session display fields with indexes, keeping full IR bodies and usage replay out of the session directory.
+- Preserve durable raw-sync receipts when request-measurement repair is temporarily deferred; keep the existing persistent retry queue.
+
+Code stats vs v4.3.2: total 26132 text lines (baseline 25619), +583 (-70) = +513, 2.00% text-line change.
+
 ## [4.3.2] - 2026-10-20
 
 ### Fixed
