@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-20
+
 ### Added
 
 - Keep task metrics and selection together across hierarchy, timeline and flamegraph views, with compact filters, removable scope chips and a background analysis drawer.
@@ -17,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Preserve the server listing order and directory descendants instead of filtering or sorting a paginated response again in the browser.
 - Preserve loaded task results and batch context when a read-only refresh fails.
+
+Code stats vs v4.1.1: total 23695 text lines (baseline 21995), +1770 (-70) = +1700, 7.73% text-line change.
 
 ## [4.1.1] - 2026-10-20
 

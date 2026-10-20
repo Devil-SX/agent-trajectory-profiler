@@ -81,3 +81,5 @@ ancestor title) and `depth` (`0` session root, `1` main phases). Use `limit`
 query revision changes. A batch whose saved source was replaced reports an
 explicit skipped session. Direct operation counts are structure counts, not
 fees or elapsed time; use `analysis_read` for measured task costs.
+
+Research statistics are available in the **研究统计** dashboard tab. See [stage study methodology and API semantics](docs/STAGE-STUDIES.md) for hierarchy, mixed labels, uncertainty and explicit measurement gaps. Reading the tab does not start model calls.
