@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-10-20
+
+### Fixed
+
+- Use the same workbench surface, control, table and chart colors in research statistics. Keep retained results readable during loading or a failed refresh instead of dimming the entire section.
+- Key research assets by content and revalidate authenticated resources with content-bound ETags.
+
+Code stats vs v4.3.1: total 25619 text lines (baseline 25525), +157 (-63) = +94, 0.37% text-line change.
+
 ## [4.3.1] - 2026-10-20
 
 ### Fixed

@@ -30,3 +30,9 @@ Human metrics use the domain coverage status. Positive values with missing measu
 ## Duration display
 
 The `trajectory-format` script in the dashboard owns `window.TrajectoryFormat.duration(seconds)`. Dashboard and research use this one formatter for human-facing summaries, tables, task metrics, flame labels and request elapsed times. Numeric API/CSV seconds and chart geometry remain unchanged. Missing, nonfinite and negative inputs display unknown; observed zero displays `0s`. Positive subsecond values retain nonzero milliseconds. Seconds round before hour/minute carry, with no decimal hours or redundant zero units; long durations retain accumulated hours such as `25h1min1s`.
+
+## Shared theme and retained results
+
+The dashboard root owns page, surface, control, overlay, border, text and chart-accent tokens. Research inherits the supported dark workbench scheme and uses these tokens directly, including table headers and charts; it has no private hardcoded color palette or card gradient. System light preference does not select a separate product theme. Pending and failed research refreshes keep retained results at full opacity; the existing loading/error feedback communicates state.
+
+Dashboard HTML keys research script/style URLs from their actual combined content. Assets carry a content-bound ETag and private revalidation policy. Authentication runs before conditional304 responses, so revoked credentials cannot bypass authorization through a cached validator. A browser tab that already loaded an earlier application still needs a page refresh to receive new application code.

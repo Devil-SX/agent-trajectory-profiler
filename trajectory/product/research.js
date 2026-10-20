@@ -2,7 +2,7 @@
 window.TrajectoryResearch = (() => {
   const names = {understand_decide:'理解与决策',build_execute:'构建与执行',validate_debug:'验证与纠错',coordinate_maintain:'协调与维护',uncertain:'待确认'};
   const metrics = {recorded_tokens:'归一化记录 token',output:'输出 token',calls:'模型用量记录数',active_seconds_estimate:'活跃时间估计',tool_seconds:'工具累计时间',known_subtotal_usd:'参考费用已知小计（USD）',wall_span_seconds:'直接事件首末跨度',prompt_buckets:'对话请求分组数',human_interactions:'人类交互数',human_input_chars:'人类输入字数'};
-  const palette = ['#4a78a8','#4c9880','#c57f50','#9071b0','#9ca4ad'];
+  const palette = ['var(--input)','var(--cache)','var(--warning-accent)','var(--output)','var(--muted)'];
   const num = (value,digits=1) => value === null || value === undefined ? '未知' : Number(value).toLocaleString('zh-CN',{maximumFractionDigits:digits});
   const pct = value => value === null || value === undefined ? '未知' : `${(value*100).toFixed(1)}%`;
   const duration = window.TrajectoryFormat.duration;
