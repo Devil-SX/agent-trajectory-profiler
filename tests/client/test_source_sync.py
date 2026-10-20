@@ -349,6 +349,44 @@ class SourceSyncTests(unittest.TestCase):
         )
         self.assertTrue(calls[0]["apply"])
 
+    def test_repair_dispatch_failure_does_not_invalidate_raw_receipt(self):
+        config = {
+            "url": "https://test.invalid/source-chunks",
+            "state": str(self.root / "state.sqlite"),
+            "credential": "fixture",
+            "request_repair": {"projector": "sealed"},
+        }
+
+        def send(request, timeout):
+            body = json.loads(request.data)
+            return io.BytesIO(
+                json.dumps(
+                    {
+                        "durable": True,
+                        "mutation_id": body["mutation_id"],
+                        "accepted_bytes": body["end"] - body["start"],
+                        "next_offset": body["end"],
+                    }
+                ).encode()
+            )
+
+        def repair(*args, **kwargs):
+            raise BlockingIOError("PRIVATE source contents must never be emitted")
+
+        with (
+            patch.object(sync, "validate_manifest", return_value=("collector", [self.spec])),
+            patch.object(sync, "credentials", return_value="fixture"),
+            patch.object(sync, "guard_new_sources"),
+            patch.object(sync, "http_opener", return_value=SimpleNamespace(open=send)),
+            patch.dict(sys.modules, {"trajectory_request_repair": SimpleNamespace(run=repair)}),
+        ):
+            result = sync.sync_once(config, 1)
+        self.assertEqual(result["chunks"], 1)
+        self.assertFalse(result["pending"])
+        self.assertEqual(result["request_measurements"]["status"], "deferred")
+        self.assertEqual(len(self.state.pending_request_repairs()), 1)
+        self.assertNotIn("PRIVATE", json.dumps(result))
+
     def test_request_repair_queue_survives_restart_and_acknowledges_exact_generation(self):
         self.state.prepare("collector", self.spec)
         row = self.state.next()
