@@ -57,3 +57,19 @@ def test_dashboard_keys_both_assets_from_their_actual_content(tmp_path: Path):
         revision,
         revision,
     ]
+
+
+def test_dashboard_keys_scheduling_assets_from_their_actual_content(tmp_path: Path):
+    def authorize(request, scope):
+        return Principal("test-reader", scopes=("read",))
+
+    client = TestClient(create_app(tmp_path / "schedule-dashboard.db", authorize))
+    html = client.get("/trajectory/").text
+    js = client.get("/trajectory/schedules.js").content
+    css = client.get("/trajectory/schedules.css").content
+    revision = hashlib.sha256(js + b"\0" + css).hexdigest()[:16]
+    assert "__TRAJECTORY_SCHEDULE_REVISION__" not in html
+    assert re.findall(r"/trajectory/schedules\.(?:js|css)\?rev=([a-f0-9]+)", html) == [
+        revision,
+        revision,
+    ]
