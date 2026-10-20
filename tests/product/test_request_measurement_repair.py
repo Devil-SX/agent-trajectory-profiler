@@ -304,3 +304,50 @@ def test_archive_hash_does_not_hold_writer_lock_and_heads_are_refenced(tmp_path,
         receipt = domain.repair_requests("machine", RequestMeasurementRepair.model_validate(value))
         assert receipt["durable"]
     assert updates
+
+
+def test_repair_invalidates_warm_overview_source_and_detail_once(tmp_path):
+    domain, store, value = fixture(tmp_path)
+    sid = store.session_id(value["collector"], value["source"])
+    source, _ = store.archive("owner", sid)
+    store.save_session(
+        "owner",
+        sid,
+        source,
+        value["source_revision"],
+        {
+            "metadata": {"native_session_id": "fixture-session", "cwd": "/fixture"},
+            "operations": [
+                {
+                    "id": "prompt",
+                    "kind": "prompt",
+                    "text": "fixture",
+                    "location": {"source_line": 2},
+                },
+                {"id": "usage", "kind": "llm", "location": {"source_line": 3}},
+            ],
+        },
+    )
+    before = domain.ledger_revision()
+    assert domain.overview("owner")["projects"][0]["human_input_chars"] is None
+    assert store.detail("owner", sid)["session"]["metrics"]["human_input_chars"] is None
+    # Source contributions and the compact listing are warm as well.
+    store.sessions("owner")
+    domain.source_contributions("owner", value["collector"], value["source"])
+    repair = RequestMeasurementRepair.model_validate(value)
+    receipt = domain.repair_requests("machine", repair)
+    after = domain.ledger_revision()
+    assert after > before
+    assert domain.overview("owner")["projects"][0]["human_input_chars"] == 3
+    detail = store.detail("owner", sid)
+    assert detail["session"]["metrics"]["human_input_chars"] == 3
+    assert (
+        next(op for op in detail["operations"] if op["id"] == "prompt")["metrics"][
+            "human_input_chars"
+        ]
+        == 3
+    )
+    assert store.sessions("owner")["sessions"][0]["metrics"]["human_input_chars"] == 3
+    assert domain.repair_requests("machine", repair) == receipt
+    assert domain.ledger_revision() == after
+    assert store.detail("owner", sid) == detail

@@ -698,7 +698,8 @@ class Domain:
             with self.connect() as connection:
                 return self.ledger_revision(connection)
         revision = db.execute(
-            "SELECT rowid FROM audit WHERE operation IN ('ingest','price','correct') "
+            "SELECT rowid FROM audit WHERE operation IN "
+            "('ingest','price','correct','request_measurements.repair') "
             "ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
         return revision[0] if revision else 0
