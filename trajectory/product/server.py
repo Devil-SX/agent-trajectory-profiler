@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import os
 import time
@@ -977,10 +978,20 @@ def create_app(
             name=str(operation["id"]),
         )
 
+    web_root = Path(__file__).parent
+    research_assets = {
+        name: (web_root / name).read_bytes() for name in ("research.js", "research.css")
+    }
+    research_revision = hashlib.sha256(b"\0".join(research_assets.values())).hexdigest()[:16]
+
     @app.get("/trajectory/", response_class=HTMLResponse)
     def dashboard(request: Request) -> str:
         authorizer(request, "read")
-        return (Path(__file__).parent / "dashboard.html").read_text()
+        return (
+            (web_root / "dashboard.html")
+            .read_text()
+            .replace("__TRAJECTORY_RESEARCH_REVISION__", research_revision)
+        )
 
     @app.get("/trajectory/schedules.js")
     @app.get("/trajectory/schedules.css")
@@ -989,10 +1000,16 @@ def create_app(
     def research_asset(request: Request) -> Response:
         authorizer(request, "read")
         filename = request.url.path.rsplit("/", 1)[-1]
+        body = research_assets[filename]
+        etag = '"' + hashlib.sha256(body).hexdigest() + '"'
+        headers = {"Cache-Control": "private, no-cache", "ETag": etag, "Vary": "Authorization"}
+        matches = request.headers.get("If-None-Match", "").split(",")
+        if any(tag.strip().removeprefix("W/") in (etag, "*") for tag in matches):
+            return Response(status_code=304, headers=headers)
         return Response(
-            (Path(__file__).parent / filename).read_text(),
+            body,
             media_type="text/javascript" if filename.endswith(".js") else "text/css",
-            headers={"Cache-Control": "no-cache"},
+            headers=headers,
         )
 
     return app

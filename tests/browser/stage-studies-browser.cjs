@@ -76,6 +76,10 @@ const server=http.createServer(async(req,res)=>{
     });
   });
   assert(contrast.every(item=>item.ratio>=4.5),JSON.stringify(contrast));
+  assert(!/#[0-9a-f]{3,8}/i.test(fs.readFileSync(path.join(source,'research.css'),'utf8')),'Research must not own a second color palette');
+  const themeTokens=await page.evaluate(()=>{const root=document.documentElement;root.style.setProperty('--surface','rgb(24, 25, 26)');root.style.setProperty('--control-bg','rgb(28, 29, 30)');const result={panel:getComputedStyle(document.querySelector('.research-panel')).backgroundColor,card:getComputedStyle(document.querySelector('.research-card')).backgroundColor,input:getComputedStyle(document.querySelector('.research-filter select')).backgroundColor,scheme:getComputedStyle(document.querySelector('.research-app')).colorScheme};root.style.removeProperty('--surface');root.style.removeProperty('--control-bg');return result});
+  assert.deepEqual(themeTokens,{panel:'rgb(24, 25, 26)',card:'rgb(24, 25, 26)',input:'rgb(28, 29, 30)',scheme:'dark'});
+
   assert.match(await page.locator('main').innerText(),/95%/);
   assert.match(await page.locator('main').innerText(),/多标签/);
   await page.getByText('层级明细、模型置信度与关联检验',{exact:true}).click();
@@ -88,14 +92,14 @@ const server=http.createServer(async(req,res)=>{
   const downloadEvent=page.waitForEvent('download');await page.getByRole('button',{name:'导出筛选结果 CSV'}).click();const download=await downloadEvent;await download.saveAs(path.join(output,'fixture.csv'));assert.match(fs.readFileSync(path.join(output,'fixture.csv'),'utf8'),/parent,0.9/);
   await select('节点','leaf','node_kind');await select('资源指标','active_seconds_estimate','metric');assert.match(await page.locator('.research-card').filter({hasText:'已知资源小计'}).innerText(),/2min/);assert.match(await page.locator('.research-stage-drawer').innerText(),/1h23min/);await page.getByText('层级明细、模型置信度与关联检验',{exact:true}).click();assert.match(await page.locator('main').innerText(),/500ms \/ 900ms/);await select('资源指标','tool_seconds','metric');assert.match(await page.locator('.research-stage-drawer').innerText(),/125ms/);
   await select('资源指标','human_interactions','metric');assert.match(await page.locator('.research-cards').innerText(),/已确认小计/);assert.match(await page.locator('.research-warning').innerText(),/0不代表没有人类输入/);await select('资源指标','recorded_tokens','metric');
-  mode='error';await select('层级','1','depth');await page.getByRole('button',{name:'重试',exact:true}).waitFor();assert.match(await page.locator('.research-status').innerText(),/503/);mode='normal';await page.getByRole('button',{name:'重试',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');
+  mode='error';await select('层级','1','depth');await page.getByRole('button',{name:'重试',exact:true}).waitFor();assert.match(await page.locator('.research-status').innerText(),/503/);assert.equal(await page.locator('.research-content').evaluate(n=>getComputedStyle(n).opacity),'1','Retained results keep the host colors after a failed refresh');mode='normal';await page.getByRole('button',{name:'重试',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.research-app')?.getAttribute('aria-busy')==='false');
   await page.screenshot({path:path.join(output,'research-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'research-mobile.png'),fullPage:true});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   mode='empty';await page.reload();await page.getByText('还没有导入的分段研究。',{exact:false}).waitFor();
   mode='denied';await page.reload();await page.waitForFunction(()=>document.body.dataset.mountError==='HTTP 403');assert.equal(await page.locator('.research-table').count(),0);
   assert.deepEqual(errors,[]);assert(requests.every(r=>r.method==='GET'));assert(!fs.readFileSync(path.join(source,'research.js'),'utf8').includes('\u00b7'));
-  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({passed:true,checks:['loading','variance','intervals','mixed','depth','leaf','confidence','keyboard','csv','error-retry','mobile','empty','account-denied','no-writes','host-theme-contrast','collapsed-filters','lazy-stage-details','overview-density','default-active-time','filtered-active-time'],contrast,requests},null,2));
+  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({passed:true,checks:['loading','variance','intervals','mixed','depth','leaf','confidence','keyboard','csv','error-retry-without-dimmed-results','mobile','empty','account-denied','no-writes','host-theme-tokens-and-contrast','collapsed-filters','lazy-stage-details','overview-density','default-active-time','filtered-active-time'],contrast,requests},null,2));
   console.log('PASS stage research browser, 20 checks');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
