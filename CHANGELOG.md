@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-10-20
+
+### Fixed
+
+- Reveal the selected view heading when switching tabs from a long page, keeping mobile navigation at the start of the new view.
+
+Code stats vs v4.1.0: total 21995 text lines (baseline 21986), +17 (-8) = +9, 0.04% text-line change.
+
 ## [4.1.0] - 2026-10-20
 
 ### Added
