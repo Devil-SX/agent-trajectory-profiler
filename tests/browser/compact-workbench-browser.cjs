@@ -309,7 +309,9 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
       assert.equal(await panel.locator(':scope > summary').getAttribute('data-state'), state);
       assert.match(await panel.locator(':scope > summary').innerText(), /后台分析/);
       before = requests.length;
-      await toggle(page, 'batch-activity', true); assert.equal(requests.length, before);
+      await toggle(page, 'batch-activity', true);
+      // A scheduled batch-status poll may overlap the click; the disclosure itself must not load content.
+      assert(requests.slice(before).every(request=>request.method==='GET'&&request.path==='/trajectory/api/analysis-batches/fixture-batch'));
       assert.match(await panel.innerText(), /AI CPM 优化验证/);
       assert.match(await panel.innerText(), /\/research\/embodied\/ai-cpm/);
       if (state === 'failed') assert.equal(await panel.locator('[data-resume-job="fixture-failed-job"]').isVisible(), true);
