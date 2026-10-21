@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Configure local hourly analysis windows with one idempotent weighted draw per included hour; skip missed historical hours and avoid duplicate dispatch after restart.
 
+Code stats vs v6.0.2: total 29163 text lines, +170 (-30) = +140, 0.48% text-line change.
+
 ## [6.0.2] - 2026-10-21
 
 ### Fixed
