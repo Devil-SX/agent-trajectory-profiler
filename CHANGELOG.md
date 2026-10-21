@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Preserve immutable input revisions and reuse the existing leased, bounded Jindu analysis queue
   for manual and daily submissions, with conservative quiet-period and native-lineage safeguards.
 
+Code stats vs v5.0.0: total 28899 text lines (baseline 26132), +3040 (-273) = +2767, 10.59% text-line change.
+
 ## [5.0.0] - 2026-10-21
 
 ### Changed
