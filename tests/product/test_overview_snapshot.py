@@ -1,11 +1,21 @@
-"""Shared summaries must never hide a committed ledger or pricing mutation."""
+"""Persistent statistics retain successful results until one atomic refresh publishes."""
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
+from threading import Event
 
-from trajectory.product.contracts import Batch, Price
+import pytest
+
+from trajectory.product.contracts import Batch
 from trajectory.product.domain import Domain
+from trajectory.product.statistics_snapshots import (
+    MAX_SCOPES,
+    StatisticsRefresh,
+    StatisticsSnapshots,
+    schedule,
+    scope_dates,
+)
 
 
 def batch(revision, tokens):
@@ -39,146 +49,197 @@ def batch(revision, tokens):
     )
 
 
-def test_public_and_semantic_views_share_snapshot_and_refresh_committed_writes(
-    tmp_path: Path, monkeypatch
+def seeded(tmp_path):
+    domain = Domain(tmp_path / "domain.db")
+    domain.register("owner", "machine", "fixture")
+    domain.ingest("machine", batch(1, 10))
+    return domain, StatisticsSnapshots(domain)
+
+
+def publish(store):
+    job = store.claim()
+    assert job is not None
+    assert store.build(job)
+    return job
+
+
+def test_initial_get_is_fast_metadata_only_and_published_values_survive_restart(
+    tmp_path, monkeypatch
 ):
-    domain = Domain(tmp_path / "domain.db")
-    domain.register("owner", "machine", "fixture")
-    domain.ingest("machine", batch(1, 10))
-    original = domain._calculate_overview
-    calls = []
-
-    def calculate(*args, **kwargs):
-        calls.append(1)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(domain, "_calculate_overview", calculate)
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(lambda _: domain.session_summaries("owner"), range(4)))
-    assert len(calls) == 1
-    assert all(r[0]["input"] == 10 for r in results)
-    assert "event_contributions" not in domain.overview("owner")
-    assert len(calls) == 1
+    domain, store = seeded(tmp_path)
+    original = domain._calculate_snapshot
+    monkeypatch.setattr(
+        domain, "_calculate_snapshot", lambda *a: pytest.fail("GET computed statistics")
+    )
+    initial = store.read("owner")
+    assert initial["statistics_snapshot"]["state"] == "building"
+    assert initial["statistics_snapshot"]["available"] is False
+    assert "projects" not in initial and "generated_at" not in initial
+    assert (
+        store.read("owner")["statistics_snapshot"]["update"]["id"]
+        == initial["statistics_snapshot"]["update"]["id"]
+    )
+    monkeypatch.setattr(domain, "_calculate_snapshot", original)
+    publish(store)
+    ready = store.read("owner")
+    assert ready["projects"][0]["input"] == 10
+    assert ready["statistics_snapshot"]["available"]
+    assert ready["statistics_snapshot"]["source_watermark"]
+    assert ready["statistics_snapshot"]["source_observed_at"] <= ready["generated_at"]
     domain.ingest("machine", batch(2, 20))
-    assert domain.overview("owner")["projects"][0]["input"] == 20
-    assert len(calls) == 2
-    domain.price(
-        "owner",
-        Price.model_validate(
-            {
-                "mutation_id": uuid.uuid4().hex,
-                "model": "model",
-                "input": 1,
-                "output": 1,
-                "cached": 0,
-                "cache_write": 0,
-                "effective_from": "2026-01-01T00:00:00Z",
-                "source_url": "https://example.org/price",
-            }
-        ),
+    stale = store.read("owner")
+    assert stale["projects"] == ready["projects"]
+    assert stale["statistics_snapshot"]["stale"]
+    restarted = StatisticsSnapshots(Domain(domain.path))
+    monkeypatch.setattr(
+        restarted.domain, "_calculate_snapshot", lambda *a: pytest.fail("Restart GET recomputed")
     )
-    assert domain.overview("owner")["projects"][0]["known_subtotal_usd"] == 20 / 1_000_000
-    assert len(calls) == 3
-    assert domain.overview("stranger")["projects"] == []
+    assert restarted.read("owner")["projects"] == ready["projects"]
+    assert not hasattr(domain, "_overview_cache")
 
 
-def test_two_compact_slots_isolate_global_account_and_filters(tmp_path, monkeypatch):
-    domain = Domain(tmp_path / "domain.db")
-    domain.register("owner", "machine", "fixture")
-    domain.ingest("machine", batch(1, 10))
-    domain.register("second-owner", "second-machine", "fixture")
-    domain.ingest("second-machine", batch(1, 50))
-    original = domain._calculate_overview
-    calls = []
-
-    def calculate(*args, **kwargs):
-        calls.append(args)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(domain, "_calculate_overview", calculate)
-    owner = domain.overview("owner")
-    global_view = domain.overview(None)
-    assert owner["projects"][0]["input"] == 10
-    assert global_view["projects"][0]["input"] == 60
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(domain.overview, ["owner", None] * 8))
-    assert results[::2] == [owner] * 8
-    assert results[1::2] == [global_view] * 8
-    assert len(calls) == 2
-    assert len(domain._overview_cache) == 2
-    assert domain.overview(None) == global_view
-    assert domain.overview("stranger")["projects"] == []
-    assert len(calls) == 3
-    # The third owner evicts least-recently-used owner, never leaks another owner.
-    assert domain.overview(None) == global_view
-    assert len(calls) == 3
-    domain.overview("owner", since="2026-10-02")
-    assert len(domain._overview_cache) == 2
-    assert domain.overview("owner", since="2026-10-02")["projects"] == []
-    domain.overview("owner", until="2026-10-01")
-    assert len(domain._overview_cache) == 2
-    assert all("event_contributions" not in value for value in domain._overview_cache.values())
-
-
-def test_both_slots_refresh_ingest_price_and_correction(tmp_path):
-    from trajectory.product.contracts import Correction
-
-    domain = Domain(tmp_path / "domain.db")
-    domain.register("owner", "machine", "fixture")
-    domain.ingest("machine", batch(1, 10))
-    for owner in (None, "owner"):
-        assert domain.overview(owner)["projects"][0]["input"] == 10
-    domain.ingest("machine", batch(2, 20))
-    for owner in (None, "owner"):
-        assert domain.overview(owner)["projects"][0]["input"] == 20
-    domain.price(
-        "owner",
-        Price.model_validate(
-            {
-                "mutation_id": uuid.uuid4().hex,
-                "model": "model",
-                "input": 1,
-                "output": 1,
-                "cached": 0,
-                "cache_write": 0,
-                "effective_from": "2026-01-01T00:00:00Z",
-                "source_url": "https://example.org/price",
-            }
-        ),
+def test_manual_concurrent_and_daily_coalesce_failure_retains_success(tmp_path, monkeypatch):
+    domain, store = seeded(tmp_path)
+    store.read("owner")
+    publish(store)
+    old = store.read("owner")
+    actor = {"account_id": "owner", "required_scopes": ["configure"]}
+    requests = [StatisticsRefresh(mutation_id=uuid.uuid4().hex) for _ in range(8)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        receipts = list(pool.map(lambda v: store.request("owner", actor, v), requests))
+    assert len({r["job_id"] for r in receipts}) == 1
+    assert all(r["durable"] for r in receipts)
+    assert store.request("owner", actor, requests[0]) == receipts[0]
+    assert store.tick(datetime(2026, 10, 20, 16, 59, 59, tzinfo=UTC)) == 0
+    assert store.tick(datetime(2026, 10, 20, 17, tzinfo=UTC)) == 1
+    assert store.tick(datetime(2026, 10, 20, 17, 1, tzinfo=UTC)) == 0
+    assert store.read("owner")["statistics_snapshot"]["state"] == "updating"
+    job = store.claim()
+    monkeypatch.setattr(
+        domain,
+        "_calculate_snapshot",
+        lambda *a: (_ for _ in ()).throw(ValueError("private source text")),
     )
-    for owner in (None, "owner"):
-        assert domain.overview(owner)["projects"][0]["known_subtotal_usd"] == 20 / 1_000_000
-    domain.correct(
-        "owner",
-        Correction(
-            mutation_id=uuid.uuid4().hex, task="task", project="corrected", project_name="Corrected"
-        ),
+    assert not store.build(job)
+    failed = store.read("owner")
+    assert failed["projects"] == old["projects"]
+    assert failed["generated_at"] == old["generated_at"]
+    assert failed["statistics_snapshot"]["state"] == "failed"
+    assert "private source text" not in str(failed)
+    assert store.tick(datetime(2026, 10, 21, 17, tzinfo=UTC)) == 1
+    assert store.pending()
+
+
+def test_scope_isolation_limits_and_atomic_read_watermark(tmp_path, monkeypatch):
+    domain, store = seeded(tmp_path)
+    old = domain.overview("owner")
+    store.read("owner")
+    original = domain._calculate_snapshot
+
+    def with_concurrent_write(db, *args):
+        domain.ingest("machine", batch(2, 99))
+        return original(db, *args)
+
+    monkeypatch.setattr(domain, "_calculate_snapshot", with_concurrent_write)
+    publish(store)
+    result = store.read("owner")
+    assert result["projects"] == old["projects"]
+    assert result["daily"] == old["daily"]
+    assert result["statistics_snapshot"]["stale"]
+    assert (
+        result["statistics_snapshot"]["source_watermark"]
+        != result["statistics_snapshot"]["current_watermark"]
     )
-    for owner in (None, "owner"):
-        assert domain.overview(owner)["projects"][0]["id"] == "corrected"
-    assert len(domain._overview_cache) == 2
+    assert "projects" not in store.read("stranger")
+    assert "projects" not in store.read(None)
+    assert "projects" not in store.read("owner", since="2026-10-02")
+    for day in range(3, MAX_SCOPES + 1):
+        store.read("owner", since=f"2026-10-{day:02}")
+    with pytest.raises(ValueError, match="上限"):
+        store.read("owner", since="2026-11-01")
+    with pytest.raises(ValueError):
+        scope_dates("2026-11-02", "2026-10-01")
+    with pytest.raises(ValueError):
+        scope_dates("invalid")
+    assert schedule(datetime(2026, 10, 20, 16, 59, tzinfo=UTC))["next_run_at"].startswith(
+        "2026-10-21T01:00"
+    )
+    assert schedule(datetime(2026, 10, 20, 17, tzinfo=UTC))["next_run_at"].startswith(
+        "2026-10-22T01:00"
+    )
 
 
-def test_slots_keep_only_compact_outputs_and_source_reads_do_not_cache_raw_events(tmp_path):
-    import json
+def test_scope_algorithm_and_actor_revalidation_fail_closed(tmp_path):
+    domain, store = seeded(tmp_path)
+    store.read("owner")
+    job = store.claim()
+    store.recover()
+    recovered = store.claim()
+    assert recovered["id"] == job["id"] and recovered["attempt"] == job["attempt"] + 1
+    assert not store.build(job)  # An old attempt cannot publish or mark the new one failed.
+    store.verify_actor = lambda actor: (_ for _ in ()).throw(PermissionError("revoked"))
+    assert not store.build(recovered)
+    assert not store.read("owner")["statistics_snapshot"]["available"]
+    actor = {"account_id": "owner"}
+    store.request("owner", actor, StatisticsRefresh(mutation_id="retry-statistics-0001"))
+    store.verify_actor = lambda actor: None
+    publish(store)
+    with domain.connect() as db:
+        db.execute("UPDATE statistics_snapshots SET algorithm='retired/0'")
+    assert "projects" not in store.read("owner")
 
-    domain = Domain(tmp_path / "domain.db")
-    domain.register("owner", "machine", "fixture")
-    value = batch(1, 10)
-    value.records[0].references = ["x" * 256_000]
-    domain.ingest("machine", value)
-    domain.overview("owner")
-    domain.overview(None)
-    before = list(domain._overview_cache)
-    assert len(domain.source_contributions("owner", "fixture", "source-000000001")) == 1
-    assert list(domain._overview_cache) == before
-    assert len(domain._overview_cache) == 2
-    encoded = json.dumps(list(domain._overview_cache.values()))
-    assert "x" * 1000 not in encoded
-    assert len(encoded) < 32_000
-    for owner in (None, "owner"):
-        direct = domain._calculate_overview(owner)
-        cached = domain._snapshot(owner)
-        assert {k: v for k, v in direct.items() if k != "generated_at"} == {
-            k: v for k, v in cached.items() if k != "generated_at"
-        }
+
+def test_build_cooldown_survives_restart_and_allows_other_work(tmp_path):
+    domain, store = seeded(tmp_path)
+    assert store.can_start()
+    store.read("owner")
+    publish(store)
+    with domain.connect() as db:
+        completed = datetime.fromisoformat(db.execute(
+            "SELECT finished FROM statistics_jobs WHERE status='complete'"
+        ).fetchone()[0])
+    restarted = StatisticsSnapshots(domain)
+    assert not restarted.can_start(completed + timedelta(seconds=29))
+    assert restarted.can_start(completed + timedelta(seconds=30))
+
+
+def test_reads_keep_published_result_while_building_and_revoked_publish_is_rejected(
+    tmp_path, monkeypatch
+):
+    domain, store = seeded(tmp_path)
+    store.read("owner")
+    publish(store)
+    old = store.read("owner")
+    domain.ingest("machine", batch(2, 99))
+    store.request("owner", {"account_id": "owner"}, StatisticsRefresh(
+        mutation_id="refresh-revoked-before-publish"
+    ))
+    job = store.claim()
+    original = domain._calculate_snapshot
+    started, resume = Event(), Event()
+    checks = []
+
+    def calculate(*args):
+        started.set()
+        assert resume.wait(5)
+        return original(*args)
+
+    def verify(actor):
+        checks.append(actor)
+        if len(checks) > 1:
+            raise PermissionError("revoked while computing")
+
+    monkeypatch.setattr(domain, "_calculate_snapshot", calculate)
+    store.verify_actor = verify
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(store.build, job)
+        assert started.wait(2)
+        during = store.read("owner")
+        assert during["projects"] == old["projects"]
+        assert during["statistics_snapshot"]["state"] == "updating"
+        resume.set()
+        assert not future.result(timeout=5)
+    failed = store.read("owner")
+    assert failed["projects"] == old["projects"]
+    assert failed["statistics_snapshot"]["state"] == "failed"
+    assert len(checks) == 2

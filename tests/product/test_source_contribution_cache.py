@@ -135,12 +135,12 @@ def test_identical_source_reads_coalesce_without_waiting_for_overview(tmp_path, 
         return {"event_contributions": [{"record": {"id": "value"}}]}
 
     monkeypatch.setattr(domain, "_calculate_overview", calculate)
-    with ThreadPoolExecutor(max_workers=5) as pool, domain._overview_lock:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         futures = [
             pool.submit(domain.source_contributions, "owner", "fixture", "source") for _ in range(5)
         ]
         try:
-            assert started.wait(5), "Source reads must not acquire the overview lock"
+            assert started.wait(5), "Source reads must retain their independent coalesced flight"
         finally:
             release.set()
         results = [future.result(timeout=5) for future in futures]

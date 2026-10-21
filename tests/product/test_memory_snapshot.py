@@ -131,7 +131,7 @@ def test_source_scans_preserve_global_usage_request_dedup_corrections_and_sessio
     )
     result = domain.overview("owner")
     assert "event_contributions" not in result
-    assert all("event_contributions" not in value for value in domain._overview_cache.values())
+    assert not hasattr(domain, "_overview_cache")
     assert result["projects"][0]["id"] == "corrected"
     assert result["projects"][0]["input"] == 260
     assert result["projects"][0]["human_interactions"] == 1

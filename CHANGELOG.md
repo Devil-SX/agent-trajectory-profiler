@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Persist account/date statistics with coherent ledger watermarks and daily 01:00 Asia/Shanghai refreshes through the existing coordinator.
+- Queue authenticated, idempotent manual statistics updates while keeping the last successful result visible, including explicit initial-building, stale and failure states.
+
 - Open daily sampling plans from the task workbench only when requested, reusing the authenticated lazy workspace loader, shared theme and keyboard/mobile disclosure behavior.
 - Configure revision-checked daily analysis plans, weighted session sampling without replacement,
   candidate/exclusion previews and reproducible draws through shared authenticated HTTP interfaces.

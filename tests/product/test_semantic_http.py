@@ -80,7 +80,14 @@ def test_source_http_account_isolation_and_dynamic_help(tmp_path: Path) -> None:
     overview = client.get(
         "/trajectory/api/overview", headers={"Authorization": "Bearer owner"}
     ).json()
-    assert overview["projects"] == []  # Content cannot generate another usage bill.
+    assert overview["statistics_snapshot"]["state"] == "building"
+    runtime = app.state.analysis_runtime
+    job = runtime.statistics.claim()
+    assert runtime.statistics.build(job)
+    published = client.get(
+        "/trajectory/api/overview", headers={"Authorization": "Bearer owner"}
+    ).json()
+    assert published["projects"] == []  # Content cannot generate another usage bill.
 
 
 def test_standby_gate_prevents_claiming_work(tmp_path: Path, monkeypatch) -> None:

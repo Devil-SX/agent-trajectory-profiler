@@ -223,3 +223,13 @@ current directory contract.
 The independent source-coverage operation reports account-owned checkpoints and
 missing timestamps without usage pricing or deduplication. Discover its live
 operation name, path and read permission through authenticated Help.
+
+## Statistics reads and refreshes
+
+Overview/platform reads return persistent publications and explicit availability,
+watermark, age and update state. Initial building responses omit resource arrays;
+clients must not interpret absence as zero. New ledger revisions mark existing
+statistics stale without blocking GET. Authenticated idempotent refresh operations
+and the daily Asia/Shanghai 01:00 schedule use the same leased background builder.
+Read [the snapshot contract](STATISTICS-SNAPSHOTS.md) before migrating consumers.
+Selected analysis metrics and collection checkpoints remain independent live reads.

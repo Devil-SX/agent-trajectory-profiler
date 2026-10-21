@@ -76,6 +76,12 @@ def test_native_machine_sync_idempotency_scope_revocation_and_server_attribution
     metrics = client.get(
         "/trajectory/api/overview", headers={"Authorization": "Bearer human"}
     ).json()
+    assert metrics["statistics_snapshot"]["state"] == "building"
+    runtime = app.state.analysis_runtime
+    assert runtime.statistics.build(runtime.statistics.claim())
+    metrics = client.get(
+        "/trajectory/api/overview", headers={"Authorization": "Bearer human"}
+    ).json()
     assert metrics["projects"][0]["id"] == "ops"
     assert metrics["projects"][0]["input"] == 10
     assert metrics["projects"][0]["unpriced_calls"] == 1

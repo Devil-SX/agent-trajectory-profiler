@@ -6,7 +6,7 @@ import json
 import os
 import sqlite3
 import threading
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from itertools import chain
 from pathlib import Path
@@ -36,8 +36,6 @@ class Domain:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
-        self._overview_lock = threading.Lock()
-        self._overview_cache: OrderedDict[tuple[Any, ...], dict[str, Any]] = OrderedDict()
         self._source_cache = RevisionCache(max_bytes=16 * 1024 * 1024, max_entries=16)
         self._source_scan_slots = threading.BoundedSemaphore(2)
         with self.connect() as db:
@@ -708,29 +706,16 @@ class Domain:
         ).fetchone()
         return revision[0] if revision else 0
 
-    def _snapshot(self, owner: str | None, since: str = "", until: str = "") -> dict[str, Any]:
-        # Public and session summaries share a compact aggregate snapshot.
-        # Only ledger mutations invalidate it; raw uploads and request traces do not.
-        key = (owner, since, until, self.ledger_revision())
-        with self._overview_lock:
-            if key not in self._overview_cache:
-                # Two compact slots allow global/account alternation without retaining
-                # unbounded owners or date filters. Evict before building a new value.
-                if len(self._overview_cache) >= 2:
-                    self._overview_cache.popitem(last=False)
-                self._overview_cache[key] = self._calculate_overview(owner, since, until)
-            self._overview_cache.move_to_end(key)
-            return self._overview_cache[key]
-
     def overview(self, owner: str | None, since: str = "", until: str = "") -> dict[str, Any]:
+        """Canonical explicit calculation for maintenance/verification, never an HTTP GET."""
         return {
             key: value
-            for key, value in self._snapshot(owner, since, until).items()
+            for key, value in self._calculate_overview(owner, since, until).items()
             if key != "source_summaries"
         }
 
     def session_summaries(self, owner: str) -> list[dict[str, Any]]:
-        return list(self._snapshot(owner)["source_summaries"])
+        return list(self._calculate_overview(owner)["source_summaries"])
 
     def coverage(self, owner: str) -> dict[str, Any]:
         """Current source checkpoints, independent of usage attribution and pricing."""

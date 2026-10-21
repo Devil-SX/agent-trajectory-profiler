@@ -33,7 +33,7 @@ def test_directory_filters_and_pages_without_overview_ir_or_get_migrations(tmp_p
         raise AssertionError("Directory read attempted aggregate replay or metadata migration")
 
     monkeypatch.setattr(store.domain, "connect", connect)
-    monkeypatch.setattr(store.domain, "_snapshot", forbidden)
+    monkeypatch.setattr(store.domain, "_calculate_snapshot", forbidden)
     monkeypatch.setattr(store, "backfill_metadata", forbidden)
     allrows = store.sessions("owner", limit=1)
     assert allrows["metrics_included"] is False
@@ -67,7 +67,7 @@ def test_checkpoint_coverage_never_replays_usage_and_is_account_scoped(tmp_path,
     def forbidden(*args, **kwargs):
         raise AssertionError("Checkpoint read attempted usage replay")
 
-    monkeypatch.setattr(domain, "_snapshot", forbidden)
+    monkeypatch.setattr(domain, "_calculate_snapshot", forbidden)
     client = TestClient(app)
     assert client.get("/trajectory/api/coverage").status_code == 403
     invalid = client.get(

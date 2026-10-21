@@ -38,7 +38,7 @@ contributions and completed session details. It stores serialized values and
 returns independent objects; it is never a canonical store. Keys include owner,
 source and authoritative ledger/analysis/source heads. Active or failed jobs
 bypass detail caching. Source calculations use a separate two-slot scan bound,
-not the overview lock. Cross-source consumption winners are selected globally
+independent of the persistent overview builder. Cross-source consumption winners are selected globally
 before unrelated bodies are discarded; source filtering must never resurrect a
 losing duplicate. Task membership, source lines and call IDs use indexes, with
 memoized descendant membership and operation-order segments.
@@ -251,3 +251,18 @@ business intent; normal disabling/archival controls its future executions.
 Session-directory and checkpoint reads are independent of the full usage snapshot.
 See [read-performance.md](docs/read-performance.md) for their roles, account-scoped
 snapshot cursors, retained authoritative metric readers and timing boundaries.
+
+## Persistent statistics publication
+
+`statistics_snapshots.py` owns account/date scope registration, durable refresh jobs
+and successful snapshot publication in the existing Domain database. It calls the
+unchanged canonical `_calculate_snapshot` with its ledger watermark in one SQLite
+read transaction. One short write transaction publishes the entire payload and
+completion receipt. GET never invokes the calculation or invalidates the published
+result on new ledger activity. See [statistics lifecycle](docs/STATISTICS-SNAPSHOTS.md).
+
+The existing coordinator lease, worker gate and pool execute both statistics and
+analysis. Statistics wait for paid windows to reach a durable pause boundary; a
+single statistics build then runs without analysis futures. A persisted 30-second
+cooldown after each build leaves dispatch opportunities for analysis and ingestion.
+There is no second cron, cache writer or standalone statistics worker.

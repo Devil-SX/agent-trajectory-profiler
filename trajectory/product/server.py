@@ -41,6 +41,7 @@ from trajectory.product.schedules import (
 from trajectory.product.semantic import AnalysisResumeError, SemanticStore, SessionCursorExpired
 from trajectory.product.semantic_runtime import AnalysisRuntime
 from trajectory.product.stage_studies import StageStudies, StageStudyImport
+from trajectory.product.statistics_snapshots import StatisticsRefresh
 
 
 @dataclass(frozen=True)
@@ -343,11 +344,35 @@ OPERATIONS: list[dict[str, Any]] = [
         "effect": "Read bounded request metadata and auth outcomes; no payloads or secrets",
     },
     {
+        "id": "statistics_refresh",
+        "method": "POST",
+        "path": "/api/statistics/refresh",
+        "scope": "configure",
+        "required_scopes": ["read"],
+        "input": StatisticsRefresh,
+        "effect": "Queue an idempotent account/date statistics rebuild. Existing successful "
+        "snapshot stays readable. Coalesces concurrent/manual/daily jobs in the sole coordinator; "
+        "no model calls. At most twelve stored date scopes per account, including the full view.",
+    },
+    {
+        "id": "platform_statistics_refresh",
+        "method": "POST",
+        "path": "/api/platform/statistics/refresh",
+        "scope": "configure",
+        "required_scopes": ["read_all"],
+        "input": StatisticsRefresh,
+        "effect": "Privileged idempotent rebuild of the platform/date statistics snapshot; "
+        "same queue and builder as account statistics, no model calls.",
+    },
+    {
         "id": "overview",
         "method": "GET",
         "path": "/api/overview",
         "scope": "read",
-        "effect": "Read account usage, project attribution and evidence-based anomalies",
+        "effect": "Read the latest successful persistent account/date statistics snapshot, "
+        "with generation time, opaque source watermark, stale/update status and next "
+        "01:00 Asia/Shanghai refresh. First read queues an initial rebuild and returns "
+        "building without fabricated counters; never synchronously scans the ledger.",
     },
     {
         "id": "platform",
@@ -462,11 +487,29 @@ def create_app(
     authorizer: Callable[[Request, str | None], Principal] = native_authorizer,
     machine_verifier: Callable[[str, str], bool] | None = None,
     resource_owner_verifier: Callable[[str], bool] | None = None,
+    stored_identity_verifier: Callable[[dict[str, Any]], None] | None = None,
 ) -> FastAPI:
     domain = Domain(path)
     semantic = SemanticStore(domain)
     studies = StageStudies(domain)
     runtime = AnalysisRuntime(semantic)
+
+    def verify_statistics_identity(actor: dict[str, Any]) -> None:
+        if stored_identity_verifier is not None:
+            stored_identity_verifier(actor)
+        elif authorizer is native_authorizer:
+            from batcave_http.auth import authorize_stored_account
+
+            for scope in actor["required_scopes"]:
+                authorize_stored_account(
+                    actor["account_id"],
+                    "trajectory",
+                    scope,
+                    key_id=actor.get("key_id"),
+                    machine_client_id=actor.get("machine_client"),
+                )
+
+    runtime.statistics.verify_actor = verify_statistics_identity
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
@@ -805,12 +848,19 @@ def create_app(
                         source_revision=request.query_params.get("source_revision") or None,
                     )
                 if identifier in ("overview", "platform"):
-                    return await asyncio.to_thread(
-                        domain.overview,
+                    result = await asyncio.to_thread(
+                        runtime.statistics.read,
                         resource_owner if identifier == "overview" else None,
                         request.query_params.get("since", ""),
                         request.query_params.get("until", ""),
+                        {
+                            "account_id": principal.account,
+                            "key_id": principal.key_id,
+                            "machine_client": principal.machine_client,
+                            "required_scopes": ["read" if identifier == "overview" else "read_all"],
+                        },
                     )
+                    return JSONResponse(result, headers={"Cache-Control": "private, no-store", "Vary": "Authorization"})
                 if request.headers.get("origin") and request.headers["origin"] != os.environ.get(
                     "TRAJECTORY_PUBLIC_ORIGIN"
                 ):
@@ -825,6 +875,21 @@ def create_app(
                     chunks.extend(chunk)
                 body = bytes(chunks)
                 value = operation["input"].model_validate_json(body)
+                if identifier in {"statistics_refresh", "platform_statistics_refresh"}:
+                    return await asyncio.to_thread(
+                        runtime.statistics.request,
+                        principal.account if identifier == "statistics_refresh" else None,
+                        {
+                            "account_id": principal.account,
+                            "key_id": principal.key_id,
+                            "machine_client": principal.machine_client,
+                            "required_scopes": [
+                                "configure",
+                                "read" if identifier == "statistics_refresh" else "read_all",
+                            ],
+                        },
+                        value,
+                    )
                 if identifier == "stage_study_import":
                     return await asyncio.to_thread(studies.import_study, resource_owner, value)
                 if identifier == "backup":

@@ -48,11 +48,14 @@ is empty.
 
 ## Remaining reads
 
-The four usage/statistics tabs share the existing account/date overview. An
-uncached overview still calculates global winner selection, provenance, prices
-and active intervals. Neither a cached tab switch nor the separate checkpoint
-reader proves that a fresh overview is fast. Project-only presentation uses the
-published project summaries; per-project daily aggregates are not invented.
+The four usage/statistics tabs share the persistent account/date overview.
+Reading it returns the last atomic publication, even after new ledger activity.
+Daily and authenticated manual refresh jobs execute the unchanged global winner,
+provenance, pricing and interval calculation in the leased background runtime.
+An unbuilt scope returns explicit building metadata without invented counters.
+See [snapshot lifecycle](STATISTICS-SNAPSHOTS.md) for scope, scheduling and failure
+semantics. Project-only presentation uses published project summaries;
+per-project daily aggregates are not invented.
 
 The selected analysis still uses globally authoritative contributions, including
 same-native-session and fork dependencies, to avoid changing deduplication or

@@ -15,6 +15,7 @@ from typing import Any
 
 from trajectory.product.semantic import SemanticStore, digest
 from trajectory.product.semantic_model import AnalysisPaused
+from trajectory.product.statistics_snapshots import StatisticsSnapshots
 
 
 class AnalysisRuntime:
@@ -23,6 +24,9 @@ class AnalysisRuntime:
         from trajectory.product.schedules import AnalysisSchedules
 
         self.schedules = AnalysisSchedules(store)
+        self.statistics = StatisticsSnapshots(store.domain)
+        self.statistics_barrier = threading.Event()
+        self.statistics_future: Future[bool] | None = None
         self.schedule_checked_at = 0.0
 
         self._metadata_check_after = 0.0
@@ -102,16 +106,24 @@ class AnalysisRuntime:
                 return False
             self.lease = lease
             self.store.recover_jobs()
+            self.statistics.recover()
         return True
 
     def _pause_requested(self) -> bool:
         gate = os.environ.get("TRAJECTORY_WORKER_GATE")
-        return self.stopping or bool(gate and not Path(gate).is_file())
+        return (
+            self.stopping
+            or self.statistics_barrier.is_set()
+            or bool(gate and not Path(gate).is_file())
+        )
 
     def tick(self) -> bool:
         """Dispatch independent sessions while one process owns the coordinator lease."""
         with self.lock:
             self.futures = {future for future in self.futures if not future.done()}
+            if self.statistics_future is not None and self.statistics_future.done():
+                self.statistics_future = None
+                self.statistics_barrier.clear()
             # Relinquish the lease only after natural drain, before handoff.
             gate = os.environ.get("TRAJECTORY_WORKER_GATE")
             if not self.futures and gate and not Path(gate).is_file() and self.lease:
@@ -121,8 +133,24 @@ class AnalysisRuntime:
                 return False
             dispatched = False
             if time.monotonic() - self.schedule_checked_at >= 30:
+                self.statistics.tick()
                 self.schedules.tick()
                 self.schedule_checked_at = time.monotonic()
+            # Pause at durable paid-window boundaries, never cancel an upstream request.
+            # One statistics build uses the same pool and exclusive coordinator lease.
+            if self.statistics_future is not None:
+                return False
+            if self.statistics.pending() and self.statistics.can_start():
+                self.statistics_barrier.set()
+                if self.futures:
+                    return False
+                statistics_job = self.statistics.claim()
+                if statistics_job is not None:
+                    future = self.pool.submit(self.statistics.build, statistics_job)
+                    self.statistics_future = future
+                    self.futures.add(future)
+                    return True
+            self.statistics_barrier.clear()
             while len(self.futures) < self.capacity:
                 job = self.store.claim_job()
                 if job is None:
