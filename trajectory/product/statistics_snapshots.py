@@ -307,8 +307,7 @@ class StatisticsSnapshots:
         """Persisted cooldown leaves room for queued analysis and ingestion between builds."""
         with self.domain.connect() as db:
             finished = db.execute(
-                "SELECT max(finished) FROM statistics_jobs "
-                "WHERE status IN ('complete','failed')"
+                "SELECT max(finished) FROM statistics_jobs " "WHERE status IN ('complete','failed')"
             ).fetchone()[0]
         if finished is None:
             return True

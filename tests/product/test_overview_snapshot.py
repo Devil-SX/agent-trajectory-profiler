@@ -195,9 +195,9 @@ def test_build_cooldown_survives_restart_and_allows_other_work(tmp_path):
     store.read("owner")
     publish(store)
     with domain.connect() as db:
-        completed = datetime.fromisoformat(db.execute(
-            "SELECT finished FROM statistics_jobs WHERE status='complete'"
-        ).fetchone()[0])
+        completed = datetime.fromisoformat(
+            db.execute("SELECT finished FROM statistics_jobs WHERE status='complete'").fetchone()[0]
+        )
     restarted = StatisticsSnapshots(domain)
     assert not restarted.can_start(completed + timedelta(seconds=29))
     assert restarted.can_start(completed + timedelta(seconds=30))
@@ -211,9 +211,11 @@ def test_reads_keep_published_result_while_building_and_revoked_publish_is_rejec
     publish(store)
     old = store.read("owner")
     domain.ingest("machine", batch(2, 99))
-    store.request("owner", {"account_id": "owner"}, StatisticsRefresh(
-        mutation_id="refresh-revoked-before-publish"
-    ))
+    store.request(
+        "owner",
+        {"account_id": "owner"},
+        StatisticsRefresh(mutation_id="refresh-revoked-before-publish"),
+    )
     job = store.claim()
     original = domain._calculate_snapshot
     started, resume = Event(), Event()

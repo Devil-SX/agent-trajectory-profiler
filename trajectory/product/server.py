@@ -884,7 +884,10 @@ def create_app(
                             "required_scopes": ["read" if identifier == "overview" else "read_all"],
                         },
                     )
-                    return JSONResponse(result, headers={"Cache-Control": "private, no-store", "Vary": "Authorization"})
+                    return JSONResponse(
+                        result,
+                        headers={"Cache-Control": "private, no-store", "Vary": "Authorization"},
+                    )
                 if request.headers.get("origin") and request.headers["origin"] != os.environ.get(
                     "TRAJECTORY_PUBLIC_ORIGIN"
                 ):

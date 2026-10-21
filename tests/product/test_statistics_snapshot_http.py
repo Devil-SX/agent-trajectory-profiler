@@ -126,3 +126,19 @@ def test_runtime_uses_one_lease_and_parks_at_paid_window_boundary(tmp_path, monk
     assert runtime.statistics.read("owner")["statistics_snapshot"]["available"]
     runtime.close()
     competitor.close()
+
+
+def test_pending_statistics_cooldown_does_not_starve_analysis(tmp_path, monkeypatch):
+    store = SemanticStore(Domain(tmp_path / "domain.db"))
+    runtime = AnalysisRuntime(store)
+    runtime.statistics.read("owner")
+    first = runtime.statistics.claim()
+    assert runtime.statistics.build(first)
+    runtime.statistics.read("owner", since="2026-10-01")
+    assert runtime.statistics.pending() and not runtime.statistics.can_start()
+    claimed = []
+    monkeypatch.setattr(store, "claim_job", lambda: claimed.append(True) or None)
+    runtime.tick()
+    assert claimed and not runtime.statistics_barrier.is_set()
+    assert runtime.statistics_future is None
+    runtime.close()

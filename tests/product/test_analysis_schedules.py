@@ -473,9 +473,14 @@ def test_daily_dispatch_and_idle_metadata_maintenance_share_one_runtime_lease(
         assert worker.tick()
         assert not competitor.tick()
         assert maintenance == []
-        for future in worker.futures:
-            assert future.result(timeout=3)
-        assert worker.tick()
+        # A fast worker may refill capacity while dispatching; drain every actual
+        # future before asserting the first idle maintenance pass.
+        for _ in range(8):
+            for future in tuple(worker.futures):
+                assert future.result(timeout=3)
+            worker.tick()
+            if maintenance:
+                break
         assert maintenance == ["idle"]
         assert plans.catalog("owner")["schedules"][0]["runs"][0]["counts"] == {"complete": 3}
         assert len(store.batches("owner")["batches"]) == 1
