@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cover source lookup and session display fields with indexes, keeping full IR bodies and usage replay out of the session directory.
 - Preserve durable raw-sync receipts when request-measurement repair is temporarily deferred; keep the existing persistent retry queue.
 
-Code stats vs v4.3.2: total 26132 text lines (baseline 25619), +583 (-70) = +513, 2.00% text-line change.
+Code stats vs v4.3.2: total 26132 text lines (baseline 25619), +585 (-72) = +513, 2.00% text-line change.
 
 ## [4.3.2] - 2026-10-20
 

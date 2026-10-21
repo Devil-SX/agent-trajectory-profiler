@@ -74,10 +74,10 @@ def test_filters_use_real_analysis_and_original_dates_before_pagination(tmp_path
     result = store.sessions("owner", cwd="/home/sdu/embodied", limit=1)
     assert result["total"] == 2 and result["next_cursor"].startswith("v1.")
     assert result["sessions"][0]["id"] == c and result["sessions"][0]["parent_session_id"] == a
-    assert (
-        store.sessions("owner", cwd="/home/sdu/embodied", limit=1, cursor=result["next_cursor"])["sessions"][0]["id"]
-        == a
+    following = store.sessions(
+        "owner", cwd="/home/sdu/embodied", limit=1, cursor=result["next_cursor"]
     )
+    assert following["sessions"][0]["id"] == a
     assert len(store.sessions("owner", until="2026-10-06")["sessions"]) == 1
     assert store.sessions("owner", q="网站")["sessions"][0]["id"] == b
     assert [row["id"] for row in store.sessions("owner", q=b)["sessions"]] == [b]
