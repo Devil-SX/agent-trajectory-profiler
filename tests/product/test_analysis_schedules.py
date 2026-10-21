@@ -671,3 +671,66 @@ def test_stored_machine_auth_composes_live_shared_authority_and_owner_grant(tmp_
     )
     with pytest.raises(PermissionError, match="delegation"):
         plans.verify_stored_caller("owner", caller)
+
+
+def test_recent_events_are_not_refreshed_by_import_and_quiet_remains_conservative(tmp_path):
+    store, plans, ids, _ = fixture(tmp_path, 4)
+    old = (NOW - timedelta(days=60)).isoformat()
+    recent = (NOW - timedelta(days=2)).isoformat()
+    live = (NOW - timedelta(minutes=5)).isoformat()
+    with store.domain.connect() as db:
+        for sid, event, upload in [
+            (ids[0], old, recent),
+            (ids[1], recent, live),
+            (ids[2], recent, old),
+            (ids[3], None, recent),
+        ]:
+            metadata = json.loads(
+                db.execute(
+                    "SELECT body FROM semantic_session_metadata WHERE session=?", (sid,)
+                ).fetchone()[0]
+            )
+            metadata["last_activity_at"] = event
+            db.execute(
+                "UPDATE semantic_session_metadata SET body=? WHERE session=?",
+                (json.dumps(metadata), sid),
+            )
+            db.execute("UPDATE source_archives SET updated=? WHERE source=?", (upload, sid))
+        config = plans._read(db, "owner", "nightly")
+        snapshot = plans.candidates(db, "owner", config, NOW)
+    assert [item["session_id"] for item in snapshot["eligible"]] == [ids[2]]
+    reasons = {item["session_id"]: item["reasons"] for item in snapshot["excluded"]}
+    assert "outside_recent_window" in reasons[ids[0]]
+    assert "recently_active" in reasons[ids[1]]
+    assert "activity_unknown" in reasons[ids[3]]
+    assert snapshot["eligible"][0]["last_activity_at"] == recent
+    assert snapshot["eligible"][0]["native_last_activity_at"] == recent
+    assert "never ingestion time" in snapshot["policy"]["recent_basis"]
+
+
+def test_candidate_http_discloses_recorded_recency_separately_from_ingestion(tmp_path, monkeypatch):
+    store, _, ids, _ = fixture(tmp_path, 1)
+    with store.domain.connect() as db:
+        metadata = json.loads(
+            db.execute(
+                "SELECT body FROM semantic_session_metadata WHERE session=?", (ids[0],)
+            ).fetchone()[0]
+        )
+        metadata["last_activity_at"] = (NOW - timedelta(days=60)).isoformat()
+        db.execute(
+            "UPDATE semantic_session_metadata SET body=? WHERE session=?",
+            (json.dumps(metadata), ids[0]),
+        )
+    monkeypatch.setattr("trajectory.product.schedules.datetime", Clock)
+    app = create_app(
+        store.domain.path, lambda request, scope: Principal("owner", scopes=("read", "configure"))
+    )
+    response = TestClient(app).get("/trajectory/api/analysis-schedules/nightly/candidates")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["eligible"] == []
+    row = next(item for item in data["excluded"] if item["session_id"] == ids[0])
+    assert row["last_change_at"] == (NOW - timedelta(days=2)).isoformat()
+    assert row["last_activity_at"] == (NOW - timedelta(days=60)).isoformat()
+    assert "outside_recent_window" in row["reasons"]
+    assert "never ingestion time" in data["policy"]["recent_basis"]

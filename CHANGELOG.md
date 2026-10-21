@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Determine sampling recency from the selected source recorded event activity rather than import time or a newer copy; retain conservative content-change quiet periods and exclude unknown event activity.
+
 ## [6.0.1] - 2026-10-21
 
 ### Fixed

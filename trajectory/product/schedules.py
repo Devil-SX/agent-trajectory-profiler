@@ -28,6 +28,7 @@ POLICY = {
     "algorithm": ALGORITHM,
     "weight_basis": "normalized_operation_count, excludes image/base64 byte size",
     "quiet_basis": "max(source content cursor change, metadata last activity)",
+    "recent_basis": "Latest recorded event activity per native session, never ingestion time",
     "active_status": (
         "Explicit active metadata excluded; otherwise >=quiet_hours " "is an inactivity proxy"
     ),
@@ -393,10 +394,17 @@ class AnalysisSchedules:
         }
         attempted_native = {natives.get(s, s) for s in attempts}
         native_activity: dict[str, datetime] = {}
+        native_recorded_activity: dict[str, datetime] = {}
         for r in rows:
             meta = json.loads(r["metadata"] or "{}")
+            recorded = instant(meta.get("last_activity_at"))
+            native = natives[r["id"]]
+            if recorded:
+                native_recorded_activity[native] = max(
+                    native_recorded_activity.get(native, recorded), recorded
+                )
             dates = [
-                instant(meta.get("last_activity_at")),
+                recorded,
                 instant(
                     r["content_changed"]
                     if r["observed_cursor"] == str(r["generation"]) + ":" + str(r["received_bytes"])
@@ -416,11 +424,13 @@ class AnalysisSchedules:
             if not any(cwd == p or cwd.startswith(p + "/") for p in config["directories"]):
                 reasons.append("directory_outside_scope")
             latest = native_activity.get(natives[r["id"]])
-            if not latest:
+            recorded = native_recorded_activity.get(natives[r["id"]])
+            source_recorded = instant(meta.get("last_activity_at"))
+            if not latest or not recorded:
                 reasons.append("activity_unknown")
-            elif latest > now - timedelta(hours=config["quiet_hours"]):
+            if latest and latest > now - timedelta(hours=config["quiet_hours"]):
                 reasons.append("recently_active")
-            elif latest < now - timedelta(days=config["recent_days"]):
+            if recorded and recorded < now - timedelta(days=config["recent_days"]):
                 reasons.append("outside_recent_window")
             if meta.get("active") is True or meta.get("status") in {"active", "running"}:
                 reasons.append("explicitly_active")
@@ -459,10 +469,20 @@ class AnalysisSchedules:
                 "weight": count,
                 "operation_count": count,
                 "last_change_at": latest.isoformat() if latest else None,
+                "last_activity_at": source_recorded.isoformat() if source_recorded else None,
+                "native_last_activity_at": recorded.isoformat() if recorded else None,
                 "reasons": reasons,
             }
             (excluded if reasons else candidates).append(item)
-        candidates.sort(key=lambda x: (x["last_change_at"] or "", x["session_id"]), reverse=True)
+        candidates.sort(
+            key=lambda x: (
+                x["last_activity_at"] or "",
+                x["operation_count"] or 0,
+                x["last_change_at"] or "",
+                x["session_id"],
+            ),
+            reverse=True,
+        )
         unique = {}
         for item in candidates:
             if item["native_session_id"] in unique:
