@@ -2,11 +2,13 @@
 
 import sqlite3
 
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from test_overview_snapshot import batch
 from test_session_metadata import seeded
 
+from trajectory.product.semantic import SessionCursorExpired
 from trajectory.product.semantic_runtime import AnalysisRuntime
 from trajectory.product.server import Principal, create_app
 
@@ -129,3 +131,36 @@ def test_cursor_pins_metadata_snapshot_and_never_leaks_other_owner_or_scope(tmp_
     store._directory_cache = RevisionCache(max_bytes=16 * 1024**2, max_entries=1)
     with pytest.raises(SessionCursorExpired):
         store.sessions("owner", limit=1, cursor=page["next_cursor"])
+
+
+def test_full_directory_facets_precede_pagination_cwd_and_follow_status(tmp_path):
+    store, add = seeded(tmp_path)
+    first, revision = add(1, "/repo/one", "task first", "2026-10-01")
+    add(2, "/repo/one", "task second", "2026-10-03")
+    add(3, "/repo/one/sub", "task child", "2026-10-02")
+    missing, _ = add(4, None, "task unknown", "2026-10-04")
+    page = store.sessions("owner", limit=1)
+    assert page["directory_facets"] == [
+        {"cwd": "/repo/one", "count": 2},
+        {"cwd": "/repo/one/sub", "count": 1},
+        {"cwd": None, "count": 1},
+    ]
+    following = store.sessions("owner", limit=1, cursor=page["next_cursor"])
+    assert following["directory_facets"] == page["directory_facets"]
+    scoped = store.sessions("owner", cwd="/repo/one", limit=1)
+    assert scoped["total"] == 3 and scoped["directory_facets"] == page["directory_facets"]
+    unknown = store.sessions("owner", cwd_presence="unknown", limit=1)
+    assert unknown["total"] == 1 and unknown["sessions"][0]["id"] == missing
+    assert unknown["directory_facets"] == page["directory_facets"]
+    assert store.sessions("other")["directory_facets"] == []
+    assert store.sessions("owner", q="second")["directory_facets"] == [
+        {"cwd": "/repo/one", "count": 1}
+    ]
+    store.save_analysis("owner", first, revision, {"tasks": []})
+    assert store.sessions("owner", analysis_status="analyzed")["directory_facets"] == [
+        {"cwd": "/repo/one", "count": 1}
+    ]
+    with pytest.raises(ValueError):
+        store.sessions("owner", cwd="/repo", cwd_presence="unknown")
+    with pytest.raises(SessionCursorExpired):
+        store.sessions("owner", limit=1, cursor=page["next_cursor"], cwd_presence="unknown")

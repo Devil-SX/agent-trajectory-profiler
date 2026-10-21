@@ -286,7 +286,10 @@ OPERATIONS: list[dict[str, Any]] = [
         "scope": "read",
         "effect": "Read a paginated account-owned session directory and analysis availability. "
         "Filters and facets use compact source/metadata indexes. Resource metrics are not "
-        "included; read the selected session analysis for authoritative measurements.",
+        "included; read the selected session analysis for authoritative measurements. "
+        "directory_facets counts all matching metadata before cwd and pagination; "
+        "cwd selects a directory subtree, cwd_presence=unknown selects missing cwd only. "
+        "Unknown cwd is never inferred from project names.",
     },
     {
         "id": "task_query",
@@ -817,6 +820,7 @@ def create_app(
                         request.query_params.get("until", ""),
                         analysis_status=request.query_params.get("analysis_status", "all"),
                         cwd=request.query_params.get("cwd", ""),
+                        cwd_presence=request.query_params.get("cwd_presence", "all"),
                         sort=request.query_params.get("sort", "last_activity_desc"),
                         q=request.query_params.get("q", ""),
                         limit=int(request.query_params.get("limit", "0")),

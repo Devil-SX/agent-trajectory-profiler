@@ -2135,6 +2135,7 @@ class SemanticStore:
         q: str = "",
         limit: int = 0,
         cursor: str = "",
+        cwd_presence: str = "all",
     ) -> dict[str, Any]:
         allowed = {"all", "analyzed", "not_started", "busy", "failed", "stale"}
         if analysis_status not in allowed or sort not in {
@@ -2143,10 +2144,24 @@ class SemanticStore:
             "directory",
         }:
             raise ValueError("Unsupported session filter or sort")
+        if cwd_presence not in {"all", "unknown"} or (cwd and cwd_presence == "unknown"):
+            raise ValueError("Invalid directory presence scope")
         if not 0 <= limit <= 1000:
             raise ValueError("Invalid session page")
         scope = digest(
-            json.dumps([project, since, until, analysis_status, cwd, sort, q.casefold(), limit])
+            json.dumps(
+                [
+                    project,
+                    since,
+                    until,
+                    analysis_status,
+                    cwd,
+                    sort,
+                    q.casefold(),
+                    limit,
+                    cwd_presence,
+                ]
+            )
         )
         if cursor:
             try:
@@ -2340,7 +2355,10 @@ class SemanticStore:
             if q and q.casefold() not in haystack:
                 continue
             items.append(item)
+        directory_items = items
         directories = sorted({str(item["cwd"]) for item in items if item["cwd"]})
+        if cwd_presence == "unknown":
+            items = [item for item in items if not item["cwd"]]
         if cwd:
             items = [
                 i
@@ -2364,6 +2382,17 @@ class SemanticStore:
                 }
             return str(item["analysis_status"]) == value
 
+        facet_counts: dict[str | None, int] = {}
+        for item in directory_items:
+            if matches(item, analysis_status):
+                directory = item["cwd"] or None
+                facet_counts[directory] = facet_counts.get(directory, 0) + 1
+        directory_facets = [
+            {"cwd": directory, "count": count}
+            for directory, count in sorted(
+                facet_counts.items(), key=lambda pair: pair[0] or "\uffff"
+            )
+        ]
         counts = {value: sum(matches(item, value) for item in items) for value in allowed}
         items = [i for i in items if matches(i, analysis_status)]
         items.sort(key=lambda i: (str(i.get("last_activity_at") or ""), i["id"]), reverse=True)
@@ -2379,6 +2408,8 @@ class SemanticStore:
             "total": total,
             "status_counts": counts,
             "directories": directories,
+            "directory_facets": directory_facets,
+            "directory_facets_scope": "owner_project_dates_search_status_before_cwd_and_pagination",
             "projects": [
                 {"id": key, "name": name}
                 for key, name in sorted(projects.items(), key=lambda pair: (pair[1], pair[0]))

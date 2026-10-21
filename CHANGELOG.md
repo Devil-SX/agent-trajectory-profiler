@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-10-21
+
+### Added
+
+- Browse sessions in a collapsible working-directory tree with full-scope counts before pagination, persistent expansion and search-expanded matching branches. Filter a real directory subtree or unknown directories through the same authenticated metadata-only reader.
+
+### Changed
+
+- Keep session search, filters and selection inside the left sidebar. Show accessible compact agent, lineage and analysis-state icons without repeating paths on every session; retain explicit unknown lineage and self-parent handling.
+
+Code stats vs v6.1.1: total 29514 text lines, +184 (-22) = +162, 0.55% text-line change.
+
 ## [6.1.1] - 2026-10-21
 
 ### Fixed
