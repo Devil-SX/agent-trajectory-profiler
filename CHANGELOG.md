@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Determine sampling recency from native recorded event activity rather than import time; retain conservative content-change quiet periods and exclude unknown event activity.
+
 ### Added
 
 - Provide an installable Trajectory HTTP connection skill using live authenticated Help, explicit resource ownership and private native machine credentials.
