@@ -396,7 +396,12 @@ def test_explicit_native_delegation_revocation_and_caller_identity(tmp_path):
     assert client.post(route, json=grant, headers=op).json() == result.json()
     assert len(client.get(base + "?resource_owner=owner", headers=robot).json()["schedules"]) == 1
     help = client.get("/trajectory/help", headers=robot).json()
-    assert help["caller"] == {"account_id": machine, "machine_client": "automation"}
+    assert help["caller"] == {
+        "account_id": machine,
+        "machine_client": "automation",
+        "key_id": "key-1",
+        "credential_profile": None,
+    }
     assert (
         client.get("/trajectory/api/overview?resource_owner=owner", headers=robot).status_code
         == 403
@@ -477,3 +482,29 @@ def test_daily_dispatch_and_idle_metadata_maintenance_share_one_runtime_lease(
     finally:
         worker.close()
         competitor.close()
+
+
+def test_analysis_credential_profile_limits_own_scope_and_live_help(tmp_path):
+    def auth(request, scope):
+        return Principal(
+            "machine",
+            "native-analysis",
+            "fixture-key",
+            ("read", "configure"),
+            credential_profile="trajectory.analysis",
+        )
+
+    client = TestClient(create_app(tmp_path / "profile.db", auth))
+    headers = {"Authorization": "Bearer fixture"}
+    help = client.get("/trajectory/help", headers=headers).json()
+    tools = {tool["name"] for tool in help["tools"]}
+    assert "analysis_schedule_write" in tools and "sessions" in tools
+    assert not tools.intersection(
+        {"price", "source_append", "collector_write", "backup", "overview", "correction"}
+    )
+    assert help["caller"]["credential_profile"] == "trajectory.analysis"
+    assert help["caller"]["key_id"] == "fixture-key"
+    # Restriction applies even with no resource_owner selector, before any mutation.
+    assert client.post("/trajectory/api/prices", json={}, headers=headers).status_code == 403
+    assert client.get("/trajectory/api/overview", headers=headers).status_code == 403
+    assert client.get("/trajectory/api/analysis-schedules", headers=headers).status_code == 200

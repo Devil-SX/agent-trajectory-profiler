@@ -50,6 +50,38 @@ class Principal:
     machine_client: str | None = None
     key_id: str | None = None
     scopes: tuple[str, ...] = ()
+    credential_profile: str | None = None
+
+
+ANALYSIS_CREDENTIAL_PROFILE = "trajectory.analysis"
+ANALYSIS_AUTOMATION_OPERATIONS = frozenset(
+    {
+        "sessions",
+        "task_query",
+        "analysis_read",
+        "operation_read",
+        "source_evidence",
+        "analysis_run",
+        "analysis_batch_run",
+        "analysis_batch_list",
+        "analysis_batch_read",
+        "analysis_resume",
+        "analysis_recompute_lost_window",
+        "analysis_schedule_list",
+        "analysis_schedule_write",
+        "analysis_schedule_preview",
+        "analysis_schedule_run",
+        "analysis_schedule_run_read",
+        "analysis_schedule_delete",
+    }
+)
+
+
+def operation_permitted(principal: Principal, identifier: str) -> bool:
+    return principal.credential_profile is None or (
+        principal.credential_profile == ANALYSIS_CREDENTIAL_PROFILE
+        and identifier in ANALYSIS_AUTOMATION_OPERATIONS
+    )
 
 
 class CollectorBinding(BaseModel):
@@ -434,6 +466,8 @@ def native_authorizer(request: Request, scope: str | None) -> Principal:
         if not entry:
             request.state.auth_outcome = "credential_unrecognized"
             raise HTTPException(403, "Credential denied")
+        if entry.get("profile") not in {None, ANALYSIS_CREDENTIAL_PROFILE}:
+            raise HTTPException(403, "Unsupported credential profile")
         if not account_allowed(
             entry["account_id"],
             "trajectory",
@@ -447,6 +481,7 @@ def native_authorizer(request: Request, scope: str | None) -> Principal:
             entry.get("machine_client_id"),
             entry.get("key_id"),
             tuple(entry.get("scopes", [])),
+            entry.get("profile"),
         )
         request.state.principal = principal
         if scope is not None and scope not in principal.scopes:
@@ -657,7 +692,12 @@ def create_app(
             "transport": "http",
             "api_base": "/trajectory",
             "protocol": "trajectory-batch/1",
-            "caller": {"account_id": principal.account, "machine_client": principal.machine_client},
+            "caller": {
+                "account_id": principal.account,
+                "machine_client": principal.machine_client,
+                "key_id": principal.key_id,
+                "credential_profile": principal.credential_profile,
+            },
             "scopes": list(principal.scopes),
             "tools": [
                 {
@@ -672,6 +712,7 @@ def create_app(
                 }
                 for op in OPERATIONS
                 if set(op.get("required_scopes", [op["scope"]])) <= set(principal.scopes)
+                and operation_permitted(principal, op["id"])
             ],
         }
 
@@ -688,29 +729,12 @@ def create_app(
                 if additional_scope != operation["scope"]:
                     authorizer(request, additional_scope)
             identifier = operation["id"]
+            if not operation_permitted(principal, identifier):
+                raise HTTPException(403, "Credential profile does not permit this operation")
             resource_owner = principal.account
             requested_owner = request.query_params.get("resource_owner")
             if requested_owner and requested_owner != principal.account:
-                delegatable = {
-                    "sessions",
-                    "task_query",
-                    "analysis_read",
-                    "operation_read",
-                    "source_evidence",
-                    "analysis_run",
-                    "analysis_batch_run",
-                    "analysis_batch_list",
-                    "analysis_batch_read",
-                    "analysis_resume",
-                    "analysis_recompute_lost_window",
-                    "analysis_schedule_list",
-                    "analysis_schedule_write",
-                    "analysis_schedule_preview",
-                    "analysis_schedule_run",
-                    "analysis_schedule_run_read",
-                    "analysis_schedule_delete",
-                }
-                if identifier not in delegatable:
+                if identifier not in ANALYSIS_AUTOMATION_OPERATIONS:
                     raise HTTPException(403, "Operation does not support analysis delegation")
                 try:
                     resource_owner = runtime.schedules.resolve_owner(
