@@ -56,7 +56,7 @@ const server=http.createServer(async(req,res)=>{
   assert.equal(await page.locator('#analysis-content [data-resume-job]').isEnabled(),true);
   if(!await page.locator('#batch-activity').evaluate(n=>n.open))await page.locator('#batch-activity > summary').click();
   assert.equal(await page.locator('.batch-panel [data-resume-job]').count(),1);
-  assert((await page.locator('.batch-panel').innerText()).includes('系统不会自动重发'));
+  assert((await page.locator('#batch-activity').innerText()).includes('系统不会自动重发'));
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:process.argv[3]+'/recovery-mobile.png',fullPage:true});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
@@ -67,10 +67,10 @@ const server=http.createServer(async(req,res)=>{
   assert.match(posts[0].body.mutation_id,/^[0-9a-f-]{36}$/);
   assert.equal(Object.keys(posts[0].body).length,1);
   assert.equal(await page.locator('#analysis-content [data-resume-job]').count(),0);
-  await page.reload();await page.waitForSelector('.batch-panel');
+  await page.reload();await page.waitForSelector('#batch-activity');
   assert.equal(posts.length,2);
   if(!await page.locator('#batch-activity').evaluate(n=>n.open))await page.locator('#batch-activity > summary').click();
-  assert((await page.locator('.batch-panel').innerText()).includes('等待分析'));
+  assert((await page.locator('#batch-activity').innerText()).includes('等待分析'));
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({status:'passed',checks:['server-authoritative resume eligibility','no new analysis after failure','uncertain blocks paid retry','saved prefix displayed','same mutation across detail and batch retry','batch identity retained','no model call from reload','mobile layout'],pageErrors:errors}));
  }finally{await browser.close();server.close()}
