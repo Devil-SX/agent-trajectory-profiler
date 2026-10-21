@@ -300,6 +300,8 @@ function renderResume(target,resume,sessionId){
   const feedback=node('span',undefined,'resume-feedback status');feedback.setAttribute('role','status');controls.append(feedback);
  }else if(resume.reason==='prior_call_uncertain'){
   controls.append(node('p','调用结果不明，需要先核对 Jindu 回执。系统不会自动重发。','warning'));
+ }else if(resume.reason==='jindu_rejection_review_required'){
+  controls.append(node('p','Jindu 已收到上游拒绝响应，需要检查回执。系统不会自动重发，实际扣费仍待核对。','warning'));
  }else if(resume.reason==='resume_limit_reached'){
   controls.append(node('p','已达到续跑次数上限，请检查失败记录。','warning'));
  }

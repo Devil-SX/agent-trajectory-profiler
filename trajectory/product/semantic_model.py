@@ -15,6 +15,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
+from http.client import HTTPException
 from pathlib import Path
 from typing import Any
 
@@ -248,9 +249,30 @@ def _request(
         if isinstance(exc, urllib.error.HTTPError):
             metadata["http_status"] = exc.code
             metadata["receipt_id"] = exc.headers.get("X-Jindu-Receipt-ID", "")
+            try:
+                body = exc.read(16385)
+                rejection = json.loads(body) if len(body) <= 16384 else None
+                if (
+                    isinstance(rejection, dict)
+                    and rejection.get("error") == "Upstream request rejected"
+                    and metadata["receipt_id"]
+                    and rejection.get("receipt_id") == metadata["receipt_id"]
+                ):
+                    metadata.update(outcome="rejected", uncertain=False)
+            except (OSError, ValueError, RecursionError, HTTPException):
+                pass
+            finally:
+                try:
+                    exc.close()
+                except OSError:
+                    pass
         # Provider response bodies and source text never appear in the error message.
         raise SemanticModelError(
-            "Jindu call failed or result uncertain; reconcile call ID before retry",
+            (
+                "Jindu rejected the request; review the receipt before another paid attempt"
+                if metadata.get("outcome") == "rejected"
+                else "Jindu call failed or result uncertain; reconcile call ID before retry"
+            ),
             {"failed_call_usage": received_usage, "call": metadata},
             retryable=False,
         ) from exc
@@ -912,6 +934,12 @@ def segment(
     try:
         # An increased generation must never hide a previous unresolved paid call.
         for call in provenance["analysis_usage"]:
+            if call.get("outcome") == "rejected":
+                raise SemanticModelError(
+                    "Jindu rejected the prior request; explicit review is required",
+                    {"call": call},
+                    retryable=False,
+                )
             if (
                 call.get("failed")
                 and call.get("uncertain", not call.get("retryable", False))
@@ -923,6 +951,12 @@ def segment(
                     retryable=False,
                 )
         for value in list(journals.values()):
+            if value["state"] == "rejected":
+                raise SemanticModelError(
+                    "Jindu rejected the prior request; explicit review is required",
+                    {"call": value.get("call", {})},
+                    retryable=False,
+                )
             if value["state"] not in {"prepared", "uncertain"}:
                 continue
             if explicitly_acknowledged(value):
@@ -1193,7 +1227,12 @@ def segment(
                         store_call(
                             entry
                             | {
-                                "state": "invalid" if exc.retryable else "uncertain",
+                                "state": (
+                                    "rejected"
+                                    if exc.provenance.get("call", {}).get("outcome") == "rejected"
+                                    else "invalid" if exc.retryable else "uncertain"
+                                ),
+                                "call": exc.provenance.get("call", entry.get("call", {})),
                                 "validation_error": str(exc),
                                 "diagnostic": exc.provenance.get("coverage_diagnostic"),
                                 "retryable": exc.retryable,

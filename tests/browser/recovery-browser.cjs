@@ -7,7 +7,8 @@ const sessions=[
  {id:'recover',display_title:'验证 CPM 布局优化',cwd:'/research/embodied',analysis_status:'failed',has_analysis:false},
  {id:'uncertain',display_title:'核对关键路径结果',cwd:'/research/embodied',analysis_status:'failed',has_analysis:false},
 ];
-const resume=(id)=>({eligible:id==='recover',reason:id==='recover'?'eligible':'prior_call_uncertain',job_id:'job-'+id,generation:0,completed_chunks:8,max_generations:3});
+let confirmedReject=false;
+const resume=(id)=>({eligible:id==='recover',reason:id==='recover'?'eligible':confirmedReject?'jindu_rejection_review_required':'prior_call_uncertain',job_id:'job-'+id,generation:0,completed_chunks:8,max_generations:3});
 const posts=[];let failResume=true,queued=false;
 const batch=()=>({batch_id:'recovery-batch',status:queued?'running':'failed',total:2,concurrency:4,counts:{failed:queued?1:2,queued:queued?1:0},items:sessions.map(s=>({session_id:s.id,session:s,job_id:'job-'+s.id,status:s.id==='recover'&&queued?'queued':'failed',progress:{completed_chunks:8,total_chunks:30},resume:resume(s.id)}))});
 const server=http.createServer(async(req,res)=>{
@@ -20,7 +21,7 @@ const server=http.createServer(async(req,res)=>{
  if(url.pathname==='/trajectory/api/analysis-batches/recovery-batch')return res.end(JSON.stringify(batch()));
  const detail=url.pathname.match(/^\/trajectory\/api\/sessions\/(recover|uncertain)\/analysis$/);
  if(detail&&req.method==='GET'){
-  const id=detail[1];return res.end(JSON.stringify({session:sessions.find(s=>s.id===id),status:id==='recover'&&queued?'queued':'failed',coverage:{content_available:true},resume:resume(id),operations:[],tasks:[],message:id==='recover'?'Model operation coverage is incomplete or duplicated':'Jindu call result uncertain'}));
+  const id=detail[1];return res.end(JSON.stringify({session:sessions.find(s=>s.id===id),status:id==='recover'&&queued?'queued':'failed',coverage:{content_available:true},resume:resume(id),operations:[],tasks:[],message:id==='recover'?'Model operation coverage is incomplete or duplicated':confirmedReject?'Jindu rejected the request':'Jindu call result uncertain'}));
  }
  if(req.method==='POST'){
   posts.push({path:url.pathname,body:JSON.parse(body)});
@@ -71,7 +72,15 @@ const server=http.createServer(async(req,res)=>{
   assert.equal(posts.length,2);
   if(!await page.locator('#batch-activity').evaluate(n=>n.open))await page.locator('#batch-activity > summary').click();
   assert((await page.locator('#batch-activity').innerText()).includes('等待分析'));
+  confirmedReject=true;await page.reload();await page.waitForSelector('[data-session-id="uncertain"]');
+  await page.locator('[data-session-id="uncertain"]').click();
+  await page.waitForFunction(()=>document.querySelector('#analysis-content')?.textContent.includes('Jindu 已收到上游拒绝响应'));
+  assert.equal(await page.locator('#analysis-content [data-resume-job]').count(),0);
+  assert.equal(posts.length,2);
+  assert((await analysisText(page)).includes('实际扣费仍待核对'));
+  await page.screenshot({path:process.argv[3]+'/rejected-mobile.png',fullPage:true});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({status:'passed',checks:['server-authoritative resume eligibility','no new analysis after failure','uncertain blocks paid retry','saved prefix displayed','same mutation across detail and batch retry','batch identity retained','no model call from reload','mobile layout'],pageErrors:errors}));
+  console.log(JSON.stringify({status:'passed',checks:['server-authoritative resume eligibility','no new analysis after failure','uncertain blocks paid retry','confirmed rejection blocks paid retry and preserves charge uncertainty','saved prefix displayed','same mutation across detail and batch retry','batch identity retained','no model call from reload','mobile layout'],pageErrors:errors}));
  }finally{await browser.close();server.close()}
 })().catch(error=>{console.error(error);process.exitCode=1;server.close()});

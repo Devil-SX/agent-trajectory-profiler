@@ -124,6 +124,8 @@ Semantic analysis calls Jindu's authenticated chat-completion route through an i
 
 Each job, chunk and attempt determines a stable X-Jindu-Call-ID. The stored analysis provenance contains route, call ID, receipt ID, per-request elapsed time and reported usage, including failed bounded repairs. Only received model output that fails structural validation permits one repair with a distinct attempt ID. HTTP errors, disconnects and uncertain outcomes stop the job for reconciliation rather than automatically creating another charge. Existing completed analyses retain their historical provenance.
 
+A bounded Jindu rejection envelope whose body receipt matches its receipt header records `outcome=rejected` and `uncertain=false`, while retaining `retryable=false`. Its durable call journal uses `rejected`; both the domain resume check and direct checkpoint replay require explicit review rather than dispatching a new attempt. This proves receipt of an error response, not a zero charge. Unmatched, malformed or missing envelopes stay uncertain. Historical calls and immutable study snapshots are not reclassified by this change.
+
 The current membership wire uses window-local integer indices. The model must
 assign each index exactly once; validation maps indices to unchanged canonical
 operation IDs. Canonical packing boundaries are retained when migrating an

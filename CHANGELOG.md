@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Distinguish a matching Jindu rejection response from a missing or uncertain result. Keep rejected attempts blocked for explicit review, preserve unknown charges, and never resend them automatically.
+
 ## [6.2.0] - 2026-10-21
 
 ### Added

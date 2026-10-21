@@ -532,15 +532,20 @@ class SemanticStore:
             or call.get("uncertain") is True
             or call.get("failed")
             and not (
-                call.get("uncertain") is False
-                and call.get("retryable") is True
-                and received_invalid(call)
+                (call.get("outcome") == "rejected" and call.get("uncertain") is False)
+                or (
+                    call.get("uncertain") is False
+                    and call.get("retryable") is True
+                    and received_invalid(call)
+                )
             )
         ]
         if any(not acknowledged(call) for call in unknown) or (
             "result uncertain" in job.get("message", "") and not unknown
         ):
             return "prior_call_uncertain"
+        if any(call.get("outcome") == "rejected" for call in calls):
+            return "jindu_rejection_review_required"
         if not calls or not received_invalid(calls[-1]):
             return "received_invalid_result_required"
         if progress.get("state") != "failed":

@@ -118,6 +118,10 @@ def test_resume_same_job_atomic_replay_pin_migration_and_complete_usage(tmp_path
         ({"receipt_id": ""}, "received_invalid_result_required"),
         ({"usage": {}}, "received_invalid_result_required"),
         ({"valid": True}, "received_invalid_result_required"),
+        (
+            {"failed": True, "outcome": "rejected", "uncertain": False, "retryable": False},
+            "jindu_rejection_review_required",
+        ),
     ],
 )
 def test_resume_requires_explicit_received_invalid_evidence(tmp_path, monkeypatch, change, reason):

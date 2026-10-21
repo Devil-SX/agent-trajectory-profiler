@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,8 @@ class SemanticModelTests(unittest.TestCase):
         self.call_ids = []
         self.paths = []
         self.fail_status = 0
+        self.fail_body = None
+        self.fail_receipt = ""
         self.invalid = False
         self.truncate = False
         self.invalid_once = False
@@ -32,9 +35,15 @@ class SemanticModelTests(unittest.TestCase):
                 outer.call_ids.append(self.headers.get("X-Jindu-Call-ID"))
                 outer.paths.append(self.path)
                 if outer.fail_status:
+                    body = (
+                        json.dumps(outer.fail_body).encode() if outer.fail_body is not None else b""
+                    )
                     self.send_response(outer.fail_status)
-                    self.send_header("Content-Length", "0")
+                    self.send_header("Content-Length", str(len(body)))
+                    if outer.fail_receipt:
+                        self.send_header("X-Jindu-Receipt-ID", outer.fail_receipt)
                     self.end_headers()
+                    self.wfile.write(body)
                     return
                 packet = json.loads(request["messages"][1]["content"])
                 ids = [o["index"] for o in packet["operations"]]
@@ -176,6 +185,44 @@ class SemanticModelTests(unittest.TestCase):
         model.segment([{"id": "a"}], "测试", analysis_id="test-job")
         self.assertEqual(first, self.call_ids)
         self.assertNotEqual(first[0], first[1])
+
+    def test_confirmed_jindu_rejection_is_durable_and_never_resent(self):
+        self.fail_status = 400
+        self.fail_receipt = "rejected-receipt"
+        self.fail_body = {
+            "error": "Upstream request rejected",
+            "receipt_id": self.fail_receipt,
+            "private_field": "private prompt or credential",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint.json"
+            with self.assertRaises(model.SemanticModelError) as caught:
+                model.segment([{"id": "a"}], "测试", analysis_id="test-job", checkpoint=checkpoint)
+            call = caught.exception.provenance["analysis_usage"][0]
+            self.assertEqual(call["outcome"], "rejected")
+            self.assertFalse(call["uncertain"])
+            self.assertFalse(call["retryable"])
+            self.assertEqual(call["usage"], {})
+            self.assertNotIn("private prompt", json.dumps(caught.exception.provenance))
+            entry = json.loads(
+                next(checkpoint.with_name("checkpoint.json.calls").glob("*.json")).read_text()
+            )
+            self.assertEqual(entry["state"], "rejected")
+            self.assertEqual(entry["call"]["receipt_id"], self.fail_receipt)
+            with self.assertRaisesRegex(model.SemanticModelError, "explicit review"):
+                model.segment([{"id": "a"}], "测试", analysis_id="test-job", checkpoint=checkpoint)
+            self.assertEqual(len(self.requests), 1)
+
+    def test_unmatched_error_receipt_remains_uncertain_without_retry(self):
+        self.fail_status = 400
+        self.fail_receipt = "header-receipt"
+        self.fail_body = {"error": "Upstream request rejected", "receipt_id": "other-receipt"}
+        with self.assertRaises(model.SemanticModelError) as caught:
+            model.segment([{"id": "a"}], "测试", analysis_id="test-job")
+        call = caught.exception.provenance["analysis_usage"][0]
+        self.assertTrue(call["uncertain"])
+        self.assertNotIn("outcome", call)
+        self.assertEqual(len(self.requests), 1)
 
     def test_configured_high_effort_is_forwarded_and_preserved(self):
         os.environ["TRAJECTORY_MODEL_REASONING_EFFORT"] = "high"
