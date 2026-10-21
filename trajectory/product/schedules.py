@@ -28,7 +28,7 @@ POLICY = {
     "algorithm": ALGORITHM,
     "weight_basis": "normalized_operation_count, excludes image/base64 byte size",
     "quiet_basis": "max(source content cursor change, metadata last activity)",
-    "recent_basis": "Latest recorded event activity per native session, never ingestion time",
+    "recent_basis": "Selected source recorded event activity, never ingestion time or another copy",
     "active_status": (
         "Explicit active metadata excluded; otherwise >=quiet_hours " "is an inactivity proxy"
     ),
@@ -424,8 +424,8 @@ class AnalysisSchedules:
             if not any(cwd == p or cwd.startswith(p + "/") for p in config["directories"]):
                 reasons.append("directory_outside_scope")
             latest = native_activity.get(natives[r["id"]])
-            recorded = native_recorded_activity.get(natives[r["id"]])
-            source_recorded = instant(meta.get("last_activity_at"))
+            native_recorded = native_recorded_activity.get(natives[r["id"]])
+            recorded = instant(meta.get("last_activity_at"))
             if not latest or not recorded:
                 reasons.append("activity_unknown")
             if latest and latest > now - timedelta(hours=config["quiet_hours"]):
@@ -469,8 +469,8 @@ class AnalysisSchedules:
                 "weight": count,
                 "operation_count": count,
                 "last_change_at": latest.isoformat() if latest else None,
-                "last_activity_at": source_recorded.isoformat() if source_recorded else None,
-                "native_last_activity_at": recorded.isoformat() if recorded else None,
+                "last_activity_at": recorded.isoformat() if recorded else None,
+                "native_last_activity_at": native_recorded.isoformat() if native_recorded else None,
                 "reasons": reasons,
             }
             (excluded if reasons else candidates).append(item)
