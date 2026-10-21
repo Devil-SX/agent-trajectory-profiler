@@ -460,6 +460,7 @@ def test_daily_dispatch_and_idle_metadata_maintenance_share_one_runtime_lease(
     store, plans, ids, _ = fixture(tmp_path, 4)
     monkeypatch.setattr("trajectory.product.schedules.datetime", Clock)
     worker = AnalysisRuntime(store)
+    monkeypatch.setattr(worker.schedules, "verify_stored_caller", lambda owner, actor: None)
     competitor = AnalysisRuntime(store)
     maintenance = []
     monkeypatch.setattr(store, "maintain_metadata", lambda: maintenance.append("idle") or 1)

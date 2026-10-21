@@ -117,6 +117,11 @@ class AnalysisRuntime:
             or bool(gate and not Path(gate).is_file())
         )
 
+    def _pause_before_window(self, job: dict[str, Any]) -> bool:
+        # Recheck at the next durable boundary, without cancelling an in-flight call.
+        self.schedules.verify_job_authorization(job)
+        return self._pause_requested()
+
     def tick(self) -> bool:
         """Dispatch independent sessions while one process owns the coordinator lease."""
         with self.lock:
@@ -134,7 +139,7 @@ class AnalysisRuntime:
             dispatched = False
             if time.monotonic() - self.schedule_checked_at >= 30:
                 self.statistics.tick()
-                self.schedules.tick()
+                self.schedules.tick(authorizer=self.schedules.verify_stored_caller)
                 self.schedule_checked_at = time.monotonic()
             # Pause at durable paid-window boundaries, never cancel an upstream request.
             # One statistics build uses the same pool and exclusive coordinator lease.
@@ -176,6 +181,8 @@ class AnalysisRuntime:
 
     def _process_job(self, job: dict[str, Any]) -> bool:
         try:
+            if job["kind"] != "parse":
+                self.schedules.verify_job_authorization(job)
             directory = (
                 self.root / digest(job["owner"])[:24] / job["session"] / job["source_revision"]
             )
@@ -275,7 +282,7 @@ class AnalysisRuntime:
                         source_context=input_context,
                         fresh_input=raw_input,
                         progress=lambda value: self.store.job_progress(job, value),
-                        should_pause=self._pause_requested,
+                        should_pause=lambda: self._pause_before_window(job),
                     )
                     temporary = checkpoint.with_name(".model-result-" + job["id"] + ".json")
                     try:
