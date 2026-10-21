@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-10-21
+
+### Changed
+
+- Replace synchronous overview rebuilds and volatile snapshots with durable publications. An unbuilt scope returns explicit availability/building metadata without resource arrays; consumers must handle this state instead of treating it as zero. There is no legacy synchronous GET switch.
+
 ### Added
 
 - Persist account/date statistics with coherent ledger watermarks and daily 01:00 Asia/Shanghai refreshes through the existing coordinator.

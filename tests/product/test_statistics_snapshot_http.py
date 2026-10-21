@@ -151,17 +151,22 @@ def test_pending_statistics_cooldown_does_not_starve_analysis(tmp_path, monkeypa
 def test_paid_window_boundary_rechecks_authority_before_resuming(tmp_path, monkeypatch):
     runtime = AnalysisRuntime(SemanticStore(Domain(tmp_path / "domain.db")))
     called = []
-    monkeypatch.setattr(runtime.schedules, "verify_job_authorization", lambda job: called.append(job))
+    monkeypatch.setattr(
+        runtime.schedules, "verify_job_authorization", lambda job: called.append(job)
+    )
     job = {"id": "existing-job", "owner": "owner"}
     assert not runtime._pause_before_window(job)
     assert called == [job]
     runtime.statistics_barrier.set()
     assert runtime._pause_before_window(job)
     assert called == [job, job]
+
     def deny(job):
         raise PermissionError("Stored analysis authority revoked")
+
     monkeypatch.setattr(runtime.schedules, "verify_job_authorization", deny)
     import pytest
+
     with pytest.raises(PermissionError):
         runtime._pause_before_window(job)
     runtime.close()
