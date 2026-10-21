@@ -711,3 +711,27 @@ def test_candidate_http_discloses_recorded_recency_separately_from_ingestion(tmp
     assert row["last_activity_at"] == (NOW - timedelta(days=60)).isoformat()
     assert "outside_recent_window" in row["reasons"]
     assert "never ingestion time" in data["policy"]["recent_basis"]
+
+
+def test_old_short_copy_cannot_borrow_new_long_copys_recorded_activity(tmp_path):
+    store, plans, ids, _ = fixture(tmp_path, 2)
+    old = (NOW - timedelta(days=60)).isoformat()
+    with store.domain.connect() as db:
+        for sid, activity in [(ids[0], old), (ids[1], (NOW - timedelta(days=2)).isoformat())]:
+            metadata = json.loads(
+                db.execute(
+                    "SELECT body FROM semantic_session_metadata WHERE session=?", (sid,)
+                ).fetchone()[0]
+            )
+            metadata.update(native_session_id="shared-native", last_activity_at=activity)
+            db.execute(
+                "UPDATE semantic_session_metadata SET body=? WHERE session=?",
+                (json.dumps(metadata), sid),
+            )
+        config = plans._read(db, "owner", "nightly")
+        config["max_operations"] = 1
+        snapshot = plans.candidates(db, "owner", config, NOW)
+    assert snapshot["eligible"] == []
+    reasons = {item["session_id"]: item["reasons"] for item in snapshot["excluded"]}
+    assert "outside_recent_window" in reasons[ids[0]]
+    assert "exceeds_operation_budget_guard" in reasons[ids[1]]
