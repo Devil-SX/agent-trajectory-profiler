@@ -333,7 +333,9 @@ class StatisticsSnapshots:
     def build(self, job: dict[str, Any]) -> bool:
         try:
             self.verify_actor(json.loads(job["requested_by"]))
-            with self.domain.connect() as db:
+            # Share the HTTP contribution scan budget; wait before opening a
+            # read transaction so a busy slot cannot retain an old WAL reader.
+            with self.domain._source_scan_slots, self.domain.connect() as db:
                 db.execute("PRAGMA temp_store=FILE")
                 db.execute("PRAGMA cache_size=-4096")
                 db.execute("BEGIN")

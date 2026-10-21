@@ -39,7 +39,10 @@ execution beyond 01:00: a paid window completes and commits before statistics
 runs. A single builder uses the existing pool and lease, without paid analysis
 futures concurrently executing. After completion or failure, a durable 30-second
 cooldown allows normal analysis dispatch before another statistics build starts.
-The advertised next run is the next scheduled slot, not a completion promise.
+The builder also occupies one slot in the existing two-slot ledger scan budget
+shared with cold source-contribution reads, limiting concurrent heavy HTTP and
+background scans. Cached snapshot reads do not acquire that budget. The advertised
+next run is the next scheduled slot, not a completion promise.
 
 Each job captures actual requesting account, Key and native client metadata.
 Stored authority is rechecked before calculation and before publication using the
