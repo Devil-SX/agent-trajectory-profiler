@@ -266,3 +266,10 @@ analysis. Statistics wait for paid windows to reach a durable pause boundary; a
 single statistics build then runs without analysis futures. A persisted 30-second
 cooldown after each build leaves dispatch opportunities for analysis and ingestion.
 There is no second cron, cache writer or standalone statistics worker.
+
+
+### Shared authorization runtime contract
+
+The service entrypoint validates the shared registered-Key and stored-account authorization interfaces before opening the database or accepting traffic. `trajectory-server --check-runtime` performs the same import-only check without a database, HTTP request or model call. Installed acceptance must run it as the actual service user with the ordered unit environment files, then verify the running process resolves the same immutable shared artifact. Production inherits the single shared runtime configuration; a service-local `PYTHONPATH` override must not freeze an obsolete Sites client. Current artifact selection and operational steps remain in the Ops maintenance publication.
+
+Statistics capture whether the original authorizer is native before adding request tracing. The tracing adapter must not disable queued actor verification. The stored identity is rechecked both before computation and before atomic publication; an account disable or Key revocation prevents publication while preserving the previous successful snapshot.

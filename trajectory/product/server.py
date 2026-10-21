@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import hashlib
 import hmac
+import json
 import os
 import time
 import uuid
@@ -531,11 +533,12 @@ def create_app(
     semantic = SemanticStore(domain)
     studies = StageStudies(domain)
     runtime = AnalysisRuntime(semantic)
+    native_identity_required = authorizer is native_authorizer
 
     def verify_statistics_identity(actor: dict[str, Any]) -> None:
         if stored_identity_verifier is not None:
             stored_identity_verifier(actor)
-        elif authorizer is native_authorizer:
+        elif native_identity_required:
             from batcave_http.auth import authorize_stored_account
 
             for scope in actor["required_scopes"]:
@@ -1135,6 +1138,19 @@ def create_app(
 
 
 def main() -> None:
+    from trajectory.product.runtime_dependencies import verify_http_runtime
+
+    parser = argparse.ArgumentParser(description="Trajectory authenticated service runtime")
+    parser.add_argument(
+        "--check-runtime",
+        action="store_true",
+        help="Verify imports without opening a database or starting a server",
+    )
+    args = parser.parse_args()
+    contract = verify_http_runtime()
+    if args.check_runtime:
+        print(json.dumps(contract))
+        return
     import uvicorn
 
     app = create_app(

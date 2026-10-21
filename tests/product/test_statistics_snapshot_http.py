@@ -170,3 +170,65 @@ def test_paid_window_boundary_rechecks_authority_before_resuming(tmp_path, monke
     with pytest.raises(PermissionError):
         runtime._pause_before_window(job)
     runtime.close()
+
+
+def test_native_statistics_identity_survives_tracing_wrapper(tmp_path, monkeypatch):
+    import batcave_http.auth as auth
+    import pytest
+
+    calls = []
+
+    def revoked(account_id, service, scope, **identity):
+        calls.append((account_id, service, scope, identity))
+        raise PermissionError("revoked fixture key")
+
+    monkeypatch.setattr(auth, "authorize_stored_account", revoked)
+    app = create_app(tmp_path / "native-default.db")
+    runtime = app.state.analysis_runtime
+    actor = {
+        "account_id": "owner",
+        "key_id": "revoked-key",
+        "machine_client": "fixture-machine",
+        "required_scopes": ["read"],
+    }
+    try:
+        with pytest.raises(PermissionError, match="revoked fixture key"):
+            runtime.statistics.verify_actor(actor)
+        assert calls == [
+            (
+                "owner",
+                "trajectory",
+                "read",
+                {"key_id": "revoked-key", "machine_client_id": "fixture-machine"},
+            )
+        ]
+    finally:
+        runtime.close()
+
+
+def test_native_statistics_rechecks_before_publication(tmp_path, monkeypatch):
+    import batcave_http.auth as auth
+
+    calls = []
+
+    def revoke_at_publish(account_id, service, scope, **identity):
+        calls.append((account_id, scope))
+        if len(calls) == 2:
+            raise PermissionError("revoked during build")
+
+    monkeypatch.setattr(auth, "authorize_stored_account", revoke_at_publish)
+    app = create_app(tmp_path / "native-publication.db")
+    runtime = app.state.analysis_runtime
+    actor = {
+        "account_id": "owner",
+        "key_id": "fixture-key",
+        "machine_client": None,
+        "required_scopes": ["read"],
+    }
+    try:
+        runtime.statistics.read("owner", actor=actor)
+        assert runtime.statistics.build(runtime.statistics.claim()) is False
+        assert calls == [("owner", "read"), ("owner", "read")]
+        assert not runtime.statistics.read("owner", actor=actor)["statistics_snapshot"]["available"]
+    finally:
+        runtime.close()
