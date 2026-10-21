@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Reject an obsolete shared HTTP authorization runtime before opening the service database. Add a read-only installed-runtime import probe; inherit the single canonical shared runtime rather than an old service override.
 - Preserve native identity verification for queued statistics after HTTP tracing wraps the authorizer. Recheck stored account and Key authority before computation and publication.
 
+Code stats vs v6.1.0: total 29350 text lines, +188 (-3) = +185, 0.63% text-line change.
+
 ## [6.1.0] - 2026-10-21
 
 ### Added
