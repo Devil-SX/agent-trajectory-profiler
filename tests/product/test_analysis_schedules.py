@@ -505,11 +505,15 @@ def test_analysis_credential_profile_limits_own_scope_and_live_help(tmp_path):
     tools = {tool["name"] for tool in help["tools"]}
     assert "analysis_schedule_write" in tools and "sessions" in tools
     assert not tools.intersection(
-        {"price", "source_append", "collector_write", "backup", "overview", "correction"}
+        {"price", "source_append", "collector_write", "backup", "overview", "correction",
+         "statistics_refresh", "platform_statistics_refresh"}
     )
     assert help["caller"]["credential_profile"] == "trajectory.analysis"
     assert help["caller"]["key_id"] == "fixture-key"
     # Restriction applies even with no resource_owner selector, before any mutation.
     assert client.post("/trajectory/api/prices", json={}, headers=headers).status_code == 403
     assert client.get("/trajectory/api/overview", headers=headers).status_code == 403
+    assert client.post("/trajectory/api/statistics/refresh", json={
+        "mutation_id": "forbidden-analysis-profile-refresh"
+    }, headers=headers).status_code == 403
     assert client.get("/trajectory/api/analysis-schedules", headers=headers).status_code == 200

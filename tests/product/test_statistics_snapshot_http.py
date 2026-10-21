@@ -33,6 +33,8 @@ def test_http_isolation_revocation_scope_and_no_get_aggregation(tmp_path, monkey
     headers = {"Authorization": "Bearer owner"}
     response = client.get("/trajectory/api/overview", headers=headers)
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["vary"] == "Authorization"
     assert response.json()["statistics_snapshot"]["state"] == "building"
     assert "projects" not in response.json()
     tools = client.get("/trajectory/help", headers=headers).json()["tools"]
@@ -89,6 +91,7 @@ def test_http_isolation_revocation_scope_and_no_get_aggregation(tmp_path, monkey
 def test_runtime_uses_one_lease_and_parks_at_paid_window_boundary(tmp_path, monkeypatch):
     store = SemanticStore(Domain(tmp_path / "domain.db"))
     runtime = AnalysisRuntime(store)
+    runtime.statistics.verify_actor = lambda actor: None
     competitor = AnalysisRuntime(store)
     started, finished = Event(), Event()
     job_available = [True]
@@ -131,6 +134,7 @@ def test_runtime_uses_one_lease_and_parks_at_paid_window_boundary(tmp_path, monk
 def test_pending_statistics_cooldown_does_not_starve_analysis(tmp_path, monkeypatch):
     store = SemanticStore(Domain(tmp_path / "domain.db"))
     runtime = AnalysisRuntime(store)
+    runtime.statistics.verify_actor = lambda actor: None
     runtime.statistics.read("owner")
     first = runtime.statistics.claim()
     assert runtime.statistics.build(first)

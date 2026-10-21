@@ -1,6 +1,8 @@
 # Two-slot compact cache validation
 
 This is historical isolated validation, not a production deployment procedure.
+The two-slot overview path has been retired; current statistics publication is
+described in [STATISTICS-SNAPSHOTS.md](STATISTICS-SNAPSHOTS.md).
 The change retains at most two compact Domain snapshots and adds no database DDL,
 expression indexes, alternate ledger or source-contribution cache.
 

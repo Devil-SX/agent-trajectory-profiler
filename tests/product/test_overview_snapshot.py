@@ -53,7 +53,9 @@ def seeded(tmp_path):
     domain = Domain(tmp_path / "domain.db")
     domain.register("owner", "machine", "fixture")
     domain.ingest("machine", batch(1, 10))
-    return domain, StatisticsSnapshots(domain)
+    store = StatisticsSnapshots(domain)
+    store.verify_actor = lambda actor: None  # Isolated fixture has no native account store.
+    return domain, store
 
 
 def publish(store):
@@ -245,3 +247,13 @@ def test_reads_keep_published_result_while_building_and_revoked_publish_is_rejec
     assert failed["projects"] == old["projects"]
     assert failed["statistics_snapshot"]["state"] == "failed"
     assert len(checks) == 2
+
+
+def test_builder_without_an_explicit_identity_verifier_fails_closed(tmp_path):
+    domain, _ = seeded(tmp_path)
+    store = StatisticsSnapshots(domain)
+    store.read("owner")
+    assert not store.build(store.claim())
+    value = store.read("owner")
+    assert value["statistics_snapshot"]["state"] == "failed"
+    assert not value["statistics_snapshot"]["available"]

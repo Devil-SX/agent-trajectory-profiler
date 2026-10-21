@@ -53,7 +53,7 @@ def schedule(clock: datetime | None = None) -> dict[str, Any]:
 class StatisticsSnapshots:
     def __init__(self, domain: Domain):
         self.domain = domain
-        self.verify_actor: Callable[[dict[str, Any]], None] = lambda actor: None
+        self.verify_actor: Callable[[dict[str, Any]], None] = self.unconfigured_actor
         with domain.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS statistics_scopes(
@@ -74,7 +74,16 @@ class StatisticsSnapshots:
                     WHERE status IN ('queued','running');
                 CREATE INDEX IF NOT EXISTS statistics_jobs_queue
                     ON statistics_jobs(status,requested);
+                CREATE INDEX IF NOT EXISTS statistics_jobs_scope
+                    ON statistics_jobs(owner,scope,algorithm,requested DESC);
+                CREATE INDEX IF NOT EXISTS statistics_jobs_finished
+                    ON statistics_jobs(finished DESC)
+                    WHERE status IN ('complete','failed');
             """)
+
+    @staticmethod
+    def unconfigured_actor(actor: dict[str, Any]) -> None:
+        raise PermissionError("Statistics identity verification is not configured")
 
     @staticmethod
     def owner_key(owner: str | None) -> str:
