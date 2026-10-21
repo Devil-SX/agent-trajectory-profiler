@@ -5,6 +5,7 @@ import math
 import random
 import threading
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import HTTPException
@@ -220,11 +221,22 @@ def test_http_help_scope_isolation_and_invalid_inputs(tmp_path):
         mutation_id="create-fixture-schedule",
         schedule_id="one",
         name="One",
+        frequency="hourly_window",
+        start_hour=1,
+        end_hour=7,
         directories=["/home/sdu/BatCave"],
     )
     response = client.post(route, json=value.model_dump(), headers=headers)
     assert response.status_code == 200, response.text
     assert client.post(route, json=value.model_dump(), headers=headers).json() == response.json()
+    saved = client.get(route, headers=headers).json()["schedules"][0]
+    assert (saved["frequency"], saved["start_hour"], saved["end_hour"]) == ("hourly_window", 1, 7)
+    assert (
+        client.post(
+            route, json={**value.model_dump(), "start_hour": 24}, headers=headers
+        ).status_code
+        == 422
+    )
     other = {"Authorization": "Bearer stranger"}
     assert client.post(route, json=value.model_dump(), headers=other).status_code == 403
     assert client.get(route, headers=other).json()["schedules"] == []
@@ -758,3 +770,75 @@ def test_old_short_copy_cannot_borrow_new_long_copys_recorded_activity(tmp_path)
     reasons = {item["session_id"]: item["reasons"] for item in snapshot["excluded"]}
     assert "outside_recent_window" in reasons[ids[0]]
     assert "exceeds_operation_budget_guard" in reasons[ids[1]]
+
+
+def set_hourly(plans, store, start=1, end=7):
+    with store.domain.connect() as db:
+        config = json.loads(db.execute("SELECT body FROM analysis_schedules").fetchone()[0])
+        config.update(frequency="hourly_window", start_hour=start, end_hour=end)
+        db.execute("UPDATE analysis_schedules SET body=?", (json.dumps(config),))
+
+
+def test_hourly_window_restart_skips_missed_hours_and_does_not_repeat(tmp_path):
+    store, plans, _, _ = fixture(tmp_path, count=24)
+    set_hourly(plans, store)
+    # 01:05 Shanghai: one draw despite concurrent coordinator/restart attempts.
+    first = datetime(2026, 10, 19, 17, 5, tzinfo=UTC)
+    threads = [threading.Thread(target=plans.tick, args=(first,)) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    AnalysisSchedules(store).tick(first + timedelta(minutes=10))
+    # Restart at 04:05 skips 02:00 and 03:00 rather than paid catch-up burst.
+    plans.tick(first + timedelta(hours=3))
+    plans.tick(first + timedelta(hours=6))  # inclusive 07:00 endpoint
+    plans.tick(first + timedelta(hours=7))  # 08:00 is outside the window
+    with store.domain.connect() as db:
+        runs = [json.loads(r[0]) for r in db.execute("SELECT body FROM analysis_schedule_runs")]
+        view = plans._view(db, "owner", "nightly", first + timedelta(hours=7))
+    assert {r["slot"] for r in runs} == {
+        "hourly:2026-10-20T01:00",
+        "hourly:2026-10-20T04:00",
+        "hourly:2026-10-20T07:00",
+    }
+    selected = [x["session_id"] for r in runs for x in r["selected"]]
+    assert len(selected) == len(set(selected)) == 9
+    assert view["next_run_at"] == "2026-10-21T01:00:00+08:00"
+
+
+def test_hourly_cross_midnight_window_and_enabling_does_not_backfill(tmp_path):
+    store, plans, _, _ = fixture(tmp_path)
+    set_hourly(plans, store, start=23, end=1)
+    now = datetime(2026, 10, 20, 15, 30, tzinfo=UTC)  # 23:30 Shanghai
+    with store.domain.connect() as db:
+        config = json.loads(db.execute("SELECT body FROM analysis_schedules").fetchone()[0])
+        config["enabled_at"] = now.isoformat()
+        db.execute("UPDATE analysis_schedules SET body=?", (json.dumps(config),))
+        assert (
+            plans._view(db, "owner", "nightly", now)["next_run_at"] == "2026-10-21T00:00:00+08:00"
+        )
+    plans.tick(now)
+    plans.tick(now + timedelta(minutes=31))
+    plans.tick(now + timedelta(hours=2))
+    plans.tick(now + timedelta(hours=3))
+    with store.domain.connect() as db:
+        slots = {r[0] for r in db.execute("SELECT slot FROM analysis_schedule_runs")}
+    assert slots == {"hourly:2026-10-21T00:00", "hourly:2026-10-21T01:00"}
+
+
+def test_hourly_slot_is_unique_across_dst_fold_and_skips_missing_hour(tmp_path):
+    store, plans, _, _ = fixture(tmp_path)
+    set_hourly(plans, store, start=1, end=3)
+    with store.domain.connect() as db:
+        config = json.loads(db.execute("SELECT body FROM analysis_schedules").fetchone()[0])
+        config.update(timezone="America/New_York", enabled_at="2026-01-01T00:00:00+00:00")
+        db.execute("UPDATE analysis_schedules SET body=?", (json.dumps(config),))
+        config = plans._read(db, "owner", "nightly")
+        missing = datetime(2026, 3, 8, 7, tzinfo=UTC)
+        assert plans.upcoming(db, "owner", config, missing).hour == 3
+        fold1 = datetime(2026, 11, 1, 5, 5, tzinfo=UTC)
+        fold2 = fold1 + timedelta(hours=1)
+        assert plans.scheduled_slot(
+            config, fold1.astimezone(ZoneInfo(config["timezone"]))
+        ) == plans.scheduled_slot(config, fold2.astimezone(ZoneInfo(config["timezone"])))

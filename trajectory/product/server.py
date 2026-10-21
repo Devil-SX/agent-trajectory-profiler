@@ -137,10 +137,13 @@ OPERATIONS: list[dict[str, Any]] = [
         "path": "/api/analysis-schedules",
         "scope": "configure",
         "input": ScheduleWrite,
-        "effect": "Create or update a revision-checked daily plan, including enable/disable, "
-        "directory subtrees, IANA timezone/local time, daily count, quiet/recent windows, "
+        "effect": "Create or update a revision-checked daily or inclusive hourly-window plan, "
+        "including enable/disable, "
+        "directory subtrees, IANA timezone, local hour window, per-slot count, "
+        "quiet/recent windows, "
         "operation-count weighted sampling and operation budget guard. Enabling authorizes "
-        "paid Jindu analysis of future eligible snapshots. Today's overdue slot catches up once; "
+        "paid Jindu analysis of eligible snapshots. Hourly mode catches up only "
+        "the current hour; earlier hours are skipped. In daily mode, "
         "older days are skipped. Enabling after the daily time starts tomorrow. "
         "Changing a plan never replays today's completed daily slot.",
     },

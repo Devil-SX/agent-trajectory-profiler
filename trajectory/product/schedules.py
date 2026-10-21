@@ -38,7 +38,15 @@ POLICY = {
         "Enabling after the daily time starts tomorrow. Explicit dated catch-up up to seven "
         "days back requires a reason and shares the daily date idempotency slot."
     ),
-    "dst": "one slot per local date; nonexistent time runs after gap; fold runs once",
+    "hourly_window": (
+        "Inclusive start/end local hours, wrapping midnight if start>end; "
+        "one date+hour slot, only the current hour may catch up after restart; "
+        "older missed hours are skipped, outside-window hours never draw"
+    ),
+    "dst": (
+        "Daily: nonexistent time runs after gap, fold once. Hourly: nonexistent "
+        "hours skipped, repeated local hour runs once by date+hour key"
+    ),
     "cost": "Configured maximum operations is a preflight guard, not a USD price estimate",
     "failures": "No automatic retry/resume; inspect existing stable job and Jindu receipts",
 }
@@ -77,8 +85,13 @@ class ScheduleWrite(AnalysisRequest):
     archived: bool = False
     directories: list[str] = Field(min_length=1, max_length=20)
     timezone: str = "Asia/Shanghai"
+    frequency: Literal["daily", "hourly_window"] = "daily"
+    start_hour: int = Field(default=1, ge=0, le=23)
+    end_hour: int = Field(default=7, ge=0, le=23)
     local_time: str = Field(default="01:00", pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
-    daily_count: int = Field(default=3, ge=1, le=20)
+    daily_count: int = Field(
+        default=3, ge=1, le=20, description="Maximum samples per scheduled slot, not per night"
+    )
     quiet_hours: int = Field(default=24, ge=1, le=8760)
     recent_days: int = Field(default=30, ge=1, le=3650)
     concurrency: int = Field(default=2, ge=1, le=4)
@@ -270,18 +283,48 @@ class AnalysisSchedules:
         hour, minute = map(int, config["local_time"].split(":"))
         return datetime.combine(day, time(hour, minute), ZoneInfo(config["timezone"]))
 
+    @classmethod
+    def scheduled_slot(cls, config: dict[str, Any], value: datetime) -> str:
+        if config.get("frequency") == "hourly_window":
+            return "hourly:" + value.strftime("%Y-%m-%dT%H:00")
+        return "daily:" + value.date().isoformat()
+
+    @classmethod
+    def upcoming(
+        cls, db: sqlite3.Connection, owner: str, config: dict[str, Any], now: datetime
+    ) -> datetime:
+        """Next actionable slot; hourly restart never backfills previous hours."""
+        local = now.astimezone(ZoneInfo(config["timezone"]))
+        enabled = instant(config.get("enabled_at"))
+        if config.get("frequency") == "hourly_window":
+            start, end = config["start_hour"], config["end_hour"]
+            hours = (
+                set(range(start, end + 1))
+                if start <= end
+                else set(range(start, 24)) | set(range(end + 1))
+            )
+            base = local.replace(minute=0, second=0, microsecond=0, fold=0)
+            choices = [base + timedelta(hours=n) for n in range(73)]
+            choices = [
+                v
+                for v in choices
+                if v.hour in hours and v.astimezone(UTC).astimezone(v.tzinfo).hour == v.hour
+            ]
+        else:
+            choices = [cls.due(config, local.date() + timedelta(days=n)) for n in range(3)]
+        for value in choices:
+            if enabled and value.astimezone(UTC) < enabled:
+                continue
+            if not db.execute(
+                "SELECT 1 FROM analysis_schedule_runs WHERE owner=? AND schedule=? AND slot=?",
+                (owner, config["schedule_id"], cls.scheduled_slot(config, value)),
+            ).fetchone():
+                return value
+        raise ValueError("No schedulable slot found")
+
     def _view(self, db: sqlite3.Connection, owner: str, sid: str, now: datetime) -> dict[str, Any]:
         config = self._read(db, owner, sid)
-        local = now.astimezone(ZoneInfo(config["timezone"]))
-        today_run = db.execute(
-            "SELECT 1 FROM analysis_schedule_runs WHERE owner=? " "AND schedule=? AND slot=?",
-            (owner, sid, "daily:" + local.date().isoformat()),
-        ).fetchone()
-        enabled_at = instant(config.get("enabled_at"))
-        missed_before_enable = enabled_at and self.due(config, local.date()) < enabled_at
-        next_day = local.date() + timedelta(days=int(bool(today_run or missed_before_enable)))
-        next_due = self.due(config, next_day)
-        # Today's overdue run is a pending catch-up, not incorrectly tomorrow.
+        next_due = self.upcoming(db, owner, config, now)
         runs = [
             json.loads(r[0])
             for r in db.execute(
@@ -614,6 +657,10 @@ class AnalysisSchedules:
             requested_by = caller
             count = value.count or config["daily_count"]
             if value.scheduled_date is not None:
+                if config.get("frequency") == "hourly_window":
+                    raise ValueError(
+                        "Hourly plans skip missed hours; dated daily catch-up is unavailable"
+                    )
                 local_day = now.astimezone(ZoneInfo(config["timezone"])).date()
                 days_back = (local_day - value.scheduled_date).days
                 if (
@@ -650,8 +697,7 @@ class AnalysisSchedules:
             db.execute("BEGIN IMMEDIATE")
             for row in db.execute("SELECT owner,id FROM analysis_schedules").fetchall():
                 config = self._read(db, row["owner"], row["id"])
-                local = now.astimezone(ZoneInfo(config["timezone"]))
-                due = self.due(config, local.date())
+                due = self.upcoming(db, row["owner"], config, now)
                 enabled_at = instant(config.get("enabled_at"))
                 if (
                     config["enabled"]
@@ -659,7 +705,7 @@ class AnalysisSchedules:
                     and enabled_at
                     and due >= enabled_at
                 ):
-                    slot = "daily:" + local.date().isoformat()
+                    slot = self.scheduled_slot(config, due)
                     if db.execute(
                         "SELECT 1 FROM analysis_schedule_runs WHERE owner=? "
                         "AND schedule=? AND slot=?",

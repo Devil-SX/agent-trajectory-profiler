@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Configure local hourly analysis windows with one idempotent weighted draw per included hour; skip missed historical hours and avoid duplicate dispatch after restart.
+
 ## [6.0.2] - 2026-10-21
 
 ### Fixed
