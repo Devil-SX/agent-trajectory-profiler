@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.0.1] - 2026-10-21
+
+### Fixed
+
+- Preserve positive confirmed human-input subtotals when another project is unknown; zero with missing contributions remains unknown.
+- Keep full-precision cost estimates and long composite durations inside narrow statistics cards. Cover realistic long cost estimates and composite durations at 390px without hiding text or changing API/CSV values.
+
 ## [6.0.0] - 2026-10-21
 
 ### Changed
