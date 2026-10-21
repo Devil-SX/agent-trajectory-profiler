@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add explicit dated overdue runs with shared daily idempotency slots and auditable reasons; recheck saved caller, original Key and current owner delegation at scheduled draws and paid-window boundaries.
 - Restrict issued analysis-profile credentials to the same explicit analysis operation set used by owner delegation; disclose actual Key ID/profile in authenticated Help without granting price, collector, backup or statistics management.
 - Open daily sampling plans from the task workbench only when requested, reusing the authenticated lazy workspace loader, shared theme and keyboard/mobile disclosure behavior.
 - Configure revision-checked daily analysis plans, weighted session sampling without replacement,

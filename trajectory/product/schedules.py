@@ -13,6 +13,7 @@ import os
 import random
 import sqlite3
 import uuid
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -33,7 +34,8 @@ POLICY = {
     "lineage": "one native ID per cohort; exclude known forks and already attempted native copies",
     "catch_up": (
         "Only today, once, after enabled_at; past/disabled dates skipped. "
-        "Enabling after the daily time starts tomorrow."
+        "Enabling after the daily time starts tomorrow. Explicit dated catch-up up to seven "
+        "days back requires a reason and shares the daily date idempotency slot."
     ),
     "dst": "one slot per local date; nonexistent time runs after gap; fold runs once",
     "cost": "Configured maximum operations is a preflight guard, not a USD price estimate",
@@ -121,6 +123,11 @@ class ScheduleDelete(AnalysisRequest):
 class ScheduleRun(AnalysisRequest):
     expected_revision: str
     count: int | None = Field(default=None, ge=1, le=20)
+    scheduled_date: date | None = Field(
+        default=None,
+        description="Explicit overdue local date, at most seven days back; reuses that daily slot",
+    )
+    catch_up_reason: str | None = Field(default=None, min_length=1, max_length=300)
 
 
 class AnalysisSchedules:
@@ -197,6 +204,53 @@ class AnalysisSchedules:
             raise PermissionError("Explicit analysis automation delegation required")
         return owner
 
+    def verify_stored_caller(self, owner: str, caller: dict[str, Any]) -> None:
+        """Recheck native/key authority and our distinct resource-owner delegation.
+
+        This accepts only the authenticated tuple previously saved by the HTTP
+        adapter, never user-supplied replacement credentials. The runtime calls it
+        before a due draw and at durable boundaries before further paid windows.
+        """
+        from batcave_http.auth import authorize_stored_account
+
+        account = caller.get("account_id")
+        client = caller.get("machine_client")
+        try:
+            if not isinstance(account, str) or not account:
+                raise PermissionError("Invalid stored caller account")
+            authorize_stored_account(
+                account,
+                "trajectory",
+                "configure",
+                key_id=caller.get("key_id"),
+                machine_client_id=client,
+            )
+            if client:
+                self.resolve_owner(account, client, owner)
+                authorize_stored_account(owner, "trajectory", "read")
+            elif account != owner:
+                raise PermissionError("Stored caller does not own the analysis resources")
+        except (ValueError, TypeError) as error:
+            raise PermissionError("Invalid stored caller identity") from error
+
+    def verify_job_authorization(self, job: dict[str, Any]) -> None:
+        """Return None if authorized/unbound; raise PermissionError before new paid work.
+
+        Ordinary analysis jobs have no schedule binding and retain their original
+        domain behavior. In-flight upstream calls are never interrupted here.
+        """
+        with self.domain.connect() as db:
+            rows = db.execute(
+                "SELECT r.body FROM analysis_schedule_runs r JOIN semantic_batch_items b "
+                "ON b.batch=json_extract(r.body,'$.batch_id') WHERE b.job=? AND r.owner=?",
+                (job["id"], job["owner"]),
+            ).fetchall()
+        for row in rows:
+            run = json.loads(row[0])
+            requested = run.get("requested_by", {})
+            caller = requested if requested.get("account_id") else run.get("authorized_by", {})
+            self.verify_stored_caller(job["owner"], caller)
+
     def _read(self, db: sqlite3.Connection, owner: str, sid: str) -> dict[str, Any]:
         row = db.execute(
             "SELECT * FROM analysis_schedules WHERE owner=? AND id=?", (owner, sid)
@@ -219,7 +273,7 @@ class AnalysisSchedules:
         config = self._read(db, owner, sid)
         local = now.astimezone(ZoneInfo(config["timezone"]))
         today_run = db.execute(
-            "SELECT 1 FROM analysis_schedule_runs WHERE owner=? AND schedule=? AND slot=?",
+            "SELECT 1 FROM analysis_schedule_runs WHERE owner=? " "AND schedule=? AND slot=?",
             (owner, sid, "daily:" + local.date().isoformat()),
         ).fetchone()
         enabled_at = instant(config.get("enabled_at"))
@@ -535,18 +589,42 @@ class AnalysisSchedules:
                 raise ValueError("Schedule revision changed")
             if config.get("archived"):
                 raise ValueError("Archived plan cannot submit paid work")
-            result = self._run(
-                db,
-                owner,
-                config,
-                "manual:" + value.mutation_id,
-                value.count or config["daily_count"],
-                datetime.now(UTC),
-                caller,
-            )
+            now = datetime.now(UTC)
+            slot = "manual:" + value.mutation_id
+            requested_by = caller
+            count = value.count or config["daily_count"]
+            if value.scheduled_date is not None:
+                local_day = now.astimezone(ZoneInfo(config["timezone"])).date()
+                days_back = (local_day - value.scheduled_date).days
+                if (
+                    not config["enabled"]
+                    or not 0 <= days_back <= 7
+                    or self.due(config, value.scheduled_date).astimezone(UTC) > now
+                ):
+                    raise ValueError(
+                        "Catch-up needs an enabled plan and an overdue date within seven days"
+                    )
+                if not value.catch_up_reason or not value.catch_up_reason.strip():
+                    raise ValueError("An explicit catch-up reason is required")
+                if value.count is not None and value.count != config["daily_count"]:
+                    raise ValueError("A dated daily catch-up must use the configured daily count")
+                slot = "daily:" + value.scheduled_date.isoformat()
+                requested_by = {
+                    **(caller or {}),
+                    "mode": "explicit-date-catch-up",
+                    "scheduled_date": value.scheduled_date.isoformat(),
+                    "reason": value.catch_up_reason.strip(),
+                }
+            elif value.catch_up_reason is not None:
+                raise ValueError("A catch-up reason requires an explicit scheduled date")
+            result = self._run(db, owner, config, slot, count, now, requested_by)
             return self.domain._receipt(db, owner, value.mutation_id, body, "schedule.run", result)
 
-    def tick(self, now: datetime | None = None) -> None:
+    def tick(
+        self,
+        now: datetime | None = None,
+        authorizer: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> None:
         now = now or datetime.now(UTC)
         with self.domain.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -561,11 +639,19 @@ class AnalysisSchedules:
                     and enabled_at
                     and due >= enabled_at
                 ):
-                    db.execute("SAVEPOINT scheduled_draw")
                     slot = "daily:" + local.date().isoformat()
+                    if db.execute(
+                        "SELECT 1 FROM analysis_schedule_runs WHERE owner=? "
+                        "AND schedule=? AND slot=?",
+                        (row["owner"], row["id"], slot),
+                    ).fetchone():
+                        continue
+                    db.execute("SAVEPOINT scheduled_draw")
                     try:
+                        if authorizer is not None:
+                            authorizer(row["owner"], config.get("authorized_by", {}))
                         self._run(db, row["owner"], config, slot, config["daily_count"], now)
-                    except ValueError as error:
+                    except (ValueError, PermissionError) as error:
                         # A configuration failure must not stop unrelated queued jobs,
                         # repeatedly retry a paid draw, or leave a partially queued batch.
                         db.execute("ROLLBACK TO SAVEPOINT scheduled_draw")

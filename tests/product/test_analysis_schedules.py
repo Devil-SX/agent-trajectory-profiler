@@ -508,3 +508,143 @@ def test_analysis_credential_profile_limits_own_scope_and_live_help(tmp_path):
     assert client.post("/trajectory/api/prices", json={}, headers=headers).status_code == 403
     assert client.get("/trajectory/api/overview", headers=headers).status_code == 403
     assert client.get("/trajectory/api/analysis-schedules", headers=headers).status_code == 200
+
+
+def test_explicit_dated_catchup_reuses_daily_slot_and_cannot_duplicate_paid_draw(
+    tmp_path, monkeypatch
+):
+    store, plans, ids, saved = fixture(tmp_path)
+    monkeypatch.setattr("trajectory.product.schedules.datetime", Clock)
+    day = NOW.date() - timedelta(days=1)
+    caller = {"account_id": "owner", "key_id": "confirmed-key"}
+    value = ScheduleRun(
+        mutation_id="explicit-missed-day",
+        expected_revision=saved["revision"],
+        scheduled_date=day,
+        catch_up_reason="Explicitly compensate the missed daily slot",
+    )
+    first = plans.run("owner", "nightly", value, caller)
+    assert first["slot"] == "daily:2026-10-19" and first["requested_count"] == 3
+    assert first["requested_by"]["mode"] == "explicit-date-catch-up"
+    repeat = value.model_copy(update={"mutation_id": "another-catchup-click"})
+    repeated = plans.run("owner", "nightly", repeat, caller)
+    assert repeated["run_id"] == first["run_id"]
+    assert repeated["batch_id"] == first["batch_id"]
+    assert repeated["selected"] == first["selected"]
+    assert repeated["seed"] == first["seed"]
+    assert len(store.batches("owner")["batches"]) == 1
+    for number, changes in enumerate(
+        (
+            {"scheduled_date": NOW.date() + timedelta(days=1)},
+            {"scheduled_date": NOW.date() - timedelta(days=8)},
+            {"catch_up_reason": None},
+            {"count": 10},
+        )
+    ):
+        with pytest.raises(ValueError):
+            plans.run(
+                "owner",
+                "nightly",
+                value.model_copy(
+                    update={"mutation_id": "invalid-catchup-case-" + str(number), **changes}
+                ),
+                caller,
+            )
+    plans.tick(NOW)
+    runs = plans.catalog("owner")["schedules"][0]["runs"]
+    assert len(runs) == 2 and len(store.batches("owner")["batches"]) == 2
+    assert {r["session_id"] for r in runs[0]["selected"]}.isdisjoint(
+        r["session_id"] for r in runs[1]["selected"]
+    )
+
+
+def test_daily_authority_failure_is_receipted_once_without_any_paid_queue(tmp_path):
+    store, plans, _, _ = fixture(tmp_path)
+    checks = []
+
+    def revoked(owner, caller):
+        checks.append((owner, caller))
+        raise PermissionError("Original native machine key was revoked")
+
+    plans.tick(NOW, authorizer=revoked)
+    plans.tick(NOW, authorizer=revoked)
+    assert len(checks) == 1
+    runs = plans.catalog("owner")["schedules"][0]["runs"]
+    assert len(runs) == 1 and runs[0]["status"] == "blocked"
+    assert "revoked" in runs[0]["error"] and runs[0]["batch_id"] is None
+    assert store.batches("owner")["batches"] == []
+
+
+def test_paid_window_hook_preserves_original_caller_and_rechecks_delegation(tmp_path, monkeypatch):
+    store, plans, _, saved = fixture(tmp_path)
+    monkeypatch.setattr("trajectory.product.schedules.datetime", Clock)
+    caller = {"account_id": "machine", "machine_client": "native", "key_id": "original-key"}
+    plans.run(
+        "owner",
+        "nightly",
+        ScheduleRun(
+            mutation_id="hook-job-original-caller", expected_revision=saved["revision"], count=1
+        ),
+        caller,
+    )
+    job = store.claim_job()
+    checks = []
+    monkeypatch.setattr(
+        plans, "verify_stored_caller", lambda owner, saved: checks.append((owner, saved))
+    )
+    assert plans.verify_job_authorization(job) is None
+    assert checks == [("owner", caller)]
+    assert plans.verify_job_authorization({"id": "ordinary-job", "owner": "owner"}) is None
+    assert len(checks) == 1
+
+    def denied(owner, saved):
+        raise PermissionError("Resource owner revoked analysis delegation")
+
+    monkeypatch.setattr(plans, "verify_stored_caller", denied)
+    with pytest.raises(PermissionError, match="delegation"):
+        plans.verify_job_authorization(job)
+
+
+def test_stored_machine_auth_composes_live_shared_authority_and_owner_grant(tmp_path, monkeypatch):
+    import uuid
+
+    from trajectory.product.schedules import AnalysisAutomationGrant
+
+    _, plans, _, _ = fixture(tmp_path)
+    machine = uuid.uuid4()
+    caller = {
+        "account_id": str(machine),
+        "machine_client": "native-analysis",
+        "key_id": "original-key",
+    }
+    grant = plans.grant(
+        "owner",
+        AnalysisAutomationGrant(
+            mutation_id="stored-owner-grant-added",
+            machine=machine,
+            machine_client="native-analysis",
+        ),
+    )
+    checks = []
+    monkeypatch.setattr(
+        "batcave_http.auth.authorize_stored_account",
+        lambda *args, **kwargs: checks.append((args, kwargs)),
+    )
+    assert plans.verify_stored_caller("owner", caller) is None
+    assert checks[0] == (
+        (str(machine), "trajectory", "configure"),
+        {"key_id": "original-key", "machine_client_id": "native-analysis"},
+    )
+    assert checks[1][0] == ("owner", "trajectory", "read")
+    plans.grant(
+        "owner",
+        AnalysisAutomationGrant(
+            mutation_id="stored-owner-grant-revoked",
+            machine=machine,
+            machine_client="native-analysis",
+            enabled=False,
+            expected_revision=grant["revision"],
+        ),
+    )
+    with pytest.raises(PermissionError, match="delegation"):
+        plans.verify_stored_caller("owner", caller)
