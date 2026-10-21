@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Preserve positive confirmed human-input subtotals when another project is unknown; zero with missing contributions remains unknown.
 - Keep full-precision cost estimates and long composite durations inside narrow statistics cards. Cover realistic long cost estimates and composite durations at 390px without hiding text or changing API/CSV values.
 
+Code stats vs v6.0.0: total 28908 text lines (baseline 28899), +16 (-7) = +9, 0.03% text-line change.
+
 ## [6.0.0] - 2026-10-21
 
 ### Changed
