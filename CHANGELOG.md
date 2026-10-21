@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Keep session search, filters and selection inside the left sidebar. Show accessible compact agent, lineage and analysis-state icons without repeating paths on every session; retain explicit unknown lineage and self-parent handling.
 
-Code stats vs v6.1.1: total 29514 text lines, +184 (-22) = +162, 0.55% text-line change.
+Code stats vs v6.1.1: total 29516 text lines, +187 (-23) = +164, 0.56% text-line change.
 
 ## [6.1.1] - 2026-10-21
 
