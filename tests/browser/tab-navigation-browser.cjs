@@ -26,7 +26,7 @@ const server=http.createServer(async(req,res)=>{if(req.url.startsWith('/trajecto
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH,args:['--no-sandbox','--disable-gpu']});
  try{
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- delay=600;await page.goto(origin+'/trajectory/');await page.waitForSelector('#session-list .loading-orbit');assert.equal(await page.locator('#session-list').getAttribute('aria-busy'),'true');await page.screenshot({path:output+'/sessions-loading.png',fullPage:true});
+ delay=600;await page.goto(origin+'/trajectory/');await page.waitForSelector('#session-list .loading-orbit');assert.equal(await page.locator('#sessions-state').getAttribute('aria-busy'),'true');assert.equal(await page.locator('#sessions-state').evaluate(n=>getComputedStyle(n,'::before').animationName),'loading-turn');assert.equal(await page.locator('#session-list').getAttribute('aria-busy'),'true');await page.screenshot({path:output+'/sessions-loading.png',fullPage:true});
  await page.waitForSelector('[data-session-id="one"]');
  const durationCases=await page.evaluate(()=>{const f=window.TrajectoryFormat.duration;return [null,undefined,NaN,Infinity,-1,0,0.000001,0.001,0.9999,1,1.25,42,59.94,59.96,60,3599,3599.6,3600,4980,90061,360000].map(f)});
  assert.deepEqual(durationCases,['未知','未知','未知','未知','未知','0s','0.001ms','1ms','1s','1s','1.3s','42s','59.9s','1min','1min','59min59s','1h','1h','1h23min','25h1min1s','100h']);

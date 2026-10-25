@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.2.1] - 2026-10-25
+
+### Fixed
+
+- Show animated waiting feedback for session refresh, analysis submission and continuation, batch submission, and schedule reads, writes and receipt loading. Clear busy state on success or failure and honor reduced-motion preferences.
+- Remove repeated secondary guidance while retaining billing, missing-data and recovery information.
+
+Code stats vs v6.2.0: total 29532 tracked text lines, +39 (-23) = +16, 0.05% text-line change.
+
 ## [6.2.0] - 2026-10-21
 
 ### Added
