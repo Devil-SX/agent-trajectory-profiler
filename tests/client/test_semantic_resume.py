@@ -475,6 +475,35 @@ def recomputation_authorization():
     }
 
 
+def test_missing_receipt_authorization_keeps_unknown_usage(tmp_path, monkeypatch):
+    _, operations = setup(monkeypatch)
+    original = lost_attempt() | {"receipt_id": ""}
+    auth = recomputation_authorization() | {
+        "receipt_id": None,
+        "receipt_state": "receipt_not_found",
+    }
+    calls = []
+    monkeypatch.setattr(
+        model,
+        "_request",
+        lambda cfg, packet, identity: calls.append(identity) or returned(identity, [0]),
+    )
+    result = model.segment(
+        operations[:1],
+        "目标",
+        analysis_id="same-job",
+        checkpoint=tmp_path / "missing-receipt.json",
+        prior_progress={"completed_chunks": 0, "analysis_usage": [original]},
+        resume_generation=1,
+        authorized_recomputations=[auth],
+    )
+    assert calls == [call_id("same-job", 0, 2)]
+    assert result["provenance"]["analysis_usage"][0] == original
+    assert (
+        result["provenance"]["authorized_recomputations"][0]["receipt_state"] == "receipt_not_found"
+    )
+
+
 def test_explicit_terminal_lost_response_authorization_preserves_unknown_cost(
     tmp_path, monkeypatch
 ):

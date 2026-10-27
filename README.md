@@ -42,8 +42,10 @@ remain intact. Uncertain calls remain blocked for receipt reconciliation.
 Failed analyses can also be continued through the authenticated resume operation
 in Help when eligible. Refreshing the page does not restart paid analysis.
 
-If a verified terminal call has lost its response, an operator can make a
-separate explicit decision through the Help-discovered lost-window operation.
+If a verified terminal call has lost its response, or an exact call-ID lookup
+finds no receipt, an operator can make a separate explicit decision through the
+Help-discovered lost-window operation. A missing receipt does not prove the call
+was never dispatched.
 This can incur an additional charge for that window. The service preserves the
 original unknown usage and the recorded decision; ordinary recovery never makes
 this decision automatically.

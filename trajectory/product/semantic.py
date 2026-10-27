@@ -506,7 +506,7 @@ class SemanticStore:
             return any(
                 ack.get("job_id") == job["id"]
                 and ack.get("accept_possible_duplicate_charge") is True
-                and ack.get("receipt_state") == "uncertain_terminal"
+                and ack.get("receipt_state") in {"uncertain_terminal", "receipt_not_found"}
                 and ack.get("call_id") == call.get("call_id")
                 and ack.get("chunk") == call.get("chunk")
                 and ack.get("attempt") == call.get("attempt")
@@ -610,7 +610,7 @@ class SemanticStore:
             body = json.loads(row["body"])
             ack = body.get("authorized_recomputation", {})
             proof = body.get("receipt_verification", {})
-            receipt = proof.get("receipt", {})
+            receipt = proof.get("receipt") or {}
             decision = body.get("operator_decision", {})
             chunk, attempt = ack.get("chunk"), ack.get("attempt")
             if not (
@@ -620,10 +620,26 @@ class SemanticStore:
                 and ack.get("accept_possible_duplicate_charge") is True
                 and decision.get("accept_possible_duplicate_charge") is True
                 and ack.get("authorization_id") == decision.get("mutation_id")
-                and ack.get("receipt_state") == "uncertain_terminal"
-                and receipt.get("state") == "uncertain"
-                and receipt.get("id") == decision.get("receipt_id") == ack.get("receipt_id")
-                and receipt.get("request_id") == decision.get("call_id") == ack.get("call_id")
+                and (
+                    (
+                        ack.get("receipt_state") == "uncertain_terminal"
+                        and receipt.get("state") == "uncertain"
+                        and receipt.get("id") == decision.get("receipt_id") == ack.get("receipt_id")
+                        and receipt.get("request_id")
+                        == decision.get("call_id")
+                        == ack.get("call_id")
+                    )
+                    or (
+                        ack.get("receipt_state") == "receipt_not_found"
+                        and decision.get("receipt_id") is None
+                        and ack.get("receipt_id") is None
+                        and proof.get("receipt") is None
+                        and proof.get("lookup", {}).get("state") == "receipt_not_found"
+                        and proof.get("lookup", {}).get("request_id")
+                        == decision.get("call_id")
+                        == ack.get("call_id")
+                    )
+                )
                 and isinstance(chunk, int)
                 and chunk > 0
                 and isinstance(attempt, int)
@@ -711,7 +727,7 @@ class SemanticStore:
             )
         except Exception as error:
             raise AnalysisResumeError("receipt_verification_unavailable") from error
-        receipt = proof["receipt"]
+        receipt = proof.get("receipt")
         caller = proof["caller"]
         if not (
             caller.get("source_service") == "trajectory"
@@ -719,7 +735,18 @@ class SemanticStore:
             and caller.get("key_id")
             and caller.get("account_id")
             and "jindu.read" in caller.get("scopes", [])
-            and receipt.get("account_id") == caller["account_id"]
+            and (receipt is None or receipt.get("account_id") == caller["account_id"])
+        ):
+            raise AnalysisResumeError("receipt_verification_mismatch")
+        if value.receipt_id is None:
+            if not (
+                receipt is None
+                and proof.get("lookup", {}).get("request_id") == value.call_id
+                and proof.get("lookup", {}).get("state") == "receipt_not_found"
+            ):
+                raise AnalysisResumeError("receipt_verification_mismatch")
+        elif not (
+            receipt is not None
             and receipt.get("source_service") == "trajectory"
             and receipt.get("id") == value.receipt_id
             and receipt.get("request_id") == value.call_id
@@ -729,7 +756,7 @@ class SemanticStore:
             and receipt.get("finished") is not None
         ):
             raise AnalysisResumeError("receipt_verification_mismatch")
-        if any(
+        if receipt is not None and any(
             receipt.get(key) is not None
             for key in ("input_tokens", "output_tokens", "cached_tokens")
         ):
@@ -752,7 +779,9 @@ class SemanticStore:
                 "chunk": last["chunk"],
                 "attempt": last["attempt"],
                 "resume_generation": generation + 1,
-                "receipt_state": "uncertain_terminal",
+                "receipt_state": (
+                    "uncertain_terminal" if receipt is not None else "receipt_not_found"
+                ),
                 "authorization_id": value.mutation_id,
                 "accept_possible_duplicate_charge": True,
             }

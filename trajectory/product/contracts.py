@@ -113,7 +113,7 @@ class AnalysisRequest(BaseModel):
 
 class LostWindowRecomputeRequest(AnalysisRequest):
     call_id: str = Field(pattern=r"^trajectory:[0-9a-f]{64}$")
-    receipt_id: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    receipt_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
     accept_possible_duplicate_charge: bool = Field(strict=True)
     reason: str = Field(min_length=10, max_length=1000)
     receipt_checked_at: datetime

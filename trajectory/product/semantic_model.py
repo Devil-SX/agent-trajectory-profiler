@@ -834,13 +834,25 @@ def segment(
             or generation * 2 <= original_attempt - 1
             or authorization["accept_possible_duplicate_charge"] is not True
             or authorization["receipt_state"]
-            not in {"uncertain_terminal", "completed_response_unavailable"}
+            not in {"uncertain_terminal", "completed_response_unavailable", "receipt_not_found"}
+            or (
+                authorization["receipt_state"] == "receipt_not_found"
+                and authorization["receipt_id"] is not None
+            )
+            or (
+                authorization["receipt_state"] != "receipt_not_found"
+                and not isinstance(authorization["receipt_id"], str)
+            )
             or any(
                 not isinstance(authorization[key], str)
                 or not authorization[key].strip()
                 or authorization[key].strip() != authorization[key]
                 or len(authorization[key]) > 200
-                for key in ("receipt_id", "authorization_id")
+                for key in (
+                    ("authorization_id",)
+                    if authorization["receipt_state"] == "receipt_not_found"
+                    else ("receipt_id", "authorization_id")
+                )
             )
         ):
             raise SemanticModelError(

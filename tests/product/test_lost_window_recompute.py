@@ -140,6 +140,78 @@ def test_receipt_identity_and_terminal_state_fail_closed(tmp_path, monkeypatch, 
     assert store.resume_context(job)["generation"] == 0
 
 
+def test_missing_receipt_requires_exact_lookup_and_preserves_uncertainty(tmp_path, monkeypatch):
+    store, job, _, progress, value, proof = lost(tmp_path, monkeypatch)
+    value = value.model_copy(update={"receipt_id": None})
+    absent = {
+        "caller": proof["caller"],
+        "receipt": None,
+        "lookup": {"request_id": value.call_id, "state": "receipt_not_found"},
+    }
+    wrong = copy.deepcopy(absent)
+    wrong["lookup"]["request_id"] = "trajectory:" + "0" * 64
+    with pytest.raises(AnalysisResumeError, match="receipt_verification_mismatch"):
+        store.recompute_lost_window("owner", job["id"], value, {}, verifier=lambda *a: wrong)
+    receipt = store.recompute_lost_window(
+        "owner", job["id"], value, {"account_id": "owner"}, verifier=lambda *a: absent
+    )
+    assert receipt["completed_chunks"] == 9
+    context = store.resume_context(job)
+    assert context["prior_progress"] == progress
+    assert context["authorized_recomputations"][0]["receipt_state"] == "receipt_not_found"
+    assert context["authorized_recomputations"][0]["receipt_id"] is None
+    assert context["authorization"]["operator_decision"]["accept_possible_duplicate_charge"] is True
+
+
+def test_missing_receipt_verifier_rejects_found_record(tmp_path, monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+
+    _, _, _, _, value, proof = lost(tmp_path, monkeypatch)
+    observed = []
+    found = False
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            observed.append(self.path)
+            payload = (
+                {"caller": proof["caller"]}
+                if self.path.endswith("/help")
+                else {"items": [proof["receipt"]] if found else []}
+            )
+            raw = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setattr(
+        receipt_verification,
+        "_configuration",
+        lambda: {
+            "base_url": f"http://127.0.0.1:{server.server_port}/jindu/api/v1",
+            "api_key": "fixture",
+        },
+    )
+    try:
+        result = receipt_verification.verify_lost_receipt(value.call_id, None, "route", "model")
+        assert result["receipt"] is None
+        assert result["lookup"] == {"request_id": value.call_id, "state": "receipt_not_found"}
+        assert parse_qs(urlsplit(observed[-1]).query) == {"request_id": [value.call_id]}
+        found = True
+        with pytest.raises(ValueError, match="has a receipt"):
+            receipt_verification.verify_lost_receipt(value.call_id, None, "route", "model")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
 def test_owner_call_freshness_and_concurrent_change_block(tmp_path, monkeypatch):
     store, job, _, progress, value, proof = lost(tmp_path, monkeypatch)
     with pytest.raises(PermissionError):
@@ -184,9 +256,7 @@ def test_verifier_uses_only_authenticated_help_and_calls_http(tmp_path, monkeypa
             assert self.headers["Authorization"] == "Bearer fixture-key"
             observed.append(self.path)
             payload = (
-                {"caller": proof["caller"]}
-                if self.path.endswith("/help")
-                else proof["receipt"]
+                {"caller": proof["caller"]} if self.path.endswith("/help") else proof["receipt"]
             )
             raw = json.dumps(payload).encode()
             self.send_response(200)

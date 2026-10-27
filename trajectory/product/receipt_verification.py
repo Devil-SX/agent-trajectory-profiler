@@ -1,6 +1,7 @@
 """Read-only Jindu verification for explicit operator decisions, never upstream dispatch."""
 
 import json
+import urllib.parse
 import urllib.request
 import uuid
 from datetime import UTC, datetime
@@ -9,7 +10,9 @@ from typing import Any
 from trajectory.product.semantic_model import NoRedirect, _configuration
 
 
-def verify_lost_receipt(call_id: str, receipt_id: str, route: str, model: str) -> dict[str, Any]:
+def verify_lost_receipt(
+    call_id: str, receipt_id: str | None, route: str, model: str
+) -> dict[str, Any]:
     config = _configuration()
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
 
@@ -35,6 +38,19 @@ def verify_lost_receipt(call_id: str, receipt_id: str, route: str, model: str) -
         and "jindu.read" in caller.get("scopes", [])
     ):
         raise ValueError("Trajectory native Jindu read identity required")
+    if receipt_id is None:
+        # Jindu filters before its bounded result limit. Absence is evidence only:
+        # it does not establish that the upstream request was never dispatched.
+        query = urllib.parse.urlencode({"request_id": call_id})
+        value = get("/calls?" + query)
+        if not isinstance(value.get("items"), list) or value["items"]:
+            raise ValueError("Original call has a receipt or lookup is unavailable")
+        return {
+            "caller": caller,
+            "receipt": None,
+            "lookup": {"request_id": call_id, "state": "receipt_not_found"},
+            "verified_at": datetime.now(UTC).isoformat(),
+        }
     # Looking in the recent-call list loses older receipts once newer calls arrive.
     # The account-bound detail endpoint verifies ownership for this exact UUID.
     if str(uuid.UUID(receipt_id)) != receipt_id.lower():

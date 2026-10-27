@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.4.0] - 2026-10-28
+
+### Added
+
+- Allow an explicit audited recomputation after an exact call-ID lookup finds no receipt, preserving uncertainty and requiring acceptance of possible duplicate charges.
+
+Code stats vs v6.3.3: total 30354 tracked text lines, +189 (-22) = +167, 0.55% text-line change.
+
 ## [6.3.3] - 2026-10-28
 
 ### Fixed

@@ -335,7 +335,8 @@ OPERATIONS: list[dict[str, Any]] = [
         "scope": "configure",
         "input": LostWindowRecomputeRequest,
         "effect": "Explicit operator decision to recompute one lost-response window after Jindu "
-        "receipt verification; may duplicate an unknown prior charge; never automatic retry",
+        "receipt or exact call-ID lookup; a missing receipt does not prove no dispatch. May "
+        "duplicate an unknown prior charge; never automatic retry",
     },
     {
         "id": "analysis_resume",
