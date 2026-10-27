@@ -186,7 +186,7 @@ def test_verifier_uses_only_authenticated_help_and_calls_http(tmp_path, monkeypa
             payload = (
                 {"caller": proof["caller"]}
                 if self.path.endswith("/help")
-                else {"items": [proof["receipt"]]}
+                else proof["receipt"]
             )
             raw = json.dumps(payload).encode()
             self.send_response(200)
@@ -214,7 +214,7 @@ def test_verifier_uses_only_authenticated_help_and_calls_http(tmp_path, monkeypa
         server.server_close()
         thread.join()
     assert result["receipt"] == proof["receipt"]
-    assert observed == ["/jindu/api/v1/help", "/jindu/api/v1/calls"]
+    assert observed == ["/jindu/api/v1/help", f"/jindu/api/v1/calls/{value.receipt_id}"]
 
 
 def test_recompute_http_schema_authority_and_no_automatic_control(tmp_path, monkeypatch):

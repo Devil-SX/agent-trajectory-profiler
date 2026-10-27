@@ -2,6 +2,7 @@
 
 import json
 import urllib.request
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -34,10 +35,11 @@ def verify_lost_receipt(call_id: str, receipt_id: str, route: str, model: str) -
         and "jindu.read" in caller.get("scopes", [])
     ):
         raise ValueError("Trajectory native Jindu read identity required")
-    matches = [row for row in get("/calls").get("items", []) if row.get("request_id") == call_id]
-    if len(matches) != 1:
-        raise ValueError("Exact Jindu receipt unavailable in bounded authenticated call history")
-    receipt = matches[0]
+    # Looking in the recent-call list loses older receipts once newer calls arrive.
+    # The account-bound detail endpoint verifies ownership for this exact UUID.
+    if str(uuid.UUID(receipt_id)) != receipt_id.lower():
+        raise ValueError("Invalid Jindu receipt identity")
+    receipt = get("/calls/" + receipt_id)
     if not (
         receipt.get("id") == receipt_id
         and receipt.get("account_id") == caller["account_id"]

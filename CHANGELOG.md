@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.3.3] - 2026-10-28
+
+### Fixed
+
+- Verify an uncertain model call using its exact receipt, including older calls outside the recent-call list.
+
+Code stats vs v6.3.2: total 30187 tracked text lines, +18 (-8) = +10, 0.03% text-line change.
+
 ## [6.3.2] - 2026-10-27
 
 ### Fixed
