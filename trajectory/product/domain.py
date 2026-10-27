@@ -895,12 +895,18 @@ class Domain:
         project_request_sources: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
         day_request_sources: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
         task_request_sources: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
-        records = LedgerScan(db, owner, corrections)
+        records = LedgerScan(db, owner, corrections, source=contribution_source)
         scoped_sessions = (
             records.source_sessions(contribution_source) if contribution_source else None
         )
         chronological = records.chronological(scoped_sessions)
-        usages = UniqueUsages(records, sessions=scoped_sessions)
+        usages = UniqueUsages(
+            records, sessions=scoped_sessions, relevant_only=contribution_source is not None
+        )
+        # Scoped details already retain per-event results; reuse the selected rows
+        # across dependent passes while preserving global deduplication winners.
+        selected_chronological = list(chronological) if scoped_sessions is not None else None
+        selected_usages = list(usages) if scoped_sessions is not None else None
 
         def context_length(record: dict[str, Any]) -> int | None:
             if record["input"] is None:
@@ -920,7 +926,7 @@ class Domain:
 
         session_context: dict[tuple[str, str, str | None], int] = {}
         models: set[str] = set()
-        for usage in usages:
+        for usage in selected_usages if selected_usages is not None else usages:
             if scoped_sessions is not None and usage["session"] not in scoped_sessions:
                 continue
             if usage.get("model"):
@@ -1034,7 +1040,9 @@ class Domain:
             return day == "unknown" or ((not since or day >= since) and (not until or day <= until))
 
         unknown_timestamps = 0
-        for record in chronological:
+        for record in (
+            selected_chronological if selected_chronological is not None else chronological
+        ):
             if record["kind"] == "request":
                 request_records[(record["owner"], record["collector"], record["source"])] += 1
             unknown_timestamps += int(record["timestamp"] is None)
@@ -1071,7 +1079,7 @@ class Domain:
                 )
         request_seen: set[tuple[str, ...]] = set()
         request_duplicates = 0
-        requests = records.requests()
+        requests = records.requests(scoped_sessions)
         for record in requests:
             if record["kind"] != "request" or not included(record):
                 continue
@@ -1107,7 +1115,7 @@ class Domain:
                     target[origin + "_interactions"] += 1
                 else:
                     target["unknown_origin_interactions"] += 1
-        for record in usages:
+        for record in selected_usages if selected_usages is not None else usages:
             if scoped_sessions is not None and record["session"] not in scoped_sessions:
                 continue
             if not included(record):
@@ -1181,7 +1189,11 @@ class Domain:
 
         anomalies: deque[dict[str, Any]] = deque(maxlen=200)
         previous: dict[tuple[str, str], dict[str, Any]] = {}
-        for record in records.chronological(scoped_sessions):
+        for record in (
+            selected_chronological
+            if selected_chronological is not None
+            else records.chronological(scoped_sessions)
+        ):
             visible = included(record)
             identity = (record["owner"], record["session"])
             prior = previous.get(identity)

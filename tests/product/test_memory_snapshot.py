@@ -47,7 +47,9 @@ def ingest(domain, source, events):
     )
 
 
-def test_source_scans_preserve_global_usage_request_dedup_corrections_and_session_price(tmp_path):
+def test_source_scans_preserve_global_usage_request_dedup_corrections_and_session_price(
+    tmp_path, monkeypatch
+):
     domain = Domain(tmp_path / "fixture.sqlite")
     domain.register("owner", "machine", "fixture")
     first = "source-0000000001"
@@ -139,8 +141,27 @@ def test_source_scans_preserve_global_usage_request_dedup_corrections_and_sessio
     assert result["projects"][0]["known_subtotal_usd"] == pytest.approx(0.0026)
     assert result["coverage"]["deduplicated_usage_records"] == 1
     assert result["coverage"]["deduplicated_request_records"] == 1
+    from trajectory.product.ledger_scan import LedgerScan
+
+    counts = {"usage": 0, "chronological": 0}
+    original_usage = LedgerScan.usage_candidates
+    original_chronological = LedgerScan.chronological
+
+    def usage_candidates(self, sessions, **kwargs):
+        counts["usage"] += 1
+        return original_usage(self, sessions, **kwargs)
+
+    def chronological(self, sessions=None):
+        counts["chronological"] += 1
+        return original_chronological(self, sessions)
+
+    monkeypatch.setattr(LedgerScan, "usage_candidates", usage_candidates)
+    monkeypatch.setattr(LedgerScan, "chronological", chronological)
     for source, calls, inputs in ((first, 1, 20), (second, 2, 240)):
+        before = counts.copy()
         selected = domain.source_contributions("owner", "fixture", source)
+        assert counts["usage"] - before["usage"] == 1
+        assert counts["chronological"] - before["chronological"] == 1
         assert all(item["record"]["source"] == source for item in selected)
         metrics = total_metrics(selected)
         assert metrics["calls"] == calls and metrics["input"] == inputs

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.3.1] - 2026-10-27
+
+### Fixed
+
+- Reduce repeated ledger scans when opening task analysis, while retaining cross-source usage and request deduplication.
+
+Code stats vs v6.3.0: total 29811 tracked text lines, +179 (-19) = +160, 0.54% text-line change.
+
 ## [6.3.0] - 2026-10-27
 
 ### Added

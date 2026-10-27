@@ -57,6 +57,10 @@ def test_scoped_usage_projection_preserves_global_winner_before_session_filter(
         assert [item["input"] for item in actual] == [30]
         assert scoped.duplicates == baseline.duplicates == 2
         assert len(decoded) == 1
+        # Restrict candidate identities without losing the competing winner from
+        # a different session, including consumption-id fallback collisions.
+        relevant = UniqueUsages(records, sessions={"selected"}, relevant_only=True)
+        assert list(relevant) == expected
         assert list(UniqueUsages(LedgerScan(db, "stranger", {}), sessions={"selected"})) == []
 
 
@@ -195,3 +199,56 @@ def test_ledger_revision_uses_the_callers_read_snapshot(tmp_path):
         ingest(Domain(domain.path), "source-0000000002", [event("second", "usage", 2, input=20)])
         assert domain.ledger_revision(db) == original
         assert domain.ledger_revision() > original
+
+
+def test_scoped_detail_keeps_cross_session_request_winner_and_task_routing(tmp_path):
+    domain = domain_fixture(tmp_path)
+    selected = "source-0000000001"
+    ingest(
+        domain,
+        selected,
+        [
+            event(
+                "selected-request",
+                "request",
+                1,
+                session="selected",
+                task="shared-task",
+                input_origin="agent",
+                interaction_id="same-interaction",
+            ),
+            event("selected-usage", "usage", 2, session="selected", task="shared-task", input=7),
+        ],
+    )
+    ingest(
+        domain,
+        "source-0000000002",
+        [
+            event(
+                "winning-request",
+                "request",
+                3,
+                session="elsewhere",
+                task="shared-task",
+                input_origin="human",
+                input_chars=5,
+                interaction_id="same-interaction",
+                references=["BatCave-Ops"],
+            ),
+            event(
+                "unrelated-request",
+                "request",
+                4,
+                session="elsewhere",
+                task="other-task",
+                input_origin="human",
+                input_chars=9,
+                interaction_id="other-interaction",
+            ),
+        ],
+    )
+    contributions = domain.source_contributions("owner", "fixture", selected)
+    assert sum(item["agent_interactions"] for item in contributions) == 0
+    assert sum(item["human_interactions"] for item in contributions) == 0
+    assert sum(item["input"] for item in contributions) == 7
+    assert {item["record"]["project"] for item in contributions} == {"ops"}
