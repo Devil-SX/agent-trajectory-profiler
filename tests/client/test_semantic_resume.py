@@ -159,11 +159,14 @@ def test_successful_prefix_and_paid_invalid_attempts_resume_once(tmp_path, monke
     assert (
         len(calls) == 3
     ), "same generation revalidates journal, never charges invalid attempts again"
-    monkeypatch.setattr(
-        model,
-        "_request",
-        lambda config, packet, identity: (calls.append(identity) or returned(identity, [0])),
-    )
+    repaired_packets = []
+
+    def repair(config, packet, identity):
+        calls.append(identity)
+        repaired_packets.append(dict(packet))
+        return returned(identity, [0])
+
+    monkeypatch.setattr(model, "_request", repair)
     result = model.segment(
         operations,
         "目标",
@@ -173,6 +176,8 @@ def test_successful_prefix_and_paid_invalid_attempts_resume_once(tmp_path, monke
         resume_generation=1,
     )
     assert len(calls) == 5
+    assert "coverage is incomplete or duplicated" in repaired_packets[0]["validation_feedback"]
+    assert "validation_feedback" not in repaired_packets[1]
     assert calls[3] == call_id("same-job", 1, 2)
     assert result["tasks"][1]["operation_ids"] == [op["id"] for op in operations]
     assert len(result["provenance"]["analysis_usage"]) == 5
@@ -612,3 +617,88 @@ def test_one_authorized_lost_call_never_authorizes_another_uncertain_call(tmp_pa
             resume_generation=2,
             authorized_recomputations=[recomputation_authorization()],
         )
+
+
+def test_identity_repair_feedback_carries_conflicting_task_identity(tmp_path, monkeypatch):
+    _, operations = setup(monkeypatch)
+    packets = []
+
+    def invoke(config, packet, identity):
+        packets.append(dict(packet))
+        if packet["chunk"] == 2 and "validation_feedback" not in packet:
+            return (
+                {
+                    "tasks": [
+                        {
+                            "id": "task",
+                            "parent_id": "wrong-parent",
+                            "title": "目标",
+                            "operation_indices": [0],
+                        }
+                    ]
+                },
+                {"prompt_tokens": 100, "completion_tokens": 20},
+                {"call_id": identity, "receipt_id": "paid-receipt"},
+            )
+        return returned(identity, [0])
+
+    monkeypatch.setattr(model, "_request", invoke)
+    result = model.segment(
+        operations[:2], "目标", analysis_id="identity-repair", checkpoint=tmp_path / "checkpoint"
+    )
+    assert result["tasks"][1]["operation_ids"] == [op["id"] for op in operations[:2]]
+    feedback = packets[2]["validation_feedback"]
+    assert "Model changed an existing task identity" in feedback
+    assert '"id": "task"' in feedback and '"parent_id": "root"' in feedback
+
+
+def test_resume_feedback_uses_latest_failure_even_when_older_attempt_is_replayed(
+    tmp_path, monkeypatch
+):
+    _, operations = setup(monkeypatch)
+    packets = []
+
+    def invoke(config, packet, identity):
+        packets.append(dict(packet))
+        if packet["chunk"] == 1:
+            value = response([0])
+        elif len([item for item in packets if item["chunk"] == 2]) == 1:
+            value = {
+                "tasks": [
+                    {"id": "task", "parent_id": "wrong", "title": "目标", "operation_indices": [0]}
+                ]
+            }
+        else:
+            value = response([])
+        body = json.dumps(
+            {
+                "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(value)}}],
+                "usage": {"prompt_tokens": 100},
+            }
+        )
+        config["_response_recorder"](
+            identity, body, {"call_id": identity, "receipt_id": "confirmed"}
+        )
+        return value, {"prompt_tokens": 100}, {"call_id": identity, "receipt_id": "confirmed"}
+
+    monkeypatch.setattr(model, "_request", invoke)
+    path = tmp_path / "checkpoint"
+    with pytest.raises(model.SemanticModelError, match="coverage") as failed:
+        model.segment(operations[:2], "目标", analysis_id="feedback-order", checkpoint=path)
+    prior = {"completed_chunks": 1, "analysis_usage": failed.value.provenance["analysis_usage"]}
+    repaired = []
+
+    def recover(config, packet, identity):
+        repaired.append(dict(packet))
+        return returned(identity, [0])
+
+    monkeypatch.setattr(model, "_request", recover)
+    model.segment(
+        operations[:2],
+        "目标",
+        analysis_id="feedback-order",
+        checkpoint=path,
+        prior_progress=prior,
+        resume_generation=1,
+    )
+    assert "coverage is incomplete or duplicated" in repaired[0]["validation_feedback"]

@@ -50,6 +50,41 @@ class SemanticModelError(RuntimeError):
         self.retryable = retryable
 
 
+def repairable_validation_error(message: str) -> bool:
+    """Only confirmed malformed model output may trigger automatic paid repair."""
+    prefixes = (
+        "Model returned no tasks",
+        "Invalid model task schema",
+        "Invalid model task identity",
+        "Duplicate model task identity:",
+        "Model task title must be",
+        "Model task title exceeds maximum",
+        "Every model task must have a parent",
+        "Model changed an existing task identity",
+        "Invalid operation membership",
+        "Model operation coverage is incomplete or duplicated",
+        "Model task hierarchy has a cycle or missing parent",
+        "Model output was incomplete or not valid task JSON",
+        "Invalid model response schema",
+        "Invalid indexed task schema",
+        "Operation indices must be integers",
+    )
+    return any(message.startswith(prefix) for prefix in prefixes)
+
+
+def validation_feedback(message: str, repair_task: dict[str, Any] | None = None) -> str:
+    # Bound diagnostics; never include a raw model response or operation text.
+    expected = ""
+    if repair_task:
+        expected = " 必须保持以下已有任务的字段：" + json.dumps(repair_task, ensure_ascii=False)
+    return (
+        "上次输出未通过结构校验，请完整重新生成；错误："
+        + message[:600]
+        + "。严格使用本窗口整数index，每个恰好一次；不要输出root任务；"
+        "已有任务ID必须保留原有名称与父节点。" + expected
+    )
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args: Any, **kwargs: Any) -> None:
         raise SemanticModelError("Model API redirects are prohibited", retryable=False)
@@ -170,7 +205,10 @@ def _validate(tasks: Any, known: dict[str, dict[str, Any]], operation_ids: set[s
         if not isinstance(task["parent_id"], str):
             raise SemanticModelError("Every model task must have a parent")
         if tid in known and any(task[k] != known[tid][k] for k in ("title", "parent_id")):
-            raise SemanticModelError("Model changed an existing task identity")
+            raise SemanticModelError(
+                "Model changed an existing task identity",
+                {"repair_task": {key: known[tid][key] for key in ("id", "title", "parent_id")}},
+            )
         ids = task["operation_ids"]
         if not isinstance(ids, list) or any(not isinstance(oid, str) for oid in ids):
             raise SemanticModelError("Invalid operation membership")
@@ -636,7 +674,7 @@ def segment(
     Lost-response recomputation requires a fresh domain-verified authorization
     argument with explicit duplicate-charge consent; a checkpoint never grants it.
     """
-    if type(resume_generation) is not int or not 0 <= resume_generation <= 3:
+    if type(resume_generation) is not int or not 0 <= resume_generation <= 12:
         raise SemanticModelError("Invalid analysis resume generation", retryable=False)
     config = _configuration()
     if (
@@ -1003,6 +1041,25 @@ def segment(
                     "trajectory:"
                     + hashlib.sha256(f"{analysis_id}:{index}:{attempt}".encode()).hexdigest()
                 )
+                if entry_call_id not in journals:
+                    # Use the latest earlier confirmed failure, including across
+                    # generations. Never change an already journaled request.
+                    previous_invalid = [
+                        value
+                        for value in journals.values()
+                        if value.get("chunk") == index + 1
+                        and value.get("attempt", 0) <= attempt
+                        and value.get("state") == "invalid"
+                        and value.get("retryable") is True
+                        and isinstance(value.get("call"), dict)
+                        and value["call"].get("receipt_id")
+                        and repairable_validation_error(str(value.get("validation_error", "")))
+                    ]
+                    if previous_invalid:
+                        latest = max(previous_invalid, key=lambda value: value["attempt"])
+                        packet["validation_feedback"] = validation_feedback(
+                            latest["validation_error"], latest.get("repair_task")
+                        )
                 cached_packet = journals.get(entry_call_id, {}).get("request_packet", packet)
                 if {
                     key: value
@@ -1012,7 +1069,7 @@ def segment(
                     raise SemanticModelError(
                         "Journal request does not match the canonical window", retryable=False
                     )
-                attempt_packet = cached_packet if attempt in replay_attempts else packet
+                attempt_packet = cached_packet if entry_call_id in journals else packet
                 call_id = (
                     "trajectory:"
                     + hashlib.sha256(f"{analysis_id}:{index}:{attempt}".encode()).hexdigest()
@@ -1196,6 +1253,7 @@ def segment(
                                 "state": "invalid" if exc.retryable else "uncertain",
                                 "validation_error": str(exc),
                                 "diagnostic": exc.provenance.get("coverage_diagnostic"),
+                                "repair_task": exc.provenance.get("repair_task"),
                                 "retryable": exc.retryable,
                             }
                         )
@@ -1210,10 +1268,8 @@ def segment(
                     )
                     if attempt_position == len(attempts) - 1 or not exc.retryable:
                         raise
-                    packet["validation_feedback"] = (
-                        "上次输出未通过结构校验，请完整重新生成；错误："
-                        + str(exc)
-                        + "。严格使用本窗口整数index，每个恰好一次；不要输出root任务。"
+                    packet["validation_feedback"] = validation_feedback(
+                        str(exc), exc.provenance.get("repair_task")
                     )
             else:
                 raise SemanticModelError(

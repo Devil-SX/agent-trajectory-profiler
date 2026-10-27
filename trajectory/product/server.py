@@ -343,8 +343,9 @@ OPERATIONS: list[dict[str, Any]] = [
         "path": "/api/analysis-jobs/{job_id}/resume",
         "scope": "configure",
         "input": AnalysisRequest,
-        "effect": "Continue the same failed job from durable checkpoints, at most 3 resumes; "
-        "new windows incur model usage, uncertain calls remain blocked",
+        "effect": "Continue the same failed job from durable checkpoints, at most 3 resumes "
+        "per window and 12 per job; confirmed invalid model outputs also resume automatically. "
+        "Each new attempt incurs model usage; uncertain calls remain blocked",
     },
     {
         "id": "analysis_batch_run",

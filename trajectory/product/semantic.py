@@ -28,6 +28,9 @@ from trajectory.product.session_metadata import VERSION as METADATA_VERSION
 from trajectory.product.session_metadata import extract as extract_metadata
 from trajectory.product.session_metadata import read as read_metadata
 
+MAX_RESUME_GENERATIONS = 12
+MAX_WINDOW_RESUMES = 3
+
 
 def stamp() -> str:
     return datetime.now(UTC).isoformat()
@@ -491,10 +494,11 @@ class SemanticStore:
         progress: dict[str, Any],
         generation: int,
         authorized_recomputations: list[dict[str, Any]] | None = None,
+        window_resumes: int = 0,
     ) -> str:
         if job["kind"] != "analyze" or job["status"] != "failed":
             return "analysis_not_failed"
-        if generation >= 3:
+        if generation >= MAX_RESUME_GENERATIONS or window_resumes >= MAX_WINDOW_RESUMES:
             return "resume_limit_reached"
         calls = progress.get("analysis_usage", [])
 
@@ -563,8 +567,17 @@ class SemanticStore:
             else 0
         )
         acknowledgments = self._audited_recomputations(db, job) if job else []
+        window_resumes = (
+            db.execute(
+                "SELECT count(*) FROM semantic_job_resumes WHERE job=? "
+                "AND json_extract(body,'$.completed_chunks')=?",
+                (job["id"], progress.get("completed_chunks", 0)),
+            ).fetchone()[0]
+            if job
+            else 0
+        )
         reason = (
-            self.resume_eligibility(job, progress, generation, acknowledgments)
+            self.resume_eligibility(job, progress, generation, acknowledgments, window_resumes)
             if job
             else "analysis_not_failed"
         )
@@ -581,7 +594,9 @@ class SemanticStore:
             "job_id": job["id"] if job else None,
             "generation": generation,
             "completed_chunks": progress.get("completed_chunks", 0),
-            "max_generations": 3,
+            "max_generations": MAX_RESUME_GENERATIONS,
+            "window_resumes": window_resumes,
+            "max_window_resumes": MAX_WINDOW_RESUMES,
         }
 
     @staticmethod
@@ -797,7 +812,16 @@ class SemanticStore:
         generation = db.execute(
             "SELECT COALESCE(max(generation),0) FROM semantic_job_resumes WHERE job=?", (job_id,)
         ).fetchone()[0]
-        if generation >= 3 or (generation + 1) * 2 <= last["attempt"] - 1:
+        window_resumes = db.execute(
+            "SELECT count(*) FROM semantic_job_resumes WHERE job=? "
+            "AND json_extract(body,'$.completed_chunks')=?",
+            (job_id, progress.get("completed_chunks", 0)),
+        ).fetchone()[0]
+        if (
+            generation >= MAX_RESUME_GENERATIONS
+            or window_resumes >= MAX_WINDOW_RESUMES
+            or (generation + 1) * 2 <= last["attempt"] - 1
+        ):
             raise AnalysisResumeError("resume_limit_reached")
         execution = db.execute(
             "SELECT body FROM semantic_job_execution WHERE job=?", (job_id,)
@@ -919,6 +943,54 @@ class SemanticStore:
             )
 
             db.execute("UPDATE semantic_job_times SET finished=? WHERE job=?", (stamp(), job["id"]))
+
+    def fail_and_auto_resume(self, job: dict[str, Any], error: str) -> bool:
+        """Atomically queue bounded repair only for confirmed invalid responses."""
+        from trajectory.product.semantic_model import repairable_validation_error
+
+        if not repairable_validation_error(error):
+            self.finish_job(job, error)
+            return False
+        with self.domain.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            updated = db.execute(
+                "UPDATE semantic_jobs SET status='failed',message=?,updated=? "
+                "WHERE id=? AND owner=? AND source_revision=? AND status='running'",
+                (error[:500], stamp(), job["id"], job["owner"], job["source_revision"]),
+            )
+            if updated.rowcount != 1:
+                return False
+            db.execute("UPDATE semantic_job_times SET finished=? WHERE job=?", (stamp(), job["id"]))
+            row = db.execute("SELECT * FROM semantic_jobs WHERE id=?", (job["id"],)).fetchone()
+            progress_row = db.execute(
+                "SELECT body FROM semantic_job_progress WHERE job=?", (job["id"],)
+            ).fetchone()
+            progress = json.loads(progress_row[0]) if progress_row else {}
+            current = db.execute(
+                "SELECT source_revision FROM semantic_sessions WHERE owner=? AND id=?",
+                (job["owner"], job["session"]),
+            ).fetchone()
+            state = self.resume_state(db, dict(row), progress, current[0] if current else "")
+            if not state["eligible"]:
+                return False
+            generation = state["generation"]
+            value = AnalysisRequest(mutation_id="auto-" + digest(f"{job['id']}:{generation + 1}"))
+            body = "analysis.auto_resume:" + job["id"] + ":" + value.model_dump_json()
+            try:
+                self._continue_analysis(
+                    db,
+                    job["owner"],
+                    row,
+                    progress,
+                    generation,
+                    value,
+                    body,
+                    operation="analysis.auto_resume",
+                    extra={"resume_mode": "automatic", "validation_error": error[:600]},
+                )
+            except AnalysisResumeError:
+                return False
+            return True
 
     def park_job(self, job: dict[str, Any]) -> None:
         """Return a checkpointed job to the same queue without authorizing new attempts."""

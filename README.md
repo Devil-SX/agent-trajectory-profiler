@@ -32,11 +32,15 @@ progress, errors, model usage and elapsed time remain available after reload.
 The server configuration selects the Jindu model and reasoning effort. Recorded
 provenance identifies the configuration actually used by each analysis.
 
-Failed analyses with confirmed invalid model output can continue from saved
-windows in the workbench. The same authenticated resume operation appears in
-Help. Continuation keeps the original job and batch, reuses completed windows,
-and retains unsuccessful call usage. Uncertain calls remain blocked for receipt
-reconciliation. Refreshing the page does not restart paid analysis.
+When a model response is received and fails task-structure validation, the
+worker automatically continues from the saved window and includes the last
+validation error in the next request. Each window has at most three continuation
+generations, and each job has at most twelve; each generation allows up to two
+model attempts. New attempts incur
+model usage. The original job, batch, completed windows, call receipts and usage
+remain intact. Uncertain calls remain blocked for receipt reconciliation.
+Failed analyses can also be continued through the authenticated resume operation
+in Help when eligible. Refreshing the page does not restart paid analysis.
 
 If a verified terminal call has lost its response, an operator can make a
 separate explicit decision through the Help-discovered lost-window operation.

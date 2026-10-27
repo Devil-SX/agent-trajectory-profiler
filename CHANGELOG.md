@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.3.2] - 2026-10-27
+
+### Fixed
+
+- Automatically resume confirmed invalid analysis responses from the last checkpoint, with validation feedback and bounded retries.
+
+Code stats vs v6.3.1: total 30177 tracked text lines, +393 (-27) = +366, 1.23% text-line change.
+
 ## [6.3.1] - 2026-10-27
 
 ### Fixed

@@ -328,7 +328,10 @@ class AnalysisRuntime:
                     if isinstance(error, (ValueError, SemanticModelError))
                     else type(error).__name__
                 )
-                self.store.finish_job(job, message[:300])
+                if isinstance(error, SemanticModelError) and error.retryable:
+                    self.store.fail_and_auto_resume(job, message[:300])
+                else:
+                    self.store.finish_job(job, message[:300])
                 provenance = getattr(error, "provenance", None)
                 if provenance:
                     # Failed provider calls remain visible as analysis overhead.
