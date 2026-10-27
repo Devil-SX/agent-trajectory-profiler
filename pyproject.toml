@@ -1,6 +1,6 @@
 [project]
 name = "batcave-trajectory"
-version = "6.2.1"
+version = "6.3.0"
 description = "Authenticated remote analysis for the open Trajectory collector protocol"
 readme = "README.md"
 requires-python = ">=3.12"

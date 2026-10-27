@@ -287,9 +287,11 @@ async function contextual(page, scope, id, input, humanUnknown = false) {
     await page.locator('.timeline-segment[aria-label^="缓存实验"]').click();
     await contextual(page, 'task', 'child', '250', true);
     await page.getByRole('button', {name: '开销火焰图', exact: true}).click();
+    assert.equal(await page.locator('#flame-axis').inputValue(), 'time');
+    assert.match(await page.locator('#analysis-view').innerText(), /缺少可用的时间戳跨度/);
     await page.locator('.flame-frame[title^="验证 AI CPM"]').click();
     await contextual(page, 'task', 'root', '1[,.]?000');
-    checks.push('selected task title and six contextual metrics survive all three views; timeline and flame selection; parent includes children');
+    checks.push('selected task title and six contextual metrics survive all three views; timeline and flame selection; identical timestamps fall back to metric widths; parent includes children');
     const evidencePanel = page.locator('#evidence-panel');
     if (await evidencePanel.count()) await toggle(page, 'evidence-panel', true);
     const evidence = page.locator('#analysis-evidence');

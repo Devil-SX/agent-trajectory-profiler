@@ -31,6 +31,14 @@ Human metrics use the domain coverage status. Positive values with missing measu
 
 The `trajectory-format` script in the dashboard owns `window.TrajectoryFormat.duration(seconds)`. Dashboard and research use this one formatter for human-facing summaries, tables, task metrics, flame labels and request elapsed times. Numeric API/CSV seconds and chart geometry remain unchanged. Missing, nonfinite and negative inputs display unknown; observed zero displays `0s`. Positive subsecond values retain nonzero milliseconds. Seconds round before hour/minute carry, with no decimal hours or redundant zero units; long durations retain accumulated hours such as `25h1min1s`.
 
+## Flame chart axis
+
+The cost flame chart offers two horizontal axes. `时间` is the default: frame position and width come from recorded operation timestamps, so consecutive stages appear in real order and each width reads as elapsed time between the first record of the stage and the next record. Ticks and grid lines show elapsed time from the earliest recorded timestamp, and the caption states the absolute span. Elapsed time includes waiting and idle gaps; it is not human working time. Multiple non-contiguous segments of one task stay as separate frames with the same task colour, and every frame keeps its absolute start and end time in the accessible label.
+
+`开销指标` keeps the previous metric-width layout, where the selected metric sizes frames and ticks mark cumulative metric values. Selecting a metric never changes a task's time evidence and selecting a time axis never invents missing counters.
+
+When a session has no comparable timestamp span (missing timestamps or one single timestamp for every record), the chart states the gap and falls back to metric widths. Tasks without timestamps are counted in a warning instead of being placed at zero duration. Both axis and metric choices persist in the workspace record.
+
 ## Shared theme and retained results
 
 The dashboard root owns page, surface, control, overlay, border, text and chart-accent tokens. Research inherits the supported dark workbench scheme and uses these tokens directly, including table headers and charts; it has no private hardcoded color palette or card gradient. System light preference does not select a separate product theme. Pending and failed research refreshes keep retained results at full opacity; the existing loading/error feedback communicates state.
